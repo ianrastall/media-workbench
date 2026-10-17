@@ -1,6 +1,7 @@
 namespace MediaWorkbench.Core;
 
-public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch)
+/// <summary>CheckForUpdates defaults to on for settings saved before it existed.</summary>
+public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true)
 {
     public static AppSettings Default(string stateRoot) => new(1, Path.Combine(stateRoot, "Data"), "stable-diffusion");
 }
@@ -50,6 +51,16 @@ public sealed record StorageSnapshot(long FreeBytes, long TotalBytes, long Insta
 {
     public static string Format(long bytes) => bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):N2} GiB"
         : bytes >= 1L << 20 ? $"{bytes / (double)(1L << 20):N1} MiB" : $"{bytes / 1024.0:N0} KiB";
+}
+/// <summary>A newer release with a verified-download installer and its release notes.</summary>
+public sealed record UpdateInfo(string Version, string Notes, string InstallerUrl, string ChecksumUrl, string PageUrl);
+public interface IUpdateService
+{
+    string CurrentVersion { get; }
+    /// <summary>The newest applicable release, or null when this version is current. Throws when GitHub cannot be reached.</summary>
+    Task<UpdateInfo?> CheckAsync(CancellationToken cancellationToken);
+    /// <summary>Downloads the installer and verifies its published SHA-256; returns the verified file's path.</summary>
+    Task<string> DownloadAsync(UpdateInfo update, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
 }
 public interface ISettingsStore
 {

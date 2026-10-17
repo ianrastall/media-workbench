@@ -15,7 +15,7 @@
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE8B9;" FontSize="19" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                 <TextBlock Text="Media Workbench" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
-                <TextBlock Text="0.2.0 · Alpha" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                <TextBlock Text="{x:Bind ViewModel.AppVersion}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
             </StackPanel>
         </Grid>
         <NavigationView x:Name="Navigation" Grid.Row="1" OpenPaneLength="220" PaneDisplayMode="Auto"
@@ -55,6 +55,20 @@
                                 </StackPanel>
                             </Border>
                         </Grid>
+                        <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Updates" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.UpdateText, Mode=OneWay}" TextWrapping="Wrap" />
+                                <ScrollViewer MaxHeight="200" Visibility="{x:Bind ViewModel.HasUpdate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                                    <TextBlock Text="{x:Bind ViewModel.UpdateNotes, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </ScrollViewer>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button Content="Update now" Command="{x:Bind ViewModel.InstallUpdateCommand}" Style="{ThemeResource AccentButtonStyle}" Visibility="{x:Bind ViewModel.HasUpdate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
+                                    <Button Content="Check for updates" Command="{x:Bind ViewModel.CheckForUpdatesCommand}" />
+                                </StackPanel>
+                                <TextBlock Text="Updating downloads the new installer from GitHub, checks it against its published checksum, then closes and reopens Media Workbench. Your models, images, and settings are kept." TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                            </StackPanel>
+                        </Border>
                         <TextBlock Text="First model pipeline" Style="{ThemeResource SubtitleTextBlockStyle}" />
                         <TextBlock Text="Open Create to install Stable Diffusion 1.5, verify your GPU, and generate your first image." TextWrapping="Wrap" />
                         <Button Content="Preview installation plan" Command="{x:Bind ViewModel.PlanCommand}" />
@@ -227,6 +241,7 @@
                                 </Button.Flyout>
                             </Button>
                         </StackPanel>
+                        <CheckBox Content="Check for updates when Media Workbench starts (needs internet; nothing installs without your click)" IsChecked="{x:Bind ViewModel.CheckForUpdates, Mode=TwoWay}" />
                         <TextBlock Text="Dark mode" Style="{ThemeResource SubtitleTextBlockStyle}" />
                         <TextBlock Text="Media Workbench currently uses the dark Windows theme. No account credentials are stored in this alpha." TextWrapping="Wrap" />
                     </StackPanel>

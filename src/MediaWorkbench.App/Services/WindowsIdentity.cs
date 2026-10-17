@@ -23,6 +23,14 @@ internal static class WindowsIdentity
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsIconic(IntPtr window);
 
+    /// <summary>Lets an update installer run: its AppMutex check must not find this instance, which exits next.</summary>
+    internal static void ReleaseInstance()
+    {
+        try { _instanceMutex?.ReleaseMutex(); } catch (ApplicationException) { } // Not owned (a later instance).
+        _instanceMutex?.Dispose();
+        _instanceMutex = null;
+    }
+
     /// <summary>Returns true for the first instance; a later launch brings that instance's own window forward.</summary>
     internal static bool AcquireInstance()
     {

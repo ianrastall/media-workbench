@@ -18,7 +18,10 @@ public sealed partial class MainWindow : Window
         // Development override only; a shipped build always runs its bundled interpreter.
         python = Environment.GetEnvironmentVariable("MEDIA_WORKBENCH_PYTHON") ?? python;
 #endif
-        ViewModel = new(new WorkbenchService(AppContext.BaseDirectory, python), new SettingsStore(stateRoot));
+        string version = UpdateService.ApplicationVersion();
+        ViewModel = new(new WorkbenchService(AppContext.BaseDirectory, python), new SettingsStore(stateRoot),
+            new UpdateService(UpdateService.CreateClient(version), version));
+        ViewModel.InstallerReady += RunInstallerAndExit;
         InitializeComponent();
         var shell = new ShellView(ViewModel);
         Host.Children.Add(shell);
@@ -33,6 +36,17 @@ public sealed partial class MainWindow : Window
         int height = Math.Min((int)(820 * scale), (int)(display.Height * .92));
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(display.X + (display.Width - width) / 2, display.Y + (display.Height - height) / 2, width, height));
         Closed += (_, _) => ViewModel.CancelActiveWork();
+        _ = ViewModel.CheckForUpdatesQuietlyAsync();
+    }
+
+    // The user chose Update: run the verified installer silently; it closes this copy and reopens the new one.
+    private void RunInstallerAndExit(string installer)
+    {
+        Services.WindowsIdentity.ReleaseInstance();
+        var start = new System.Diagnostics.ProcessStartInfo(installer) { UseShellExecute = false };
+        foreach (string argument in new[] { "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/SP-" }) start.ArgumentList.Add(argument);
+        System.Diagnostics.Process.Start(start);
+        Application.Current.Exit();
     }
 
     [DllImport("user32.dll")]

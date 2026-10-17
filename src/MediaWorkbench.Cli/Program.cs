@@ -16,6 +16,18 @@ try
             Console.WriteLine(JsonSerializer.Serialize(new InstallationPlanner().Plan(recipe), Wire.Json));
         return 0;
     }
+    if (args[2] == "update-check")
+    {
+        // Optional: pretend to be an older version, and --download to fetch and verify the installer (never runs it).
+        string version = args.Length > 3 && !args[3].StartsWith("--") ? args[3] : UpdateService.ApplicationVersion();
+        var updates = new UpdateService(UpdateService.CreateClient(version), version);
+        using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        var update = await updates.CheckAsync(limit.Token);
+        Console.WriteLine(update is null ? $"{version} is up to date." : $"{update.Version} is available: {update.PageUrl}");
+        if (update is not null && args.Contains("--download"))
+            Console.WriteLine("Verified installer: " + await updates.DownloadAsync(update, new Progress<OperationProgress>(), limit.Token));
+        return 0;
+    }
     if (args[2] == "install")
     {
         var plan = new WorkbenchService(root, args[0]).GetBaselinePlan();

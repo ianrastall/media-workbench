@@ -19,6 +19,8 @@ For image generation, this first profile requires an **NVIDIA GPU with at least 
 3. Setup downloads roughly 5 GiB plus dependencies and tests real inference. A model becomes ready only after the checks pass on your machine.
 4. Describe the picture, pick a shape, and select **Generate image** (seed, steps, prompt strength, and sampling method are under **Advanced options**). Your PNG and its settings appear in **Library** and remain in your data folder. Generations that fail, are cancelled, or are stopped by closing the app are listed under **Unfinished generations** with the reason; **Use settings** loads them back into Create and **Open log** shows the inference log.
 
+**Updates:** when you're online, Media Workbench checks for a new version at startup and shows what changed on **Home**. Select **Update now** to download it, verify it against its published checksum, and reopen the updated app; nothing installs until you click. After setup, generating images needs no internet.
+
 **Settings → Storage** shows what the data folder uses. You can clear the download caches (about 4 GiB that only speed up repairs) and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept.
 
 Cancel stops the owned worker operation. Retrying setup reuses completed downloads and the Hub cache; an incomplete bootstrap archive restarts. A data folder typed in Settings takes effect only after **Save settings**. Changing data folders does not move existing models or images.

@@ -51,5 +51,7 @@ Name: "{userdesktop}\Media Workbench"; Filename: "{app}\MediaWorkbench.exe"; Wor
 
 [Run]
 Filename: "{app}\MediaWorkbench.exe"; Description: "Open Media Workbench"; Flags: nowait postinstall skipifsilent
+; An in-app update runs this installer silently after the app exits; reopen the updated app.
+Filename: "{app}\MediaWorkbench.exe"; Flags: nowait; Check: WizardSilent
 
 ; User settings and media are deliberately outside {app} and are preserved on uninstall.

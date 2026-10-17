@@ -11,12 +11,19 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly IWorkbenchService _service;
     private readonly ISettingsStore _settings;
+    private readonly IUpdateService _updates;
+    private bool _loading = true;
     private CancellationTokenSource? _operation;
 
-    public MainViewModel(IWorkbenchService service, ISettingsStore settings)
+    public MainViewModel(IWorkbenchService service, ISettingsStore settings, IUpdateService updates)
     {
         _service = service;
         _settings = settings;
+        _updates = updates;
+        AppVersion = updates.CurrentVersion;
+        UpdateText = $"Media Workbench {AppVersion}.";
+        CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsBusy);
+        InstallUpdateCommand = new AsyncRelayCommand(InstallUpdateAsync, () => !IsBusy && HasUpdate);
         SearchCommand = new AsyncRelayCommand(SearchAsync, () => !IsBusy);
         DetailsCommand = new AsyncRelayCommand(LoadDetailsAsync, () => !IsBusy && SelectedModel is not null);
         DiagnosticsCommand = new AsyncRelayCommand(DiagnoseAsync, () => !IsBusy);
@@ -39,8 +46,10 @@ public partial class MainViewModel : ObservableObject
             var saved = settings.Load();
             DataRoot = DataRootDraft = saved.DataRoot;
             SearchQuery = saved.LastSearch;
+            CheckForUpdates = saved.CheckForUpdates;
         }
         catch (Exception ex) { Notice = $"Could not load settings: {ex.Message}"; }
+        _loading = false;
         try { NativeStatus = $"Rust core · ABI {NativeCore.VerifyAbi()}"; }
         catch (Exception ex) { NativeStatus = "Native core unavailable"; Notice = ex.Message; }
         WorkerStatus = File.Exists(Path.Combine(AppContext.BaseDirectory, "runtime", "python", "python.exe"))
@@ -84,7 +93,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -111,6 +120,16 @@ public partial class MainViewModel : ObservableObject
     public IRelayCommand<JobSummary?> RetryJobCommand { get; }
     public IRelayCommand<JobSummary?> OpenJobLogCommand { get; }
     public IAsyncRelayCommand RefreshStorageCommand { get; }
+    public IAsyncRelayCommand CheckForUpdatesCommand { get; }
+    public IAsyncRelayCommand InstallUpdateCommand { get; }
+    /// <summary>Raised with a checksum-verified installer path once the user chose to update; the shell runs it and exits.</summary>
+    public event Action<string>? InstallerReady;
+    public string AppVersion { get; }
+    [ObservableProperty] public partial string UpdateText { get; set; }
+    [ObservableProperty] public partial string UpdateNotes { get; set; } = "";
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(InstallUpdateCommand))] public partial bool HasUpdate { get; set; }
+    [ObservableProperty] public partial bool CheckForUpdates { get; set; } = true;
+    private UpdateInfo? _update;
     public IAsyncRelayCommand<string?> ClearStorageCommand { get; }
     public ObservableCollection<StorageItem> StorageItems { get; } = [];
     [ObservableProperty] public partial string StorageText { get; set; } = "Open Settings to measure what the data folder uses.";
@@ -319,7 +338,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             if (!Path.IsPathFullyQualified(DataRootDraft)) throw new InvalidDataException("Choose an absolute data folder.");
-            var value = new AppSettings(1, Path.GetFullPath(DataRootDraft), SearchQuery);
+            var value = new AppSettings(1, Path.GetFullPath(DataRootDraft), SearchQuery, CheckForUpdates);
             _settings.Save(value);
             DataRoot = DataRootDraft = value.DataRoot;
             Notice = "Settings saved. Models, generation, and Library now use this data folder.";
@@ -327,6 +346,51 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) { Notice = $"Settings were not saved; still using {DataRoot}. {ex.Message}"; }
     }
+
+    partial void OnCheckForUpdatesChanged(bool value)
+    {
+        if (_loading) return;
+        try { _settings.Save(new AppSettings(1, DataRoot, SearchQuery, value)); }
+        catch (Exception ex) { Notice = $"Could not save the update preference: {ex.Message}"; }
+    }
+
+    private void ShowUpdate(UpdateInfo? update)
+    {
+        _update = update;
+        HasUpdate = update is not null;
+        UpdateNotes = update?.Notes ?? "";
+        UpdateText = update is null ? $"Media Workbench {AppVersion} is up to date."
+            : $"Media Workbench {update.Version} is available (you have {AppVersion}).";
+    }
+
+    /// <summary>The startup check: silent when offline or turned off, and never blocks other work.</summary>
+    public async Task CheckForUpdatesQuietlyAsync()
+    {
+        if (!CheckForUpdates) return;
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var update = await _updates.CheckAsync(deadline.Token);
+            ShowUpdate(update);
+            if (update is not null) Notice = $"Media Workbench {update.Version} is available. See Home to read what changed and update.";
+        }
+        catch (Exception) { } // Offline or GitHub unavailable: working offline is normal.
+    }
+
+    private Task CheckForUpdatesAsync() => RunAsync("Checking for updates…", async token =>
+    {
+        try { ShowUpdate(await _updates.CheckAsync(token)); }
+        catch (HttpRequestException) { UpdateText = "Could not reach GitHub to check for updates. Everything else keeps working offline."; }
+        Notice = UpdateText;
+    });
+
+    private Task InstallUpdateAsync() => RunAsync("Downloading the update…", async token =>
+    {
+        if (_update is null) return;
+        string installer = await _updates.DownloadAsync(_update, ObserveProgress(), token);
+        Record($"Verified the {_update.Version} installer; starting it");
+        InstallerReady?.Invoke(installer);
+    }, longRunning: true);
 
     private void OpenDataFolder()
     {

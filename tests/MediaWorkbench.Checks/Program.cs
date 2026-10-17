@@ -61,7 +61,9 @@ var vmStore = new SettingsStore(Path.Combine(output, "vm-settings"));
 string savedRoot = Path.Combine(output, "vm-data");
 vmStore.Save(new AppSettings(1, savedRoot, "image"));
 var workbench = new RecordingWorkbench();
-var vm = new MainViewModel(workbench, vmStore);
+var offered = new UpdateInfo("0.3.0-alpha.1", "New things", "https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.1/MediaWorkbench-0.3.0-alpha.1-win-x64-setup.exe", "", "");
+var updates = new FakeUpdates(offered);
+var vm = new MainViewModel(workbench, vmStore, updates);
 Check(vm.DataRoot == savedRoot && vm.DataRootDraft == savedRoot, "View model loads the saved data folder as both active and draft");
 vm.ModelReady = true;
 vm.Images.Add(RecordingWorkbench.Image(savedRoot));
@@ -102,6 +104,51 @@ vm.ModelReady = true;
 await vm.ClearStorageCommand.ExecuteAsync("installation");
 Check(workbench.Cleared.SequenceEqual(["installation"]) && !vm.ModelReady && vm.StorageText.Contains("use 0 KiB"), "Removing the installation clears readiness and shows the new sizes");
 Check(!vm.ClearStorageCommand.CanExecute(null), "Clearing storage requires a named area");
+
+// Updates: check, then ask. Nothing is downloaded or run until the user chooses Update now.
+await vm.CheckForUpdatesQuietlyAsync();
+Check(vm.HasUpdate && vm.UpdateText.Contains("0.3.0-alpha.1") && vm.UpdateNotes == "New things", "A newer release is offered with its notes");
+string? launched = null;
+vm.InstallerReady += path => launched = path;
+Check(launched is null, "Finding an update does not download or start it");
+await vm.InstallUpdateCommand.ExecuteAsync(null);
+Check(launched?.EndsWith("MediaWorkbench-0.3.0-alpha.1-win-x64-setup.exe") == true, "Update now hands the verified installer to the shell");
+vm.CheckForUpdates = false;
+int checksBefore = updates.Checks;
+await vm.CheckForUpdatesQuietlyAsync();
+Check(updates.Checks == checksBefore && !vmStore.Load().CheckForUpdates, "Turning off startup checks is saved and stops the quiet check");
+updates.Offline = true;
+await vm.CheckForUpdatesCommand.ExecuteAsync(null);
+Check(vm.UpdateText.Contains("offline") && !vm.IsBusy, "An offline manual check says so and keeps working");
+
+Check(UpdateService.CompareVersions("0.2.0-alpha.10", "0.2.0-alpha.2") > 0 && UpdateService.CompareVersions("0.2.0", "0.2.0-alpha.9") > 0
+    && UpdateService.CompareVersions("0.2.0-alpha.2", "0.2.0-beta.1") < 0 && UpdateService.CompareVersions("1.0.0", "0.10.0") > 0
+    && UpdateService.CompareVersions("0.2.0-alpha.2", "0.2.0-alpha.2") == 0, "Release versions order by semantic-version precedence");
+const string prefix = "https://github.com/ianrastall/media-workbench/releases/download/";
+string Release(string version, bool prerelease, bool draft = false, string host = prefix, bool checksum = true) =>
+    $$"""{"tag_name":"v{{version}}","prerelease":{{(prerelease ? "true" : "false")}},"draft":{{(draft ? "true" : "false")}},"body":"Notes {{version}}","html_url":"https://github.com/ianrastall/media-workbench/releases/tag/v{{version}}","assets":[{"name":"MediaWorkbench-{{version}}-win-x64-setup.exe","browser_download_url":"{{host}}v{{version}}/MediaWorkbench-{{version}}-win-x64-setup.exe"}{{(checksum ? $$""",{"name":"MediaWorkbench-{{version}}-win-x64-setup.exe.sha256","browser_download_url":"{{host}}v{{version}}/MediaWorkbench-{{version}}-win-x64-setup.exe.sha256"}""" : "")}}]}""";
+using (var releases = System.Text.Json.JsonDocument.Parse("[" + string.Join(",", Release("0.4.0", false, draft: true), Release("0.3.1-alpha.1", true, host: "https://example.invalid/"),
+    Release("0.3.0-alpha.3", true, checksum: false), Release("0.3.0-alpha.2", true), Release("0.2.0-alpha.2", true), Release("0.1.0", false)) + "]"))
+{
+    Check(UpdateService.SelectUpdate(releases.RootElement, "0.2.0-alpha.2")?.Version == "0.3.0-alpha.2",
+        "Update selection skips drafts, foreign download hosts, and releases without a checksum");
+    Check(UpdateService.SelectUpdate(releases.RootElement, "0.3.0-alpha.2") is null, "The newest usable release is not offered to itself");
+    Check(UpdateService.SelectUpdate(releases.RootElement, "0.0.9")?.Version == "0.1.0", "Stable installs are offered only stable releases");
+}
+byte[] installerBytes = "fake installer"u8.ToArray();
+string installerName = "MediaWorkbench-0.3.0-alpha.2-win-x64-setup.exe", installerUrl = prefix + "v0.3.0-alpha.2/" + installerName;
+async Task<Exception?> TryDownload(string checksumLine)
+{
+    var http = new HttpClient(new StubHttp(new() { [installerUrl] = installerBytes, [installerUrl + ".sha256"] = System.Text.Encoding.ASCII.GetBytes(checksumLine) }));
+    try { await new UpdateService(http, "0.2.0-alpha.2").DownloadAsync(new("0.3.0-alpha.2", "", installerUrl, installerUrl + ".sha256", ""), new Progress<OperationProgress>(), deadline.Token); return null; }
+    catch (Exception ex) { return ex; }
+}
+string goodHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(installerBytes));
+string downloaded = Path.Combine(Path.GetTempPath(), "MediaWorkbench-update", installerName);
+Check(await TryDownload($"{goodHash}  {installerName}") is null && File.ReadAllBytes(downloaded).SequenceEqual(installerBytes), "A download matching its published checksum is kept");
+File.Delete(downloaded);
+Check(await TryDownload($"{new string('0', 64)}  {installerName}") is InvalidDataException && !File.Exists(downloaded) && !File.Exists(downloaded + ".partial"),
+    "A download that fails its checksum is discarded");
 
 
 async Task<string> Fixture(string name, string body)
