@@ -1,4 +1,7 @@
-"""Private Python 3.12 ML child. Only the bundled recipe is executable."""
+"""Private Python 3.12 ML child. Only the bundled recipe is executable.
+
+Changes to what a verified installation means must bump inference_setup.ADAPTER_VERSION.
+"""
 import argparse
 from contextlib import redirect_stdout
 import hashlib
@@ -8,6 +11,10 @@ from pathlib import Path
 import sys
 import threading
 import time
+
+# Isolated mode (-I) omits the script directory; the stdlib-only setup module beside this file is app-owned.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import inference_setup  # noqa: E402
 
 WIRE_OUT = sys.stdout
 OUTPUT_LOCK = threading.Lock()
@@ -73,9 +80,12 @@ def main():
         from PIL import ImageStat
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is unavailable. Check your NVIDIA driver; this profile requires an NVIDIA GPU.")
+        # The parent sets CUDA_DEVICE_ORDER=PCI_BUS_ID, so device 0 is the GPU its preflight inspected.
         gpu = torch.cuda.get_device_name(0)
-        if torch.cuda.get_device_properties(0).total_memory < 5.5 * 1024**3:
-            raise RuntimeError("This baseline requires at least 6 GB of GPU memory.")
+        minimum = inference_setup.minimum_vram_mib(args.root)
+        total = torch.cuda.get_device_properties(0).total_memory / 1024**2
+        if not inference_setup.meets_vram(total, minimum):
+            raise RuntimeError(f"{gpu} reports {total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
         # FP32 avoids known half-precision limitations on GTX 16-series devices.
         progress("Loading Stable Diffusion 1.5")
         pipe = StableDiffusionPipeline.from_pretrained(str(model), torch_dtype=torch.float32,
@@ -114,7 +124,8 @@ def main():
             image.save(temporary, format="PNG")
             target = directory / "image.png"
             os.replace(temporary, target)
-            result.update(imagePath=str(target), imageSha256=hashlib.sha256(target.read_bytes()).hexdigest())
+            # Stored relative to artifacts/ so the data folder can move; the coordinator resolves it.
+            result.update(imagePath=f"{job_id}/image.png", imageSha256=hashlib.sha256(target.read_bytes()).hexdigest())
         emit("result", result)
 
 

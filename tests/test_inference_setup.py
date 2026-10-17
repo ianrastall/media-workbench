@@ -1,7 +1,10 @@
 """Setup invariants with temporary owned data; never downloads ML weights."""
+import hashlib
 import json
 import io
+import os
 from pathlib import Path
+import shutil
 import sys
 import subprocess
 import tempfile
@@ -13,6 +16,40 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "workers/python"))
 import inference_setup as setup
+
+MODEL_FILES = [("model_index.json", b"{}"), ("unet/weights.bin", b"weights")]
+
+
+def fake_app(folder):
+    """Copy the stamped profile files and swap in a tiny two-file model manifest."""
+    app = Path(folder) / "app"
+    for name in setup.STAMPED_FILES:
+        (app / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, app / name)
+    manifest = json.loads((app / "profiles/sd15-files.json").read_text())
+    manifest["files"] = [{"path": path, "size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
+                         for path, body in MODEL_FILES]
+    (app / "profiles/sd15-files.json").write_text(json.dumps(manifest))
+    return app
+
+
+def ready_install(app, root):
+    for path, body in MODEL_FILES:
+        target = root / "models" / setup.RECIPE / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
+    stamps = setup.verify_files(app, root, threading.Event(), lambda _: None)
+    runtime = root / "runtimes" / setup.PROFILE / "python" / "python.exe"
+    runtime.parent.mkdir(parents=True, exist_ok=True)
+    runtime.write_bytes(b"")
+    setup.atomic_json(setup.state_path(root), {"status": "ready", "profileStamp": setup.profile_stamp(app), "files": stamps})
+
+
+def fake_generation(app, data, operation, payload, cancel, progress):
+    image = data / "artifacts" / payload["jobId"] / "image.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"png")
+    return {"imagePath": payload["jobId"] + "/image.png", "imageSha256": "0" * 64, "seconds": 1.0, "gpu": "Test GPU"}
 
 
 class SetupTests(unittest.TestCase):
@@ -70,7 +107,7 @@ class SetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             setup.atomic_json(setup.state_path(root), {"status": "ready", "profileStamp": setup.profile_stamp(ROOT)})
-            with patch.object(setup, "verify_files"), patch.object(setup, "inference", side_effect=setup.Cancelled("Cancelled")):
+            with patch.object(setup, "files_unchanged", return_value=True), patch.object(setup, "inference", side_effect=setup.Cancelled("Cancelled")):
                 with self.assertRaises(setup.Cancelled):
                     setup.generate(ROOT, {"dataRoot": folder, "prompt": "house"}, threading.Event(), lambda _: None)
             jobs = [json.loads(p.read_text()) for p in (root / "jobs").glob("*.json") if p.name != "install-sd15.json"]
@@ -174,6 +211,140 @@ class SetupTests(unittest.TestCase):
             worker.stdin.close()
             worker.stdout.close()
             worker.stderr.close()
+
+
+class ReadinessTests(unittest.TestCase):
+    def test_profile_stamp_ignores_adapter_source_and_line_endings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = fake_app(folder)
+            stamp = setup.profile_stamp(app)
+            worker = app / "workers/python/inference_worker.py"
+            worker.parent.mkdir(parents=True)
+            worker.write_text("# edited adapter source\n")
+            lock = app / "profiles/sd15-cu126.lock"
+            lock.write_bytes(lock.read_bytes().replace(b"\n", b"\r\n"))
+            self.assertEqual(setup.profile_stamp(app), stamp)
+
+    def test_profile_stamp_tracks_adapter_version_and_pinned_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = fake_app(folder)
+            stamp = setup.profile_stamp(app)
+            with patch.object(setup, "ADAPTER_VERSION", setup.ADAPTER_VERSION + 1):
+                self.assertNotEqual(setup.profile_stamp(app), stamp)
+            with (app / "profiles/sd15-cu126.lock").open("a") as lock:
+                lock.write("# changed pin\n")
+            self.assertNotEqual(setup.profile_stamp(app), stamp)
+
+    def test_generation_checks_recorded_stamps_without_rehashing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            with patch.object(setup, "digest", side_effect=AssertionError("full hash on generate")), \
+                 patch.object(setup, "inference", side_effect=fake_generation):
+                record = setup.generate(app, {"dataRoot": str(root), "prompt": "house"}, threading.Event(), lambda _: None)
+            self.assertEqual(record["status"], "succeeded")
+            self.assertEqual(Path(record["imagePath"]), (root / "artifacts" / record["id"] / "image.png").resolve())
+            stored = json.loads((root / "jobs" / f"{record['id']}.json").read_text())
+            self.assertEqual(stored["imagePath"], record["id"] + "/image.png")
+            self.assertEqual(setup.status(app, {"dataRoot": str(root)})["status"], "ready")
+
+    def test_changed_model_file_blocks_generation_and_revokes_ready(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            (root / "models" / setup.RECIPE / "unet/weights.bin").write_bytes(b"tampered weights")
+            with patch.object(setup, "inference", side_effect=AssertionError("inference ran")):
+                with self.assertRaisesRegex(setup.SetupError, "changed since"):
+                    setup.generate(app, {"dataRoot": str(root), "prompt": "house"}, threading.Event(), lambda _: None)
+            self.assertEqual(setup.status(app, {"dataRoot": str(root)})["status"], "needs_verification")
+
+    def test_ready_record_without_stamps_needs_verification(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            record = json.loads(setup.state_path(root).read_text())
+            del record["files"]
+            setup.atomic_json(setup.state_path(root), record)
+            self.assertEqual(setup.status(app, {"dataRoot": str(root)})["status"], "needs_verification")
+
+
+class GpuTests(unittest.TestCase):
+    LISTING = "0, GPU-aaaa, NVIDIA Small, 4096\n1, GPU-bbbb, NVIDIA Large, 6144\n"
+
+    def test_vram_minimum_comes_from_recipe(self):
+        recipe = json.loads((ROOT / "recipes/sd15-baseline.json").read_text())
+        minimum = setup.minimum_vram_mib(ROOT)
+        self.assertEqual(minimum, recipe["minimumVramMiB"])
+        self.assertTrue(setup.meets_vram(6442123264 / 1024**2, minimum))  # 6 GB GTX 1660 Ti as CUDA reports it
+        self.assertTrue(setup.meets_vram(6144, minimum))  # The same card as nvidia-smi reports it
+        self.assertFalse(setup.meets_vram(5632, minimum))
+
+    def test_preflight_inspects_the_device_the_child_uses(self):
+        self.assertEqual(setup.select_gpu(self.LISTING), ("NVIDIA Small", 4096))
+        self.assertEqual(setup.select_gpu(self.LISTING, "1"), ("NVIDIA Large", 6144))
+        self.assertEqual(setup.select_gpu(self.LISTING, "GPU-bbbb,0"), ("NVIDIA Large", 6144))
+        for hidden in ["", "7"]:
+            with self.assertRaises(setup.SetupError):
+                setup.select_gpu(self.LISTING, hidden)
+
+    def test_unreported_memory_is_a_clear_setup_error(self):
+        with self.assertRaisesRegex(setup.SetupError, r"did not report memory.*\[N/A\]"):
+            setup.select_gpu("0, GPU-aaaa, NVIDIA Odd, [N/A]\n")
+        with self.assertRaises(setup.SetupError):
+            setup.select_gpu("")
+
+    @unittest.skipUnless(os.name == "nt", "install preflight runs only on Windows")
+    def test_install_reports_unparseable_gpu_memory_as_setup_failure(self):
+        listing = subprocess.CompletedProcess([], 0, stdout="0, GPU-aaaa, NVIDIA Odd, [N/A]\n", stderr="")
+        environment = {k: v for k, v in os.environ.items() if k != "CUDA_VISIBLE_DEVICES"}
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(setup.shutil, "disk_usage", return_value=type("Usage", (), {"free": 100 * 1024**3})()), \
+             patch.object(setup.shutil, "which", return_value="nvidia-smi"), \
+             patch.object(setup.subprocess, "run", return_value=listing), \
+             patch.dict(os.environ, environment, clear=True):
+            with self.assertRaisesRegex(setup.SetupError, "did not report memory"):
+                setup.install(ROOT, {"dataRoot": folder}, threading.Event(), lambda _: None)
+            self.assertEqual(json.loads(setup.state_path(Path(folder)).read_text())["status"], "failed")
+
+
+class LibraryTests(unittest.TestCase):
+    JOB = "d" * 32
+
+    def write_job(self, root, image_path, job_id=JOB):
+        setup.atomic_json(root / "jobs" / f"{job_id}.json", {"id": job_id, "status": "succeeded", "imagePath": image_path})
+
+    def image(self, root, job_id=JOB):
+        path = root / "artifacts" / job_id / "image.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"png")
+        return path
+
+    def test_relative_image_resolves_inside_artifacts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            image = self.image(root)
+            self.write_job(root, f"{self.JOB}/image.png")
+            listed = setup.library({"dataRoot": folder})["artifacts"]
+            self.assertEqual([Path(a["imagePath"]) for a in listed], [image.resolve()])
+
+    def test_traversal_and_foreign_paths_are_not_listed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "escape.png").write_bytes(b"png")
+            self.image(root)
+            self.write_job(root, f"{self.JOB}/../../escape.png")
+            self.write_job(root, str(root / "artifacts" / self.JOB / ".." / ".." / "escape.png"), "e" * 32)
+            self.write_job(root, f"{self.JOB}/image.png", "f" * 32)  # Another job's folder.
+            self.assertEqual(setup.library({"dataRoot": folder})["artifacts"], [])
+
+    def test_legacy_absolute_records_survive_a_moved_data_folder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            old, moved = Path(folder) / "old", Path(folder) / "moved"
+            self.image(old)
+            self.write_job(old, str(old / "artifacts" / self.JOB / "image.png"))
+            shutil.move(old, moved)
+            listed = setup.library({"dataRoot": str(moved)})["artifacts"]
+            self.assertEqual([Path(a["imagePath"]) for a in listed], [(moved / "artifacts" / self.JOB / "image.png").resolve()])
 
 
 if __name__ == "__main__":

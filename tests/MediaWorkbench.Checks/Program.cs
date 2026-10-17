@@ -1,5 +1,6 @@
 using MediaWorkbench.Core;
 using MediaWorkbench.Infrastructure;
+using MediaWorkbench_App.ViewModels;
 
 if (args.Length < 3) throw new ArgumentException("Checks require absolute Python path, scaffold root, and test output root; optional absolute ffprobe path.");
 string python = args[0], root = Path.GetFullPath(args[1]);
@@ -56,6 +57,35 @@ var plan = new InstallationPlanner().Plan(recipe);
 Check(plan.CanExecute && plan.Blockers.Length == 0, "Pinned experimental recipe permits local verification");
 var draftPlan = new InstallationPlanner().Plan(recipe with { Status = "draft" });
 Check(!draftPlan.CanExecute, "Draft recipe cannot become an executable installation");
+var vmStore = new SettingsStore(Path.Combine(output, "vm-settings"));
+string savedRoot = Path.Combine(output, "vm-data");
+vmStore.Save(new AppSettings(1, savedRoot, "image"));
+var workbench = new RecordingWorkbench();
+var vm = new MainViewModel(workbench, vmStore);
+Check(vm.DataRoot == savedRoot && vm.DataRootDraft == savedRoot, "View model loads the saved data folder as both active and draft");
+vm.ModelReady = true;
+vm.Images.Add(RecordingWorkbench.Image(savedRoot));
+vm.DataRootDraft = Path.Combine(output, "typed-but-unsaved");
+Check(vm.DataRoot == savedRoot && vm.ModelReady && vm.Images.Count == 1, "Typing a data folder neither applies it nor clears readiness and images");
+await vm.RefreshInstallationCommand.ExecuteAsync(null);
+await vm.InstallCommand.ExecuteAsync(null);
+await vm.GenerateCommand.ExecuteAsync(null);
+await vm.RefreshLibraryCommand.ExecuteAsync(null);
+Check(workbench.DataRoots.Count == 4 && workbench.DataRoots.All(r => r == savedRoot), "Status, install, generate, and library use the saved folder, not an unsaved draft");
+foreach (var rejected in new[] { "relative-folder", Path.GetPathRoot(output)! })
+{
+    vm.DataRootDraft = rejected;
+    vm.SaveSettingsCommand.Execute(null);
+}
+Check(vm.DataRoot == savedRoot && vmStore.Load().DataRoot == savedRoot && vm.ModelReady, "Rejected data folders leave the active folder and saved settings unchanged");
+string nextRoot = Path.Combine(output, "vm-data-next");
+vm.DataRootDraft = nextRoot;
+vm.SaveSettingsCommand.Execute(null);
+Check(vm.DataRoot == nextRoot && vm.DataRootDraft == nextRoot && vmStore.Load().DataRoot == nextRoot && !vm.ModelReady && vm.Images.Count == 0,
+    "Saving applies the draft and clears state that belonged to the previous folder");
+await vm.RefreshLibraryCommand.ExecuteAsync(null);
+Check(workbench.DataRoots[^1] == nextRoot, "Operations after saving use the newly saved folder");
+
 var job = new JobLifecycle();
 job.MoveTo(JobState.Preparing); job.MoveTo(JobState.Running); job.MoveTo(JobState.Finalizing); job.MoveTo(JobState.Succeeded);
 bool transitionRejected = false;

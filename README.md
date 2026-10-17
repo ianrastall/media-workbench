@@ -19,7 +19,7 @@ For image generation, this first profile requires an **NVIDIA GPU with at least 
 3. Setup downloads roughly 5 GiB plus dependencies and tests real inference. A model becomes ready only after the checks pass on your machine.
 4. Enter a prompt and select **Generate image**. Your PNG and its settings appear in **Library** and remain in your data folder.
 
-Cancel stops the owned worker operation. Retrying setup reuses completed downloads and the Hub cache; an incomplete bootstrap archive restarts. Changing data folders does not move existing models or images.
+Cancel stops the owned worker operation. Retrying setup reuses completed downloads and the Hub cache; an incomplete bootstrap archive restarts. A data folder typed in Settings takes effect only after **Save settings**. Changing data folders does not move existing models or images.
 
 ## What works now
 

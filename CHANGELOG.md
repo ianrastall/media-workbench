@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Settings edits a draft data folder; install, generation, model status, Library, and Open folder keep using the saved folder until **Save settings** succeeds, and typing no longer clears readiness or loaded images.
+- Generation no longer re-hashes the 2.55 GiB model each run. Full SHA-256 verification still runs at install / verify, which records each file's size and modification time; generation and status compare against those and require re-verification on any change.
+- Readiness is tied to an explicit adapter version plus the pinned profile, lock, manifest, and recipe (line-ending independent), not to the worker source files.
+- Setup and the inference child apply one VRAM limit, read from the recipe's `minimumVramMiB`, to the same GPU (`CUDA_DEVICE_ORDER=PCI_BUS_ID`, honouring `CUDA_VISIBLE_DEVICES`).
+- An unreadable nvidia-smi memory value such as `[N/A]` is reported as a setup failure with a clear message instead of invalid input.
+- New generation records store the image path relative to `artifacts/`; Library resolves paths before checking containment, rejects `..` escapes, and still lists older absolute-path records after the data folder moves.
+
+Existing ready installations need **Install / verify** once more because the readiness stamp changed.
+
 ## 0.2.0-alpha.1 — 2026-10-17
 
 - First SD 1.5 setup and prompt-to-image pipeline, with a private Python 3.12/CUDA runtime, exact package lock, pinned Hub commit, and selected safetensors files.

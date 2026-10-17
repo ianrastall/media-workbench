@@ -20,6 +20,13 @@ import zipfile
 PROFILE = "sd15-cu126-v1"
 RECIPE = "sd15-baseline"
 SETUP_ACTIVE = ["preparing", "runtime", "downloading", "verifying"]
+# Bump when this module or inference_worker.py changes what a verified installation means
+# (pipeline loading, precision, checks). Source edits alone no longer revoke readiness.
+ADAPTER_VERSION = 1
+STAMPED_FILES = ["profiles/sd15-cu126.json", "profiles/sd15-cu126.lock", "profiles/sd15-files.json",
+                 "recipes/sd15-baseline.json"]
+# Drivers report slightly less than nominal capacity (a 6 GB GTX 1660 Ti reports 6143.7 MiB to CUDA).
+VRAM_REPORTING_MARGIN_MIB = 128
 
 
 class SetupError(Exception):
@@ -100,11 +107,94 @@ def exclusive(root):
 
 
 def profile_stamp(app):
-    return hashlib.sha256(b"".join((app / "profiles" / p).read_bytes() for p in
-        ["sd15-cu126.json", "sd15-cu126.lock", "sd15-files.json"]) +
-        (app / "workers/python/inference_worker.py").read_bytes() +
-        (app / "workers/python/inference_setup.py").read_bytes() +
-        (app / "recipes/sd15-baseline.json").read_bytes()).hexdigest()
+    """Identity of a verified installation: adapter version plus the pinned profile, lock, manifest, and recipe."""
+    lines = [f"adapter={ADAPTER_VERSION}"]
+    for name in STAMPED_FILES:
+        content = (app / name).read_bytes().replace(b"\r\n", b"\n")  # Checkout line endings are not a recipe change.
+        lines.append(f"{name}={hashlib.sha256(content).hexdigest()}")
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
+def minimum_vram_mib(app):
+    value = json.loads((app / "recipes/sd15-baseline.json").read_text(encoding="utf-8"))["minimumVramMiB"]
+    if type(value) is not int or value <= 0:
+        raise SetupError("The recipe does not declare a valid minimumVramMiB.")
+    return value
+
+
+def meets_vram(total_mib, minimum_mib):
+    """Shared by setup (nvidia-smi) and the ML child (CUDA) so both apply the same limit."""
+    return total_mib + VRAM_REPORTING_MARGIN_MIB >= minimum_mib
+
+
+def select_gpu(listing, visible=None):
+    """Pick the nvidia-smi row for the device the ML child sees as cuda:0.
+
+    `listing` is `nvidia-smi --query-gpu=index,uuid,name,memory.total --format=csv,noheader,nounits`
+    output. The child runs with CUDA_DEVICE_ORDER=PCI_BUS_ID, matching nvidia-smi ordering, so its
+    device 0 is the first CUDA_VISIBLE_DEVICES entry, or index 0 when that is unset.
+    Returns (name, total MiB).
+    """
+    rows = []
+    for line in listing.splitlines():
+        if line.strip():
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) != 4:
+                raise SetupError("nvidia-smi returned an unrecognized GPU listing: " + line.strip()[:200])
+            rows.append(parts)
+    if not rows:
+        raise SetupError("nvidia-smi did not list any NVIDIA GPU. Check that the NVIDIA driver is installed.")
+    wanted = (visible or "").split(",")[0].strip() if visible is not None else "0"
+    if not wanted:
+        raise SetupError("CUDA_VISIBLE_DEVICES hides every GPU; clear it or select an NVIDIA GPU.")
+    match = next((row for row in rows if row[0] == wanted or row[1].startswith(wanted)), None)
+    if match is None:
+        raise SetupError(f"CUDA_VISIBLE_DEVICES selects GPU '{wanted[:80]}', which nvidia-smi did not list.")
+    index, _, name, memory = match
+    try:
+        total = float(memory)
+    except ValueError:
+        raise SetupError(f"The NVIDIA driver did not report memory for GPU {index} ({name}): it returned "
+                         f"'{memory[:40]}'. Update the driver, or select another GPU with CUDA_VISIBLE_DEVICES.") from None
+    return name, total
+
+
+def check_gpu(app):
+    minimum = minimum_vram_mib(app)
+    try:
+        gpu = subprocess.run([shutil.which("nvidia-smi"), "--query-gpu=index,uuid,name,memory.total",
+            "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SetupError("nvidia-smi could not be run; check the NVIDIA driver: " + str(exc)) from None
+    if gpu.returncode != 0:
+        raise SetupError("nvidia-smi failed; check the NVIDIA driver. " + (gpu.stderr or gpu.stdout).strip()[:300])
+    name, total = select_gpu(gpu.stdout, os.environ.get("CUDA_VISIBLE_DEVICES"))
+    if not meets_vram(total, minimum):
+        raise SetupError(f"{name} reports {total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
+    return name
+
+
+def file_stamp(path):
+    info = path.stat()
+    return {"size": info.st_size, "mtimeNs": info.st_mtime_ns}
+
+
+def files_unchanged(app, root, record):
+    """Cheap per-run check against the size/mtime recorded once full SHA-256 verification passed."""
+    stamps = record.get("files")
+    if not isinstance(stamps, dict):
+        return False
+    manifest = json.loads((app / "profiles/sd15-files.json").read_text())
+    model = owned(root, f"models/{RECIPE}")
+    for entry in manifest["files"]:
+        path = owned(model, entry["path"])
+        try:
+            if file_stamp(path) != stamps.get(entry["path"]):
+                return False
+        except OSError:
+            return False
+    return True
 
 
 def state_path(root):
@@ -170,9 +260,9 @@ def status(app, payload):
         record.update(status="needs_verification", message="The runtime recipe changed. Install / verify again.")
     if record.get("status") == "ready":
         required = owned(root, f"runtimes/{PROFILE}/python/python.exe")
-        manifest = json.loads((app / "profiles/sd15-files.json").read_text())
-        if not required.is_file() or any(not owned(root, f"models/{RECIPE}/" + e["path"]).is_file() for e in manifest["files"]):
-            record.update(status="needs_verification", message="Runtime or model files are missing. Install / verify again.")
+        if not required.is_file() or not files_unchanged(app, root, record):
+            record.update(status="needs_verification", message="Runtime or model files are missing or changed. Install / verify again.")
+    record.pop("files", None)  # Internal stamps; callers need status and message.
     return record
 
 
@@ -275,7 +365,8 @@ def inference(app, root, operation, payload, cancel, progress):
     environment = os.environ.copy()
     environment.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
         HF_HUB_DISABLE_IMPLICIT_TOKEN="1", HF_HOME=str(owned(root, "cache/huggingface")),
-        PYTHONUTF8="1", PYTHONIOENCODING="utf-8", TOKENIZERS_PARALLELISM="false")
+        PYTHONUTF8="1", PYTHONIOENCODING="utf-8", TOKENIZERS_PARALLELISM="false",
+        CUDA_DEVICE_ORDER="PCI_BUS_ID")  # cuda:0 is then the device check_gpu inspected.
     return run_child([python, "-I", "-u", app / "workers/python/inference_worker.py", "--root", app,
         "--data-root", root, "--operation", operation, "--payload", json.dumps(payload)],
         cancel, progress, environment, protocol=True,
@@ -283,15 +374,20 @@ def inference(app, root, operation, payload, cancel, progress):
 
 
 def verify_files(app, root, cancel, progress):
+    """Full SHA-256 verification; returns the size/mtime stamps that later runs compare against."""
     manifest = json.loads((app / "profiles/sd15-files.json").read_text())
     model = owned(root, f"models/{RECIPE}")
+    stamps = {}
     for i, entry in enumerate(manifest["files"]):
         check_cancel(cancel)
         path = owned(model, entry["path"])
         progress({"stage": "Verifying " + entry["path"], "completed": i,
                   "total": len(manifest["files"]), "unit": "files"})
-        if not path.is_file() or path.stat().st_size != entry["size"] or digest(path) != entry["sha256"]:
+        before = file_stamp(path) if path.is_file() else None
+        if not before or before["size"] != entry["size"] or digest(path) != entry["sha256"] or file_stamp(path) != before:
             raise SetupError("Model verification failed: " + entry["path"] + ". Install / verify again.")
+        stamps[entry["path"]] = before
+    return stamps
 
 
 def install(app, payload, cancel, progress):
@@ -312,10 +408,7 @@ def install(app, payload, cancel, progress):
                 raise SetupError("At least 20 GiB of free space is required for setup and its download cache.")
             if os.name != "nt" or not shutil.which("nvidia-smi"):
                 raise SetupError("This first inference profile requires Windows x64 and an NVIDIA CUDA GPU.")
-            gpu = subprocess.run([shutil.which("nvidia-smi"), "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
-            if gpu.returncode != 0 or not any(float(line.strip()) >= 5632 for line in gpu.stdout.splitlines() if line.strip()):
-                raise SetupError("Setup requires an NVIDIA GPU with at least 6 GB VRAM and a working driver.")
+            check_gpu(app)
             profile = json.loads((app / "profiles/sd15-cu126.json").read_text())
             bootstrap = owned(root, "bootstrap")
             runtime = owned(root, f"runtimes/{PROFILE}/python")
@@ -336,15 +429,15 @@ def install(app, payload, cancel, progress):
             stage("downloading", "Fetching pinned Hugging Face model files")
             inference(app, root, "download", {}, cancel, progress)
             stage("verifying", "Verifying all model checksums")
-            verify_files(app, root, cancel, progress)
+            stamps = verify_files(app, root, cancel, progress)
             stage("verifying", "Testing 512 × 512 inference on your GPU")
             evidence = inference(app, root, "verify", {}, cancel, progress)
             check_cancel(cancel)
             record.update(status="ready", message="Stable Diffusion 1.5 is ready on " + evidence["gpu"],
                           profileStamp=profile_stamp(app), verifiedUtc=datetime.now(timezone.utc).isoformat(),
-                          evidence=evidence)
+                          evidence=evidence, files=stamps)
             atomic_json(state_path(root), record)
-            return record
+            return {k: v for k, v in record.items() if k != "files"}
         except Exception as exc:
             record.update(status="cancelled" if isinstance(exc, Cancelled) else "failed", message=str(exc))
             atomic_json(state_path(root), record)
@@ -376,7 +469,8 @@ def generate(app, payload, cancel, progress):
         ready = json.loads(state_path(root).read_text()) if state_path(root).exists() else {}
         if ready.get("status") != "ready" or ready.get("profileStamp") != profile_stamp(app):
             raise SetupError("Install / verify Stable Diffusion 1.5 before generating.")
-        verify_files(app, root, cancel, progress)
+        if not files_unchanged(app, root, ready):
+            raise SetupError("Model files changed since they were verified. Install / verify again.")
         job_id = uuid.uuid4().hex
         manifest = json.loads((app / "profiles/sd15-files.json").read_text())
         record = dict(schemaVersion=1, id=job_id, status="running", settings=settings,
@@ -389,12 +483,37 @@ def generate(app, payload, cancel, progress):
             result = inference(app, root, "generate", dict(settings, jobId=job_id), cancel, progress)
             check_cancel(cancel)
             record.update(status="succeeded", completedUtc=datetime.now(timezone.utc).isoformat(), **result)
+            image = artifact_image(root, record)
+            if image is None:
+                raise SetupError("The inference child reported an image outside this job's artifact folder.")
             atomic_json(job, record)
-            return record
+            return dict(record, imagePath=str(image))
         except Exception as exc:
             record.update(status="cancelled" if isinstance(exc, Cancelled) else "failed", message=str(exc))
             atomic_json(job, record)
             raise
+
+
+def artifact_image(root, record):
+    """Resolve a job's image inside `artifacts/`, or None.
+
+    New records store `imagePath` relative to `artifacts/` (`<job id>/image.png`), so the data
+    folder can move. Records from 0.2.0-alpha.1 stored an absolute path; those are re-rooted
+    by their trailing `<job id>/<file>` so a moved data folder still lists them.
+    """
+    value = record.get("imagePath")
+    if not isinstance(value, str) or not value or not job_id_valid(record.get("id")):
+        return None
+    relative = Path(value)
+    if relative.is_absolute():
+        relative = Path(relative.parent.name, relative.name)
+    if relative.parts[:1] != (record["id"],):
+        return None
+    artifacts = owned(root, "artifacts").resolve()
+    image = (artifacts / relative).resolve()
+    if not image.is_relative_to(artifacts / record["id"]) or not image.is_file():
+        return None
+    return image
 
 
 def library(payload):
@@ -404,8 +523,8 @@ def library(payload):
     results = []
     for path in sorted(jobs.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:200]:
         record = read_record(path)
-        if record and record.get("status") == "succeeded" and isinstance(record.get("imagePath"), str):
-            image = Path(record["imagePath"])
-            if image.is_relative_to(root / "artifacts") and image.is_file():
-                results.append(record)
+        if record and record.get("status") == "succeeded":
+            image = artifact_image(root, record)
+            if image is not None:
+                results.append(dict(record, imagePath=str(image)))
     return {"artifacts": results, "recovered": recovered}

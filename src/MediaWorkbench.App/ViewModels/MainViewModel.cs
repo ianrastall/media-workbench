@@ -29,10 +29,11 @@ public partial class MainViewModel : ObservableObject
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
         GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
+        DataRootDraft = DataRoot;
         try
         {
             var saved = settings.Load();
-            DataRoot = saved.DataRoot;
+            DataRoot = DataRootDraft = saved.DataRoot;
             SearchQuery = saved.LastSearch;
         }
         catch (Exception ex) { Notice = $"Could not load settings: {ex.Message}"; }
@@ -48,7 +49,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string SearchQuery { get; set; } = "stable-diffusion";
     [ObservableProperty] public partial int TaskIndex { get; set; } = 1;
     public string TaskFilter => TaskIndex switch { 1 => "text-to-image", 2 => "image-to-image", 3 => "text-to-video", 4 => "image-to-video", _ => "" };
-    [ObservableProperty] public partial string DataRoot { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench", "Data");
+    /// <summary>The saved data folder every install, generation, and library operation uses. Changes only on load or save.</summary>
+    [ObservableProperty] public partial string DataRoot { get; private set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench", "Data");
+    /// <summary>The Settings text box; it has no effect until Save settings applies it.</summary>
+    [ObservableProperty] public partial string DataRootDraft { get; set; } = "";
     [ObservableProperty] public partial string NativeStatus { get; set; } = "Checking native core…";
     [ObservableProperty] public partial string WorkerStatus { get; set; } = "Checking worker…";
     [ObservableProperty] public partial string Status { get; set; } = "Ready";
@@ -236,14 +240,14 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            if (!Path.IsPathFullyQualified(DataRoot)) throw new InvalidDataException("Choose an absolute data folder.");
-            var value = new AppSettings(1, Path.GetFullPath(DataRoot), SearchQuery);
+            if (!Path.IsPathFullyQualified(DataRootDraft)) throw new InvalidDataException("Choose an absolute data folder.");
+            var value = new AppSettings(1, Path.GetFullPath(DataRootDraft), SearchQuery);
             _settings.Save(value);
-            DataRoot = value.DataRoot;
-            Notice = "Settings saved. Future model installs will use this data folder.";
+            DataRoot = DataRootDraft = value.DataRoot;
+            Notice = "Settings saved. Models, generation, and Library now use this data folder.";
             Record("Storage settings saved");
         }
-        catch (Exception ex) { Notice = $"Settings were not fully applied: {ex.Message}"; }
+        catch (Exception ex) { Notice = $"Settings were not saved; still using {DataRoot}. {ex.Message}"; }
     }
 
     private void OpenDataFolder()

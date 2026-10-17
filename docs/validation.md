@@ -35,3 +35,18 @@ Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB, driver 610.60), 17 O
 | Normal 10-step generation afterwards | Succeeded in 14.0 s; no worker processes left |
 
 The crash test kills the CLI host process; the GUI uses the same `PythonWorkerClient` ownership path, but a forced GUI kill during generation has not been separately timed.
+
+## Evaluation fixes: data folder, readiness, VRAM, Library paths
+
+Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
+
+| Check | Result |
+|---|---|
+| Rust tests/format/Clippy, 37 Python tests, 26 C# checks (6 new view-model checks) | Passed |
+| Debug solution build | Passed, zero warnings/errors |
+| GPU memory as reported to setup / inference child | nvidia-smi 6144 MiB, CUDA 6143.7 MiB; both pass the recipe's 6144 MiB limit |
+| Existing install after the readiness-stamp change | Reported needs verification; Install / verify returned ready, 4-step test 16.9 s |
+| 10-step generation afterwards | Succeeded with no model re-hash stage before inference; job stores `<id>/image.png` |
+| Library after that generation | Listed the new image and an older absolute-path record |
+
+The generation's 33.3 s inference time on this run is a single sample, not a performance comparison with the earlier 14.0 s run.

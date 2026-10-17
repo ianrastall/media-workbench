@@ -142,8 +142,8 @@
                     </StackPanel>
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsSettings, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                        <TextBox IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Text="{x:Bind ViewModel.DataRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Data folder" PlaceholderText="Choose an absolute folder path" />
-                        <TextBlock Text="Models, private inference environments, and media use this folder. Changing it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBox IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Text="{x:Bind ViewModel.DataRootDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Data folder" PlaceholderText="Choose an absolute folder path" />
+                        <TextBlock Text="Models, private inference environments, and media use this folder. A new path takes effect when you save settings; it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Button Content="Save settings" Command="{x:Bind ViewModel.SaveSettingsCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             <Button Content="Open folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
