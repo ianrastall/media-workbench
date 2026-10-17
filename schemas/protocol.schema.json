@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Media Workbench protocol 1 envelopes",
+  "oneOf": [
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["protocol", "id", "operation", "payload"],
+      "properties": {
+        "protocol": {"const": 1},
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
+        "operation": {"type": "string", "minLength": 1, "maxLength": 128},
+        "payload": {"type": "object"}
+      }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["protocol", "id", "kind", "payload"],
+      "properties": {
+        "protocol": {"const": 1},
+        "id": {"type": ["string", "null"]},
+        "kind": {"enum": ["hello", "progress", "result", "error"]},
+        "payload": {"type": "object"}
+      }
+    }
+  ]
+}

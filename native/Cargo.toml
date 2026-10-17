@@ -1,0 +1,19 @@
+[package]
+name = "media-workbench-core"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "media_workbench_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10.9"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"

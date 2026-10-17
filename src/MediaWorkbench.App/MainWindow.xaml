@@ -1,0 +1,6 @@
+<Window x:Class="MediaWorkbench_App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Media Workbench">
+    <Grid x:Name="Host" />
+</Window>

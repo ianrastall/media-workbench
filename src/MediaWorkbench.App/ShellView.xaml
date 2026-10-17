@@ -1,0 +1,143 @@
+<UserControl x:Class="MediaWorkbench_App.ShellView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:MediaWorkbench.Core"
+    xmlns:converters="using:MediaWorkbench_App.Converters">
+    <UserControl.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+    </UserControl.Resources>
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="52" /><RowDefinition Height="*" /><RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid x:Name="Header" Margin="20,0,160,0">
+            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE8B9;" FontSize="19" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                <TextBlock Text="Media Workbench" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+                <TextBlock Text="0.1.0 · Alpha" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+            </StackPanel>
+        </Grid>
+        <NavigationView x:Name="Navigation" Grid.Row="1" OpenPaneLength="220" PaneDisplayMode="Auto"
+            IsBackButtonVisible="Collapsed" SelectionChanged="Navigate" IsSettingsVisible="True">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Home" Tag="home" Icon="Home" IsSelected="True" />
+                <NavigationViewItem Content="Discover" Tag="discover" Icon="Find" />
+                <NavigationViewItem Content="Create" Tag="create" Icon="Edit" />
+                <NavigationViewItem Content="Library" Tag="library" Icon="Library" />
+                <NavigationViewItem Content="Tools" Tag="tools" Icon="Repair" />
+                <NavigationViewItemSeparator />
+                <NavigationViewItem Content="Diagnostics" Tag="diagnostics" Icon="Help" />
+            </NavigationView.MenuItems>
+            <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="20" Margin="32,24,32,32" MaxWidth="1180" HorizontalAlignment="Stretch">
+                    <TextBlock Text="{x:Bind ViewModel.PageTitle, Mode=OneWay}" Style="{ThemeResource TitleLargeTextBlockStyle}" TextWrapping="Wrap" />
+                    <TextBlock Text="{x:Bind ViewModel.PageDescription, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxWidth="920" HorizontalAlignment="Left" />
+                    <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Message="{x:Bind ViewModel.Notice, Mode=OneWay}" />
+
+                    <StackPanel Spacing="20" Visibility="{x:Bind ViewModel.IsHome, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Components" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.NativeStatus, Mode=OneWay}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{x:Bind ViewModel.WorkerStatus, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                    <Button Content="Check components" Command="{x:Bind ViewModel.DiagnosticsCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Your workspace" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.DataRoot, Mode=OneWay}" TextWrapping="Wrap" />
+                                    <TextBlock Text="Manage the data folder in Settings. Model files and media stay separate from application updates." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <Button Content="Open data folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="First model pipeline" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBlock Text="A Stable Diffusion 1.5 baseline is being prepared with a pinned runtime, hardware verification, and recoverable installation." TextWrapping="Wrap" />
+                        <Button Content="Preview installation plan" Command="{x:Bind ViewModel.PlanCommand}" />
+                        <TextBlock Text="{x:Bind ViewModel.PlanText, Mode=OneWay}" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsDiscover, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="180" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBox Text="{x:Bind ViewModel.SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Search Hugging Face" PlaceholderText="Model name or publisher" MaxLength="200" />
+                            <ComboBox Grid.Column="1" Header="Task" HorizontalAlignment="Stretch" SelectedIndex="{x:Bind ViewModel.TaskIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="All tasks" Tag="" />
+                                <ComboBoxItem Content="Text to image" Tag="text-to-image" />
+                                <ComboBoxItem Content="Image to image" Tag="image-to-image" />
+                                <ComboBoxItem Content="Text to video" Tag="text-to-video" />
+                                <ComboBoxItem Content="Image to video" Tag="image-to-video" />
+                            </ComboBox>
+                            <Button Grid.Column="2" Content="Search" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.SearchCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                        </Grid>
+                        <Grid ColumnSpacing="20">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="2*" /></Grid.ColumnDefinitions>
+                            <ListView ItemsSource="{x:Bind ViewModel.Models}" SelectedItem="{x:Bind ViewModel.SelectedModel, Mode=TwoWay}" SelectionMode="Single"
+                                MaxHeight="470" MinHeight="260" AutomationProperties.Name="Hugging Face search results">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="core:HubModel">
+                                        <StackPanel Spacing="5" Padding="8,12">
+                                            <TextBlock Text="{x:Bind Id}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Text="{x:Bind Stats}" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                            <StackPanel Grid.Column="1" Spacing="12">
+                                <TextBlock Text="Model details" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Load details" Command="{x:Bind ViewModel.DetailsCommand}" />
+                                    <Button Content="Open source" Command="{x:Bind ViewModel.OpenModelCommand}" />
+                                </StackPanel>
+                                <TextBox Text="{x:Bind ViewModel.DetailsText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="260" MaxHeight="380" AutomationProperties.Name="Selected model details" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+
+                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsSettings, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <TextBox Text="{x:Bind ViewModel.DataRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Data folder" PlaceholderText="Choose an absolute folder path" />
+                        <TextBlock Text="Models, future inference environments, and media will use this folder. Changing it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Save settings" Command="{x:Bind ViewModel.SaveSettingsCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                            <Button Content="Open folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
+                        </StackPanel>
+                        <TextBlock Text="Dark mode" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBlock Text="Media Workbench currently uses the dark Windows theme. No account credentials are stored in this alpha." TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsDiagnostics, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <Button Content="Run diagnostics" Command="{x:Bind ViewModel.DiagnosticsCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                        <TextBox Text="{x:Bind ViewModel.DiagnosticsText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="200" AutomationProperties.Name="Component diagnostics" />
+                    </StackPanel>
+
+                    <Border Padding="24" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        Visibility="{x:Bind ViewModel.IsPlanned, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="In development" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="This capability will be added after the first model installation and inference pipeline is verified. You can already browse models and inspect the components in Discover and Diagnostics." TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Session activity" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Activity}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{x:Bind}" TextWrapping="Wrap" Margin="0,3" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </NavigationView>
+        <Grid Grid.Row="2" Padding="24,10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" ColumnSpacing="16">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="18" Height="18" />
+            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Status, Mode=OneWay}" VerticalAlignment="Center" />
+            <Button Grid.Column="2" Content="Cancel" Command="{x:Bind ViewModel.CancelCommand}" />
+        </Grid>
+    </Grid>
+</UserControl>

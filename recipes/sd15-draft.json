@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "sd15-baseline",
+  "version": "0.1.0",
+  "displayName": "Stable Diffusion 1.5 — baseline candidate",
+  "status": "draft",
+  "source": {
+    "provider": "huggingface",
+    "repoId": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "revision": null
+  },
+  "adapterId": "diffusers.sd15",
+  "runtimeProfileId": null,
+  "operations": ["generate.image"],
+  "minimumVramMiB": 4096,
+  "notes": [
+    "Illustrative lower memory threshold, not measured compatibility evidence.",
+    "Resolve an immutable model revision and exact runtime lock before installation.",
+    "Benchmark precision, 512x512 generation, memory, and cancellation on the GTX 1660 Ti.",
+    "No generation or installation is implemented in the scaffold."
+  ]
+}

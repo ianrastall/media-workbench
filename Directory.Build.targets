@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <NativeCorePath>$(MSBuildThisFileDirectory)artifacts\native\release\media_workbench_core.dll</NativeCorePath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'MediaWorkbench.App' or '$(MSBuildProjectName)' == 'MediaWorkbench.Cli' or '$(MSBuildProjectName)' == 'MediaWorkbench.Checks'">
+    <Content Include="$(NativeCorePath)" Link="media_workbench_core.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

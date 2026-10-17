@@ -1,0 +1,37 @@
+using MediaWorkbench.Infrastructure;
+using MediaWorkbench_App.ViewModels;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Windowing;
+using System.Runtime.InteropServices;
+
+namespace MediaWorkbench_App;
+
+public sealed partial class MainWindow : Window
+{
+    public MainViewModel ViewModel { get; }
+
+    public MainWindow()
+    {
+        string stateRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench");
+        string python = Environment.GetEnvironmentVariable("MEDIA_WORKBENCH_PYTHON")
+            ?? Path.Combine(AppContext.BaseDirectory, "runtime", "python", "python.exe");
+        ViewModel = new(new WorkbenchService(AppContext.BaseDirectory, python), new SettingsStore(stateRoot));
+        InitializeComponent();
+        var shell = new ShellView(ViewModel);
+        Host.Children.Add(shell);
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(shell.TitleBarElement);
+        AppWindow.TitleBar.ButtonForegroundColor = Microsoft.UI.Colors.White;
+        AppWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
+        var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        double scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
+        int width = Math.Min((int)(1200 * scale), (int)(display.Width * .92));
+        int height = Math.Min((int)(820 * scale), (int)(display.Height * .92));
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(display.X + (display.Width - width) / 2, display.Y + (display.Height - height) / 2, width, height));
+        Closed += (_, _) => ViewModel.CancelActiveWork();
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr window);
+}

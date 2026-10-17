@@ -1,0 +1,316 @@
+//! Media Workbench native services. Public ABI uses caller-owned UTF-8 buffers.
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::{fs::File, io::Read, panic::catch_unwind, slice, str};
+
+const OK: i32 = 0;
+const INVALID: i32 = 1;
+const BUFFER_SMALL: i32 = 2;
+const IO_ERROR: i32 = 3;
+const INTERNAL: i32 = 4;
+const MAX_INPUT: usize = 1_048_576;
+
+fn valid_relative_path(value: &str) -> bool {
+    if value.is_empty() || value.contains([':', '\0', '\\']) || value.starts_with('/') {
+        return false;
+    }
+    value.split('/').all(|part| {
+        let stem = part.split('.').next().unwrap_or("").to_ascii_uppercase();
+        let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || (stem.len() == 4
+                && (stem.starts_with("COM") || stem.starts_with("LPT"))
+                && matches!(stem.as_bytes()[3], b'1'..=b'9'));
+        !part.is_empty()
+            && part != "."
+            && part != ".."
+            && !reserved
+            && !part.ends_with(['.', ' '])
+            && !part
+                .chars()
+                .any(|c| c.is_control() || "<>\"|?*".contains(c))
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Recipe {
+    schema_version: u32,
+    id: String,
+    status: String,
+    source: Source,
+    runtime_profile_id: Option<String>,
+}
+#[derive(Deserialize)]
+struct Source {
+    provider: String,
+    revision: Option<String>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Plan {
+    recipe_id: String,
+    can_execute: bool,
+    blockers: Vec<String>,
+    steps: Vec<Step>,
+}
+#[derive(Serialize)]
+struct Step {
+    id: &'static str,
+    description: &'static str,
+}
+
+fn make_plan(input: &[u8]) -> Result<Vec<u8>, i32> {
+    let recipe: Recipe = serde_json::from_slice(input).map_err(|_| INVALID)?;
+    if !valid_relative_path(&recipe.id) || recipe.id.contains('/') {
+        return Err(INVALID);
+    }
+    let mut blockers = Vec::new();
+    if recipe.schema_version != 1 {
+        blockers.push("Unsupported recipe schema.".into());
+    }
+    if recipe.status != "verified" {
+        blockers.push("Recipe has no approved verification evidence.".into());
+    }
+    if recipe.source.provider != "huggingface" {
+        blockers.push("Source provider is unsupported.".into());
+    }
+    let pinned = recipe
+        .source
+        .revision
+        .as_ref()
+        .is_some_and(|r| r.len() == 40 && r.bytes().all(|c| c.is_ascii_hexdigit()));
+    if !pinned {
+        blockers.push("An immutable model commit revision must be selected.".into());
+    }
+    if recipe
+        .runtime_profile_id
+        .as_ref()
+        .is_none_or(|p| p.trim().is_empty())
+    {
+        blockers.push("A tested, locked inference runtime profile must be selected.".into());
+    }
+    blockers.push("Model installation is scheduled for the next milestone.".into());
+    let plan = Plan {
+        recipe_id: recipe.id,
+        can_execute: false,
+        blockers,
+        steps: vec![
+            Step {
+                id: "preflight",
+                description: "Validate storage, access, recipe, and hardware evidence",
+            },
+            Step {
+                id: "runtime",
+                description: "Provision the exact versioned inference runtime",
+            },
+            Step {
+                id: "download",
+                description: "Fetch selected files from the pinned model revision",
+            },
+            Step {
+                id: "verify",
+                description: "Verify files, imports, GPU execution, and model output",
+            },
+            Step {
+                id: "commit",
+                description: "Record ready state only after verification succeeds",
+            },
+        ],
+    };
+    serde_json::to_vec(&plan).map_err(|_| INTERNAL)
+}
+
+unsafe fn input_bytes<'a>(input: *const u8, length: usize) -> Result<&'a [u8], i32> {
+    if input.is_null() || length == 0 || length > MAX_INPUT {
+        return Err(INVALID);
+    }
+    // SAFETY: caller supplies readable memory for the declared length, per the C contract.
+    Ok(unsafe { slice::from_raw_parts(input, length) })
+}
+
+unsafe fn copy_output(bytes: &[u8], output: *mut u8, capacity: usize, required: *mut usize) -> i32 {
+    if required.is_null() {
+        return INVALID;
+    }
+    // SAFETY: required is a writable size_t per the C contract.
+    unsafe {
+        *required = bytes.len();
+    }
+    if capacity < bytes.len() || output.is_null() {
+        return BUFFER_SMALL;
+    }
+    // SAFETY: output points to capacity writable bytes, and does not overlap bytes.
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len());
+    }
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mw_abi_version() -> u32 {
+    1
+}
+
+/// # Safety
+/// `input` must reference `length` readable bytes for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_validate_relative_path(input: *const u8, length: usize) -> i32 {
+    catch_unwind(|| {
+        // SAFETY: inherited from the caller's contract.
+        let bytes = match unsafe { input_bytes(input, length) } {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        match str::from_utf8(bytes) {
+            Ok(v) if valid_relative_path(v) => OK,
+            _ => INVALID,
+        }
+    })
+    .unwrap_or(INTERNAL)
+}
+
+/// # Safety
+/// Valid readable input and writable output/required pointers are required as in the header.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_plan_installation(
+    input: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        // SAFETY: inherited from the caller's contract.
+        let bytes = match unsafe { input_bytes(input, length) } {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let result = match make_plan(bytes) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        // SAFETY: inherited from the caller's contract; result remains alive during copying.
+        unsafe { copy_output(&result, output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
+/// # Safety
+/// Path is UTF-8 readable memory; output and required satisfy the header's buffer contract.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_sha256_file(
+    input: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: required is writable according to the caller's contract.
+        unsafe {
+            *required = 64;
+        }
+        if output.is_null() || capacity < 64 {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: inherited from the caller's contract.
+        let bytes = match unsafe { input_bytes(input, length) } {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let path = match str::from_utf8(bytes) {
+            Ok(v) if !v.contains('\0') => v,
+            _ => return INVALID,
+        };
+        let mut file = match File::open(path) {
+            Ok(v) => v,
+            Err(_) => return IO_ERROR,
+        };
+        let mut digest = Sha256::new();
+        let mut chunk = [0u8; 65536];
+        loop {
+            match file.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => digest.update(&chunk[..n]),
+                Err(_) => return IO_ERROR,
+            }
+        }
+        let hash = format!("{:x}", digest.finalize());
+        // SAFETY: inherited from the caller's contract.
+        unsafe { copy_output(hash.as_bytes(), output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn safe_model_paths() {
+        for p in [
+            "unet/diffusion_pytorch_model.safetensors",
+            "模型/config.json",
+        ] {
+            assert!(valid_relative_path(p));
+        }
+    }
+    #[test]
+    fn rejects_windows_escapes_and_devices() {
+        for p in [
+            "../outside",
+            "/root",
+            "C:/root",
+            "a\\b",
+            "CON.txt",
+            "a/NUL",
+            "a/COM1.txt",
+            "a//b",
+            "a/.",
+            "a/last.",
+            "a/b ",
+            "x:y",
+        ] {
+            assert!(!valid_relative_path(p), "{p}");
+        }
+    }
+    #[test]
+    fn draft_recipe_stays_blocked() {
+        let json = br#"{"schemaVersion":1,"id":"sd15","status":"draft","source":{"provider":"huggingface","revision":null},"runtimeProfileId":null}"#;
+        let result: serde_json::Value = serde_json::from_slice(&make_plan(json).unwrap()).unwrap();
+        assert_eq!(result["canExecute"], false);
+        assert!(result["blockers"].as_array().unwrap().len() >= 4);
+    }
+    #[test]
+    fn abi_reports_required_size_and_contains_bad_input() {
+        let mut size = 0;
+        let input = b"{}";
+        // SAFETY: all pointers refer to valid local storage or an allowed null output.
+        unsafe {
+            assert_eq!(mw_validate_relative_path(std::ptr::null(), 1), INVALID);
+            assert_eq!(
+                mw_plan_installation(
+                    input.as_ptr(),
+                    input.len(),
+                    std::ptr::null_mut(),
+                    0,
+                    &mut size
+                ),
+                INVALID
+            );
+            assert_eq!(
+                mw_sha256_file(
+                    input.as_ptr(),
+                    input.len(),
+                    std::ptr::null_mut(),
+                    0,
+                    &mut size
+                ),
+                BUFFER_SMALL
+            );
+        }
+        assert_eq!(size, 64);
+    }
+}
