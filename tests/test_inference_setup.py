@@ -62,6 +62,17 @@ def fake_generation(app, data, operation, payload, cancel, progress, log_id=None
 
 
 class SetupTests(unittest.TestCase):
+    def test_empty_lock_excludes_a_second_owner_without_a_sentinel_write(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with setup.exclusive(root):
+                self.assertEqual((root / ".operation.lock").stat().st_size, 0)
+                with self.assertRaises(setup.SetupError):
+                    with setup.exclusive(root):
+                        self.fail("A second owner acquired the lock")
+            with setup.exclusive(root):
+                self.assertEqual((root / ".operation.lock").stat().st_size, 0)
+
     def test_invalid_generation_does_not_create_data(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "untouched"

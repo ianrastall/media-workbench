@@ -163,7 +163,8 @@ def listing(payload, cancel=None):
                     db.close()
                     path.unlink()
                     continue  # All versions of this file are disposable; JSON never changes.
-                initialize(db)
+                if version == 0:
+                    initialize(db)
                 synchronize(db, root, cancel)
                 running = [setup.owned(root, "jobs/" + row[0]) for row in db.execute("SELECT name FROM jobs WHERE status = 'running'")]
                 recovered = setup.recover_if_idle(root, running)

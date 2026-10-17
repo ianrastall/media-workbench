@@ -155,6 +155,24 @@ public partial class MainViewModel : ObservableObject
     public IRelayCommand<GeneratedImage?> UseImageSettingsCommand { get; }
     public IAsyncRelayCommand<ImageExportRequest?> ExportImageCommand { get; }
     public IRelayCommand<string?> OpenImageCommand { get; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(McpConfiguration))] public partial bool McpAllowSetup { get; set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(McpConfiguration))] public partial bool McpAllowInference { get; set; }
+    public string McpConfiguration
+    {
+        get
+        {
+            List<string> args = ["mcp", "--data-root", DataRoot];
+            if (McpAllowSetup) args.Add("--allow-setup");
+            if (McpAllowInference) args.Add("--allow-inference");
+            return System.Text.Json.JsonSerializer.Serialize(new
+            {
+                mcpServers = new Dictionary<string, object>
+                {
+                    ["media-workbench"] = new { command = Path.Combine(AppContext.BaseDirectory, "MediaWorkbench.Cli.exe"), args }
+                }
+            }, new System.Text.Json.JsonSerializerOptions(Wire.Json) { WriteIndented = true });
+        }
+    }
     private const int LibraryPageSize = 48;
     private int _libraryOffset;
     private LibraryQuery _libraryQuery = new();
@@ -330,6 +348,7 @@ public partial class MainViewModel : ObservableObject
         _libraryOffset = 0; LibraryHasMore = false; LibrarySearch = ""; LibraryKindIndex = 0; _libraryQuery = new();
         PreviousLibraryPageCommand.NotifyCanExecuteChanged();
         LibraryText = "Open Library to browse images in the new data folder.";
+        OnPropertyChanged(nameof(McpConfiguration));
         StorageItems.Clear(); StorageText = "Select Measure storage to see what the new data folder uses.";
     }
 

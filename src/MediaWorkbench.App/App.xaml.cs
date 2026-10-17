@@ -52,7 +52,7 @@ public partial class App : Application
                 string hash = MediaWorkbench.Infrastructure.NativeCore.Sha256File(Path.Combine(root, "workers", "python", "media_worker.py"));
                 string report = arguments[checkIndex + 1];
                 Directory.CreateDirectory(Path.GetDirectoryName(report)!);
-                string libraryCheck = Path.Combine(Path.GetDirectoryName(report)!, "library-smoke-" + Guid.NewGuid().ToString("N"));
+                string libraryCheck = Path.Combine(Path.GetTempPath(), "MediaWorkbench-library-smoke-" + Guid.NewGuid().ToString("N"));
                 try
                 {
                     var library = await service.GetLibraryAsync(libraryCheck, deadline.Token);

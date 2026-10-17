@@ -295,6 +295,16 @@
                             </Button>
                         </StackPanel>
                         <CheckBox Content="Check for updates when Media Workbench starts (needs internet; nothing installs without your click)" IsChecked="{x:Bind ViewModel.CheckForUpdates, Mode=TwoWay}" />
+                        <Expander Header="Connect an LLM client (MCP)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="A compatible desktop LLM client can use Media Workbench as a local tool. Add this configuration to that client's MCP settings. Your LLM account stays in the client; prompts, image settings, and tool results can be shared with its provider. This does not expose an Internet endpoint. Video is not supported yet." TextWrapping="Wrap" />
+                                <CheckBox Content="Include permission to install / verify (downloads several GiB and tests the GPU)" IsChecked="{x:Bind ViewModel.McpAllowSetup, Mode=TwoWay}" />
+                                <CheckBox Content="Include permission to generate / upscale with the verified model" IsChecked="{x:Bind ViewModel.McpAllowInference, Mode=TwoWay}" />
+                                <TextBlock Text="Both permissions are off by default. These choices only change the configuration below; restart the client's MCP server to apply a changed configuration. It always uses your saved data folder." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBox Text="{x:Bind ViewModel.McpConfiguration, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="260" FontFamily="Consolas" AutomationProperties.Name="MCP client configuration" />
+                                <Button Content="Copy MCP configuration" Click="CopyMcpConfiguration" />
+                            </StackPanel>
+                        </Expander>
                         <TextBlock Text="Dark mode" Style="{ThemeResource SubtitleTextBlockStyle}" />
                         <TextBlock Text="Media Workbench currently uses the dark Windows theme. No account credentials are stored in this alpha." TextWrapping="Wrap" />
                     </StackPanel>

@@ -130,3 +130,21 @@ Validated on the same Windows 11 machine, 17 October 2026. Rust owns the export 
 | C# direct native export and managed-folder refusal | Passed |
 
 The native save dialog's complete interactive overwrite/cancel workflow and clean-machine update installation still need validation. Automated tests cover the underlying native transaction and actual GUI resource initialization.
+
+## Local LLM tool access (0.2.0-alpha.6)
+
+Validated on the same Windows 11 machine, 17 October 2026.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1 -Artifacts <temporary-check-directory>` | Passed: 7 Rust tests plus format/Clippy, 85 Python tests, 98 C# checks |
+| Release publish and `scripts/test-publish.ps1` | Passed, zero build warnings/errors; native/worker, GUI load, and shipped MCP host/worker tests passed |
+| Real MCP stdio sessions with inspection-only and setup/inference capabilities | Initialized, advertised the granted tools, rejected guessed disabled tools and folder overrides, queried a real Library, rejected unverified inference |
+| Controlled active MCP operations | Overlap refused, cancellation reached the service, client EOF cancelled/joined work, generated settings/large seeds passed unchanged |
+| Invalid/oversized protocol input | Typed validation, parse errors with session reuse, bounded oversized-message closure passed |
+| Settings MCP configuration | Uses the saved folder and defaults to inspection; optional permissions included only when chosen |
+| Empty data-folder lock | Competing owners excluded without writing/flushing a sentinel byte |
+
+Local first-time filesystem/cache writes on the data drive intermittently exceeded the checks' timeouts. The full suite passed with fixture data on system temporary storage; Python tests already use temporary folders. Published self-tests now keep their disposable fixture data in the system temporary folder as well. No SQLite durability setting was relaxed. These observations do not establish the cause of the drive stalls.
+
+The protocol and service boundaries are tested; a complete provider-account/client workflow and successful GPU inference through an external MCP client remain to be exercised. Hosted authenticated remote access, video, clean-machine installation/update behavior, and additional GPU coverage are not claimed.

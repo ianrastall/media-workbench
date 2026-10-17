@@ -1,4 +1,4 @@
-# Development direction after 0.2.0-alpha.5
+# Development direction after 0.2.0-alpha.6
 
 This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 
@@ -14,9 +14,9 @@ Artifact export is now a complete Rust service, called directly by the desktop a
 
 ## LLM tool access
 
-Provide an opt-in Model Context Protocol interface so a compatible LLM client can inspect the installation, plan/setup the supported model, and submit image/upscale jobs. The LLM client handles its own provider account; the application should not collect or embed provider account tokens. An account alone does not guarantee that a particular client supports local tools.
+The local stdio MCP host is now implemented; see [LLM tools](llm-tools.md). Continue validating real clients and design authenticated remote access so a cloud-only LLM client can inspect the installation, plan/setup the supported model, and submit image/upscale jobs. The LLM client handles its own provider account; the application should not collect or embed provider account tokens. An account alone does not guarantee that a particular client supports local tools.
 
-Start with a local stdio host using the existing C# service and Windows Job Object ownership. Require an explicit data folder, default to inspection tools, and grant setup downloads and GPU generation only through launch-time capabilities the model cannot enable for itself. Keep model IDs/runtime profiles constrained to the verified bundled recipes. Reuse the normal native plan and inference/readiness gates, bounded JSON messages, cancellation, and durable records. Tool outputs must describe actual installed/verified state and explicitly report that video is unsupported.
+The implemented stdio host uses the existing C# service and Windows Job Object ownership. Require an explicit data folder, default to inspection tools, and grant setup downloads and GPU generation only through launch-time capabilities the model cannot enable for itself. Keep model IDs/runtime profiles constrained to the verified bundled recipes. Reuse the normal native plan and inference/readiness gates, bounded JSON messages, cancellation, and durable records. Tool outputs must describe actual installed/verified state and explicitly report that video is unsupported.
 
 A cloud-only client needs an authenticated remote transport or a trusted local connector. Do not equate a local stdio server with an Internet-accessible endpoint. A later remote service needs scoped authorization, authenticated sessions, origin checks, TLS, auditing, and durable long-running job handles; it must not expose arbitrary shell execution, provider credentials, or unrestricted file access. See the official [MCP transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) and [tool protocol](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
 

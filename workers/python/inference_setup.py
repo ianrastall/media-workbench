@@ -96,9 +96,9 @@ def owned(root, relative):
 def exclusive(root):
     path = owned(root, ".operation.lock")
     with path.open("a+b") as stream:
-        if os.fstat(stream.fileno()).st_size == 0:
-            stream.write(b"0")
-            stream.flush()
+        # Windows permits byte-range locks beyond EOF; flock needs no file content either.
+        # No sentinel write/flush before acquiring the lock: concurrent first owners must
+        # contend on the lock itself, without racing a write or waiting for disk writeback.
         stream.seek(0)
         try:
             if os.name == "nt":

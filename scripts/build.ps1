@@ -16,6 +16,12 @@ try {
         $taskPublishRoot = Join-Path $taskRoot 'artifacts/publish/win-x64'
         dotnet publish src/MediaWorkbench.App/MediaWorkbench.App.csproj -c Release -r win-x64 --self-contained true --artifacts-path artifacts/dotnet -o $taskPublishRoot
         if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+        # Console MCP host shares the application's self-contained .NET runtime and services.
+        # Publish it separately, then merge the payload; this adds no system .NET dependency.
+        $taskMcpRoot = Join-Path $taskRoot 'artifacts/publish/mcp-win-x64'
+        dotnet publish src/MediaWorkbench.Cli/MediaWorkbench.Cli.csproj -c Release -r win-x64 --self-contained true --artifacts-path artifacts/dotnet -o $taskMcpRoot
+        if ($LASTEXITCODE -ne 0) { throw 'MCP host publish failed.' }
+        Get-ChildItem -LiteralPath $taskMcpRoot -File | Copy-Item -Destination $taskPublishRoot -Force
         & (Join-Path $PSScriptRoot 'test-publish.ps1') -ApplicationDirectory $taskPublishRoot -SkipUI
         Write-Output "Published application: $taskPublishRoot"
         if ($Installer) {

@@ -3,4 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/MediaWorkbench.Presentation/MediaWorkbench.Presentation.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MediaWorkbench.Cli/MediaWorkbench.Cli.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
 </Project>

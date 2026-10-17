@@ -2,6 +2,41 @@ using System.Text.Json;
 using MediaWorkbench.Core;
 using MediaWorkbench.Infrastructure;
 
+if (args.FirstOrDefault() == "mcp")
+{
+    try
+    {
+        string applicationRoot = AppContext.BaseDirectory;
+        string? dataFolder = null;
+        bool setup = false, inference = false;
+        for (int index = 1; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--root" when index + 1 < args.Length: applicationRoot = Path.GetFullPath(args[++index]); break;
+                case "--data-root" when index + 1 < args.Length: dataFolder = args[++index]; break;
+                case "--allow-setup": setup = true; break;
+                case "--allow-inference": inference = true; break;
+                default: throw new ArgumentException("Unknown or incomplete MCP option: " + args[index]);
+            }
+        }
+        if (dataFolder is null || !Path.IsPathFullyQualified(dataFolder)) throw new ArgumentException("MCP requires --data-root with an explicit absolute folder.");
+        dataFolder = Path.GetFullPath(dataFolder);
+        if (dataFolder.TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetPathRoot(dataFolder)!.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Choose a data folder inside a drive, rather than the drive root.");
+        if (!Directory.Exists(Path.Combine(applicationRoot, "recipes"))) throw new ArgumentException("The MCP application root must contain recipes.");
+        Console.InputEncoding = new System.Text.UTF8Encoding(false);
+        Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+        using var shutdown = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
+        var service = new WorkbenchService(applicationRoot, Path.Combine(applicationRoot, "runtime", "python", "python.exe"));
+        await new McpServer(service, dataFolder, setup, inference).RunAsync(Console.OpenStandardInput(), Console.Out, shutdown.Token);
+        return 0;
+    }
+    catch (OperationCanceledException) { return 0; }
+    catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 2; }
+}
+
 if (args.Length < 3)
 {
     Console.WriteLine("Usage: MediaWorkbench.Cli <absolute-python.exe> <application-root> health|catalog|demo|plan|install|status|generate|library|storage [absolute-data-directory] [prompt] [steps]");

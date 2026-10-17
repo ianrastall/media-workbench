@@ -36,6 +36,13 @@ public sealed partial class ShellView : UserControl
     private void RetryJob(object sender, RoutedEventArgs args) => ViewModel.RetryJobCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void UseImageSettings(object sender, RoutedEventArgs args) => ViewModel.UseImageSettingsCommand.Execute((sender as FrameworkElement)?.Tag as GeneratedImage);
     private void OpenLibraryImage(object sender, RoutedEventArgs args) => ViewModel.OpenImageCommand.Execute((sender as FrameworkElement)?.Tag as string);
+    private void CopyMcpConfiguration(object sender, RoutedEventArgs args)
+    {
+        var content = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        content.SetText(ViewModel.McpConfiguration);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(content);
+        ViewModel.Notice = "MCP configuration copied. Add it to a compatible client's local server settings.";
+    }
     private bool _savingImage;
     private async void SaveImageCopy(object sender, RoutedEventArgs args)
     {

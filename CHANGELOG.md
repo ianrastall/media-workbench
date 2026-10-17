@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.2.0-alpha.6 — 2026-10-17
+
+- LLM tool access: an opt-in local MCP stdio host lets compatible desktop LLM clients inspect model readiness/storage/Library, read native plans, and search public Hub metadata. Settings → **Connect an LLM client (MCP)** generates and copies the client configuration for the saved data folder.
+- Separate launch-time permissions enable SD 1.5/upscaler install/verify and verified image generation/upscaling. The model cannot enable its own permissions, change the selected folder, execute arbitrary commands, or install arbitrary models. Image-to-image/upscaling inputs come from completed Library jobs. All normal readiness, cancellation, process ownership, and durable-job checks still apply.
+- The installer bundles the self-contained console host; the client handles its own LLM account. This first transport is local stdio; authenticated Internet access and video are still planned.
+- Published-payload checks exercise the shipped MCP host, its default permissions, and a real bundled worker session.
+- Data-folder locks no longer write/flush a sentinel byte before attempting the lock. Empty-file byte-range locking keeps the same owner exclusion while avoiding unnecessary writes and a first-owner initialization race.
+
 ## 0.2.0-alpha.5 — 2026-10-17
 
 - **Save a copy…** on a Library image or the latest Create/Tools result opens a Windows save picker and exports the original PNG to your chosen folder. The copy must match its recorded SHA-256 before it replaces the destination; failed or cancelled copies keep an existing destination intact. Copies go outside the managed data folder so originals and job records cannot be overwritten.

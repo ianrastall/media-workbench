@@ -14,7 +14,7 @@ void Check(bool condition, string message)
     checks++;
 }
 
-using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 await using (var client = await PythonWorkerClient.StartAsync(python, root, deadline.Token))
 {
     Check(client.Handshake.Protocol == 1 && client.Handshake.Kind == "hello", "C# validates real Python handshake");
@@ -69,6 +69,13 @@ vm.ModelReady = true;
 vm.Images.Add(RecordingWorkbench.Image(savedRoot));
 vm.DataRootDraft = Path.Combine(output, "typed-but-unsaved");
 Check(vm.DataRoot == savedRoot && vm.ModelReady && vm.Images.Count == 1, "Typing a data folder neither applies it nor clears readiness and images");
+using (var configuration = System.Text.Json.JsonDocument.Parse(vm.McpConfiguration))
+{
+    var configurationArgs = configuration.RootElement.GetProperty("mcpServers").GetProperty("media-workbench").GetProperty("args").EnumerateArray().Select(arg => arg.GetString()).ToArray();
+    Check(configurationArgs.SequenceEqual(["mcp", "--data-root", savedRoot]), "MCP configuration uses the saved folder and defaults to inspection only");
+}
+vm.McpAllowSetup = vm.McpAllowInference = true;
+Check(vm.McpConfiguration.Contains("--allow-setup") && vm.McpConfiguration.Contains("--allow-inference"), "MCP configuration includes permissions only when chosen");
 await vm.RefreshInstallationCommand.ExecuteAsync(null);
 await vm.InstallCommand.ExecuteAsync(null);
 await vm.GenerateCommand.ExecuteAsync(null);
@@ -296,4 +303,6 @@ if (args.Length > 3)
     var version = await NativeToolProbe.FfprobeVersionAsync(args[3], deadline.Token);
     Check(version.StartsWith("ffprobe version", StringComparison.Ordinal), "Read-only native ffprobe adapter invokes a real executable");
 }
-Console.WriteLine($"All {checks} C# checks passed. Test artifacts: {output}");
+using var mcpDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+await McpChecks.RunAsync(Check, root, output, mcpDeadline.Token);
+Console.WriteLine($"All {checks} C# checks including MCP passed. Test artifacts: {output}");

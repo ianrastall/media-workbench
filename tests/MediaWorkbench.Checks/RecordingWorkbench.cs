@@ -8,7 +8,14 @@ sealed class RecordingWorkbench : IWorkbenchService
     public Task<IReadOnlyList<HubModel>> SearchAsync(string query, string task, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<HubModel>>([]);
     public Task<ModelDetails> GetDetailsAsync(string repoId, CancellationToken cancellationToken) => throw new NotSupportedException();
-    public Task<string> GetHealthAsync(CancellationToken cancellationToken) => Task.FromResult("");
+    public Task? HealthGate { get; set; }
+    public TaskCompletionSource? HealthStarted { get; set; }
+    public async Task<string> GetHealthAsync(CancellationToken cancellationToken)
+    {
+        HealthStarted?.TrySetResult();
+        if (HealthGate is { } gate) await gate.WaitAsync(cancellationToken);
+        return "";
+    }
     public InstallationPlan GetBaselinePlan() => throw new NotSupportedException();
     public Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken) =>
         Record(dataRoot, new InstallationState("ready", "Ready"));
