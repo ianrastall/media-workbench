@@ -1,6 +1,6 @@
 # Third-party components
 
-Media Workbench's application license has not yet been selected. Third-party components retain their upstream licenses.
+Media Workbench itself is licensed under the MIT License (see `LICENSE`). Third-party components retain their upstream licenses.
 
 ## Runtime components
 

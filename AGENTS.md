@@ -7,7 +7,7 @@
 - Never label a model installed or verified until its files, runtime, and inference checks succeed.
 - Run `scripts/check.ps1` for relevant Rust, Python, and C# checks; `scripts/build.ps1` builds the desktop application.
 - Update README and docs/current-status.md to describe actual implemented behavior.
-- No application license has been selected yet; preserve upstream notices.
+- The application is MIT-licensed (`LICENSE`); preserve upstream notices for third-party components and models.
 
 ## Git and releases
 

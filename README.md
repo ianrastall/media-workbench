@@ -83,4 +83,4 @@ Optional network smoke check:
 
 ## License
 
-An application license has not yet been selected. Public visibility alone does not grant an open-source license. Third-party components retain their own licenses; notices are preserved in `licenses/`, the Windows App SDK notice, and the bundled Python distribution.
+Media Workbench is released under the [MIT License](LICENSE). Third-party components and models retain their own licenses (Stable Diffusion 1.5 uses CreativeML Open RAIL-M); notices are preserved in `licenses/`, the Windows App SDK notice, and the bundled Python distribution.
