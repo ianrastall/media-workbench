@@ -35,6 +35,33 @@ public sealed partial class ShellView : UserControl
     }
     private void RetryJob(object sender, RoutedEventArgs args) => ViewModel.RetryJobCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void UseImageSettings(object sender, RoutedEventArgs args) => ViewModel.UseImageSettingsCommand.Execute((sender as FrameworkElement)?.Tag as GeneratedImage);
+    private void OpenLibraryImage(object sender, RoutedEventArgs args) => ViewModel.OpenImageCommand.Execute((sender as FrameworkElement)?.Tag as string);
+    private bool _savingImage;
+    private async void SaveImageCopy(object sender, RoutedEventArgs args)
+    {
+        if (_savingImage || ViewModel.IsBusy || (sender as FrameworkElement)?.Tag is not GeneratedImage image) return;
+        _savingImage = true;
+        try
+        {
+            // The App SDK picker returns a path without creating/truncating a file.
+            // This lets the worker validate the destination and checksum before committing anything.
+            var picker = new Microsoft.Windows.Storage.Pickers.FileSavePicker(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(WindowHandle))
+            {
+                SuggestedStartLocation = Microsoft.Windows.Storage.Pickers.PickerLocationId.PicturesLibrary,
+                SuggestedFileName = "MediaWorkbench-" + image.Id,
+                DefaultFileExtension = ".png",
+                ShowOverwritePrompt = true
+            };
+            picker.FileTypeChoices.Add("PNG image", new List<string> { ".png" });
+            if (await picker.PickSaveFileAsync() is { } file)
+            {
+                var request = new ImageExportRequest(image.Id, file.Path);
+                if (ViewModel.ExportImageCommand.CanExecute(request)) await ViewModel.ExportImageCommand.ExecuteAsync(request);
+            }
+        }
+        catch (Exception ex) { ViewModel.Notice = "The copy could not be saved: " + ex.Message; }
+        finally { _savingImage = false; }
+    }
     private void SearchLibraryOnEnter(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
     {
         if (args.Key == Windows.System.VirtualKey.Enter && ViewModel.RefreshLibraryCommand.CanExecute(null))

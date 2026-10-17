@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using MediaWorkbench.Core;
@@ -17,6 +18,56 @@ public static unsafe partial class NativeCore
     private static partial int Plan(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
     [LibraryImport(Library, EntryPoint = "mw_sha256_file")]
     private static partial int Hash(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
+    [LibraryImport(Library, EntryPoint = "mw_export_artifact")]
+    private static partial int Export(byte* input, nuint length,
+        delegate* unmanaged[Cdecl]<ulong, ulong, nint, int> progress, nint context,
+        byte* output, nuint capacity, out nuint required);
+
+    private sealed class ExportState(IProgress<OperationProgress> progress, CancellationToken cancellation)
+    {
+        public IProgress<OperationProgress> Progress { get; } = progress;
+        public CancellationToken Cancellation { get; } = cancellation;
+        public Exception? Failure { get; set; }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int OnExportProgress(ulong completed, ulong total, nint context)
+    {
+        var state = (ExportState)GCHandle.FromIntPtr(context).Target!;
+        try
+        {
+            if (state.Cancellation.IsCancellationRequested) return 1;
+            state.Progress.Report(new("Saving a copy", (long)completed, (long)total, "bytes"));
+            return state.Cancellation.IsCancellationRequested ? 1 : 0;
+        }
+        catch (Exception ex) { state.Failure = ex; return 1; } // Never unwind through Rust/C.
+    }
+
+    /// <summary>Rust owns the whole artifact export transaction; no Python or inference runtime is needed.</summary>
+    public static string ExportArtifact(string dataRoot, ImageExportRequest request, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { dataRoot, request.JobId, request.Destination }, Wire.Json);
+        var output = new byte[64];
+        var state = new ExportState(progress, cancellationToken);
+        var handle = GCHandle.Alloc(state);
+        try
+        {
+            fixed (byte* pointer = input)
+            fixed (byte* result = output)
+            {
+                int code = Export(pointer, (nuint)input.Length, &OnExportProgress, GCHandle.ToIntPtr(handle), result, 64, out nuint written);
+                if (state.Failure is { } failure) throw new IOException("Could not report export progress.", failure);
+                if (code == 5) throw new OperationCanceledException("Saving the copy was cancelled; the destination was kept.", cancellationToken);
+                if (code == 6) throw new InvalidDataException("This image changed since it was generated. The copy was not saved; the destination was kept.");
+                if (code == 1) throw new InvalidDataException("Choose a completed Library image and a PNG destination outside the managed data folder. Its job record must be intact.");
+                if (code != 0 || written != 64) throw new IOException($"The native export service could not save the copy ({code}). Check the original and destination folder access. The destination was kept.");
+            }
+            return Path.GetFullPath(request.Destination);
+        }
+        finally { handle.Free(); }
+    }
 
     public static uint VerifyAbi()
     {

@@ -2,14 +2,14 @@
 
 The Windows shell uses C# 14 / .NET 10. Native internals are implemented in Rust 2024 edition and exported as a C ABI. The canonical declarations are in `native/include/media_workbench.h`.
 
-The current core implements installation planning, Windows-aware lexical validation for relative artifact paths, and streaming SHA-256 file hashing. Python workers own public Hub discovery and will own inference-library integration. C# owns the UI, presentation state, worker coordination, and Windows integration.
+The current core implements installation planning, Windows-aware lexical validation for relative artifact paths, streaming SHA-256 file hashing, and complete verified artifact export (job record parsing, filesystem containment, cancellation, streamed copying/hashing, and atomic destination replacement). Python workers own public Hub discovery and will own inference-library integration. C# owns the UI, presentation state, worker coordination, and Windows integration.
 
 ## Ownership and errors
 
 - UTF-8 strings have explicit byte lengths and no terminator.
 - Callers own every input/output buffer; Rust does not return heap pointers.
 - `mw_abi_version()` must equal 1 before other services are used.
-- Status 0 is success, 1 invalid input, 2 insufficient output capacity, 3 file I/O failure, 4 a contained internal panic.
+- Status 0 is success, 1 invalid input, 2 insufficient output capacity, 3 file I/O failure, 4 a contained internal panic, 5 cancellation, and 6 checksum mismatch.
 - JSON planning and hashing report their required byte count through `size_t *required`.
 - Planning supports a size-query call with null output and zero capacity.
 - SHA-256 output is always 64 ASCII hex bytes; querying this size does not open the file.
@@ -25,6 +25,14 @@ Relative paths use `/`. Absolute paths, drive prefixes, `..`, empty components, 
 ## Installation planning
 
 The recipe shape follows schema 1. The core blocks unsupported schemas/providers, draft recipes, missing immutable revisions, and missing runtime profiles. Pinned experimental recipes may run installation and local verification; `canExecute` authorizes that workflow rather than certifying an installed model. Only successful file/runtime/inference checks can produce a ready installation record. Discovery is not an installation compatibility claim.
+
+## Verified artifact export
+
+`mw_export_artifact` accepts bounded UTF-8 JSON with `dataRoot`, `jobId`, and `destination`. Rust reads the completed job record, verifies its identity/status/checksum declaration, resolves its image inside that job's artifact folder (including re-rooting legacy absolute records), rejects managed links/reparse points, and requires a PNG destination outside the resolved data folder. It creates an exclusive temporary file on the destination volume, streams SHA-256 while copying, syncs the file, and atomically replaces the destination only when the recorded checksum matches and cancellation has not been requested. Failed/cancelled exports preserve the destination and remove their temporary file.
+
+The output is 64 lowercase ASCII hash bytes. A null/short output buffer returns status 2 and `required=64` before any filesystem work; querying a mutation's buffer size must never execute it. The optional synchronous `mw_export_progress` callback receives byte counts and a caller-owned context. Returning nonzero cancels before commit. Callbacks must contain exceptions and remain valid until the native call returns; Rust retains no pointers. Status 5 reports cancellation, 6 a changed image/checksum mismatch.
+
+The GUI calls this native service directly through `NativeCore.cs` on a background thread, with a pinned callback context and a cancellation token. No Python interpreter is needed for desktop export. `artifact_export.py` is a thin ctypes adapter for worker clients and friendly diagnostics; its preflight cannot replace Rust's own checks. Real C# and Python boundary tests cover the mutation and buffer-size/cancellation contracts.
 
 ## Future additions
 

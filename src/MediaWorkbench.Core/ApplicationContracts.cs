@@ -55,6 +55,7 @@ public sealed record JobSummary(string Id, string Status, string Message, string
 public sealed record LibrarySnapshot(IReadOnlyList<GeneratedImage> Images, int Recovered, IReadOnlyList<JobSummary> Problems,
     int Total = 0, int Offset = 0, bool HasMore = false);
 public sealed record LibraryQuery(string Query = "", string Kind = "all", int Offset = 0, int Limit = 48);
+public sealed record ImageExportRequest(string JobId, string Destination);
 /// <summary>One part of the data folder; clearable parts are reproducible and can be removed from the app.</summary>
 public sealed record StorageItem(string Id, string Label, long Bytes, long Files, bool Clearable, string Note)
 {
@@ -91,6 +92,8 @@ public interface IWorkbenchService
     Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null);
+    /// <summary>Copies a completed image outside the data folder after verifying its recorded checksum.</summary>
+    Task<string> ExportImageAsync(string dataRoot, ImageExportRequest request, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     /// <summary>Enlarges a picture 2× or 4× with the verified upscaler; the result is a Library image.</summary>
     Task<GeneratedImage> UpscaleAsync(string dataRoot, string sourceImage, int scale, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken);

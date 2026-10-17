@@ -170,6 +170,16 @@ await inFlight;
 workbench.GenerationGate = null;
 Check(workbench.LibraryQueries.Count == requestsBeforeCompletion + 1 && workbench.LibraryQueries[^1] == new LibraryQuery("matching only", "upscale", 0, 48),
     "Opening Library during inference refreshes the applied filters on completion, instead of mixing in another image type");
+var exportRequest = new ImageExportRequest(vm.LatestImage!.Id, Path.Combine(output, "saved copy.png"));
+vm.DataRootDraft = Path.Combine(output, "another-unsaved-folder");
+await vm.ExportImageCommand.ExecuteAsync(exportRequest);
+Check(workbench.LastExport == exportRequest && workbench.DataRoots[^1] == nextRoot && vm.Notice.Contains("saved copy.png"),
+    "Saving a copy uses the saved data folder and reports the export destination");
+Check(vm.LatestImage?.ImagePath == vm.PreviewPath && vm.LatestUpscale?.ImagePath == vm.UpscalePreviewPath,
+    "Latest results retain their job identity for export");
+Check(!vm.ExportImageCommand.CanExecute(null), "Export requires a chosen image and destination");
+vm.OpenImageCommand.Execute(Path.Combine(output, "not-an-image.cmd"));
+Check(vm.Notice.Contains("PNG image is no longer available"), "Open image refuses a path that is not a PNG");
 
 // Real coordinator + SQLite + typed C# transport, independent of the view-model fake.
 string libraryRoot = Path.Combine(output, "indexed-library"), jobId = new string('b', 32);
@@ -178,7 +188,7 @@ Directory.CreateDirectory(Path.Combine(libraryRoot, "artifacts", jobId));
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "artifacts", jobId, "image.png"), [1]);
 await File.WriteAllTextAsync(Path.Combine(libraryRoot, "jobs", jobId + ".json"), System.Text.Json.JsonSerializer.Serialize(new
 {
-    id = jobId, status = "succeeded", kind = "generate", imagePath = jobId + "/image.png", imageSha256 = "",
+    id = jobId, status = "succeeded", kind = "generate", imagePath = jobId + "/image.png", imageSha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(new byte[] { 1 })),
     settings = new GenerationSettings("Café forest", "", 987, 5), completedUtc = "2026-10-17T12:00:00Z", seconds = 1, gpu = "Test GPU"
 }, Wire.Json));
 var realService = new WorkbenchService(root, python);
@@ -187,6 +197,13 @@ Check(indexed.Total == 1 && indexed.Images.Single().Settings.Seed == 987 && inde
     "Library search and page metadata survive the real C#/Python/SQLite boundary");
 Check((await realService.GetLibraryAsync(libraryRoot, deadline.Token, new("CAFÉ", "upscale"))).Total == 0,
     "The real Library filters upscaled and generated images independently");
+string exportTarget = Path.Combine(output, "export café.png");
+Check(await realService.ExportImageAsync(libraryRoot, new(jobId, exportTarget), new Progress<OperationProgress>(), deadline.Token) == exportTarget
+    && File.ReadAllBytes(exportTarget).SequenceEqual(new byte[] { 1 }), "Export streams and verifies an image directly through the C#/Rust ABI");
+bool nativeExportBlocked = false;
+try { await realService.ExportImageAsync(libraryRoot, new(jobId, Path.Combine(libraryRoot, "protected.png")), new Progress<OperationProgress>(), deadline.Token); }
+catch (InvalidDataException) { nativeExportBlocked = true; }
+Check(nativeExportBlocked && !File.Exists(Path.Combine(libraryRoot, "protected.png")), "Native export rejects destinations in the managed data folder without writing them");
 
 // Updates: check, then ask. Nothing is downloaded or run until the user chooses Update now.
 await vm.CheckForUpdatesQuietlyAsync();

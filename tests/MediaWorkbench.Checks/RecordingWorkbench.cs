@@ -23,6 +23,12 @@ sealed class RecordingWorkbench : IWorkbenchService
         return await Record(dataRoot, Image(dataRoot));
     }
     public List<LibraryQuery> LibraryQueries { get; } = [];
+    public ImageExportRequest? LastExport { get; private set; }
+    public Task<string> ExportImageAsync(string dataRoot, ImageExportRequest request, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        LastExport = request;
+        return Record(dataRoot, request.Destination);
+    }
     public Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null)
     {
         query ??= new();

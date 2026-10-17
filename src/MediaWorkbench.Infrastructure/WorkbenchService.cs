@@ -66,6 +66,8 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
     }
     public async Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<StorageSnapshot>(await Execute("storage.summary", new { dataRoot }, cancellationToken), Wire.Json)!;
+    public Task<string> ExportImageAsync(string dataRoot, ImageExportRequest request, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+        Task.Run(() => NativeCore.ExportArtifact(dataRoot, request, progress, cancellationToken), cancellationToken);
     public async Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<StorageSnapshot>(await Execute("storage.clear", new { dataRoot, area }, cancellationToken, progress), Wire.Json)!;
 }

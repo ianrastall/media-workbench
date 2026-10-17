@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hub_catalog
 import inference_setup
 import storage
+import artifact_export
 
 PROTOCOL = 1
 MAX_REQUEST_BYTES = 1_048_576
@@ -90,6 +91,8 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
                 lambda value: emit(request_id, "progress", value))
         elif operation == "library.list":
             result = inference_setup.library(payload, cancellation)
+        elif operation == "library.export":
+            result = artifact_export.export(root, payload, cancellation, lambda value: emit(request_id, "progress", value))
         elif operation == "storage.summary":
             result = storage.summary(payload)
         elif operation == "storage.clear":
@@ -152,7 +155,7 @@ def main() -> int:
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
                          "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "demo.run",
-                                        "installation.status", "installation.run", "generate.image", "upscale.image", "library.list", "storage.summary", "storage.clear"],
+                                        "installation.status", "installation.run", "generate.image", "upscale.image", "library.list", "library.export", "storage.summary", "storage.clear"],
                          "generationAvailable": False, "installationAvailable": True})
     while True:
         raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)

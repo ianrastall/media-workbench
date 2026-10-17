@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, panic::catch_unwind, slice, str};
+mod artifact;
 
 const OK: i32 = 0;
 const INVALID: i32 = 1;
@@ -239,6 +240,44 @@ pub unsafe extern "C" fn mw_sha256_file(
         }
         let hash = format!("{:x}", digest.finalize());
         // SAFETY: inherited from the caller's contract.
+        unsafe { copy_output(hash.as_bytes(), output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
+/// Export a completed artifact through the same native service used by app/worker clients.
+/// # Safety
+/// Input/output follow the header contract. A callback/context must remain valid for this call;
+/// callbacks must not unwind or retain native pointers. Buffer-size queries do no filesystem work.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_export_artifact(
+    input: *const u8,
+    length: usize,
+    progress: artifact::Progress,
+    context: *mut std::ffi::c_void,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: required is caller-owned writable memory.
+        unsafe { *required = 64 };
+        if output.is_null() || capacity < 64 {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: readable input is guaranteed by the caller.
+        let input = match unsafe { input_bytes(input, length) } {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        let hash = match artifact::export(input, progress, context) {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        // SAFETY: the output is large enough and caller-owned; hash lives through this copy.
         unsafe { copy_output(hash.as_bytes(), output, capacity, required) }
     })
     .unwrap_or(INTERNAL)

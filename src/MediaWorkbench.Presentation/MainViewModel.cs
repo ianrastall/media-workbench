@@ -39,6 +39,8 @@ public partial class MainViewModel : ObservableObject
         PreviousLibraryPageCommand = new AsyncRelayCommand(() => LoadLibraryPageAsync(Math.Max(0, _libraryOffset - LibraryPageSize)), () => !IsBusy && _libraryOffset > 0);
         NextLibraryPageCommand = new AsyncRelayCommand(() => LoadLibraryPageAsync(_libraryOffset + LibraryPageSize), () => !IsBusy && LibraryHasMore);
         UseImageSettingsCommand = new RelayCommand<GeneratedImage?>(UseImageSettings, image => !IsBusy && image?.CanReuseSettings == true);
+        ExportImageCommand = new AsyncRelayCommand<ImageExportRequest?>(ExportImageAsync, request => !IsBusy && request is not null);
+        OpenImageCommand = new RelayCommand<string?>(OpenImage, path => !string.IsNullOrEmpty(path));
         RetryJobCommand = new RelayCommand<JobSummary?>(RetryJob, job => !IsBusy && job?.CanRetry == true);
         OpenJobLogCommand = new RelayCommand<JobSummary?>(OpenJobLog, job => job?.HasLog == true);
         RefreshStorageCommand = new AsyncRelayCommand(RefreshStorageAsync, () => !IsBusy);
@@ -112,6 +114,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string UpscaleDescription { get; set; } = "";
     public IReadOnlyList<string> ChangeLabels { get; } = [.. GenerationSettings.ChangeLevels.Select(level => level.Label)];
     [ObservableProperty] public partial string PreviewPath { get; set; } = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasLatestImage))] public partial GeneratedImage? LatestImage { get; set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasLatestUpscale))] public partial GeneratedImage? LatestUpscale { get; set; }
+    public bool HasLatestImage => LatestImage is not null;
+    public bool HasLatestUpscale => LatestUpscale is not null;
     [ObservableProperty] public partial string ImageDescription { get; set; } = "Your generated image will appear here.";
     [ObservableProperty] public partial double ProgressPercent { get; set; }
     [ObservableProperty] public partial bool ProgressIndeterminate { get; set; } = true;
@@ -120,7 +126,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -147,6 +153,8 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand PreviousLibraryPageCommand { get; }
     public IAsyncRelayCommand NextLibraryPageCommand { get; }
     public IRelayCommand<GeneratedImage?> UseImageSettingsCommand { get; }
+    public IAsyncRelayCommand<ImageExportRequest?> ExportImageCommand { get; }
+    public IRelayCommand<string?> OpenImageCommand { get; }
     private const int LibraryPageSize = 48;
     private int _libraryOffset;
     private LibraryQuery _libraryQuery = new();
@@ -264,6 +272,7 @@ public partial class MainViewModel : ObservableObject
         var image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps,
             Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source, change.Strength), ObserveProgress(), token);
         PreviewPath = image.ImagePath;
+        LatestImage = image;
         ImageDescription = image.Description;
         await ShowNewImageAsync(image, token);
         Notice = $"Image saved in {image.Seconds:N1} seconds of inference.";
@@ -317,6 +326,7 @@ public partial class MainViewModel : ObservableObject
     {
         ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = "";
         UpscalePreviewPath = ""; SourceImagePath = ""; UpscaleSourcePath = "";
+        LatestImage = null; LatestUpscale = null;
         _libraryOffset = 0; LibraryHasMore = false; LibrarySearch = ""; LibraryKindIndex = 0; _libraryQuery = new();
         PreviousLibraryPageCommand.NotifyCanExecuteChanged();
         LibraryText = "Open Library to browse images in the new data folder.";
@@ -352,6 +362,25 @@ public partial class MainViewModel : ObservableObject
     {
         if (image?.Settings is not { } settings || !image.CanReuseSettings) return;
         if (ApplySettings(settings)) Notice = "Loaded this image's settings. You can repeat it or change them for a variation.";
+    }
+
+    private Task ExportImageAsync(ImageExportRequest? request) => RunAsync("Saving an image copy…", async token =>
+    {
+        if (request is null) return;
+        string destination = await _service.ExportImageAsync(DataRoot, request, ObserveProgress(), token);
+        Notice = "Saved a copy to " + destination;
+        Record(Notice);
+    });
+
+    private void OpenImage(string? path)
+    {
+        try
+        {
+            if (path is null || !Path.IsPathFullyQualified(path) || !Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
+            { Notice = "That PNG image is no longer available. Refresh Library."; return; }
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Notice = ex.Message; }
     }
 
     private bool ApplySettings(GenerationSettings settings)
@@ -402,6 +431,7 @@ public partial class MainViewModel : ObservableObject
         int scale = GenerationSettings.UpscaleChoices[Math.Clamp(UpscaleIndex, 0, GenerationSettings.UpscaleChoices.Length - 1)].Scale;
         var image = await _service.UpscaleAsync(DataRoot, UpscaleSourcePath, scale, ObserveProgress(), token);
         UpscalePreviewPath = image.ImagePath;
+        LatestUpscale = image;
         UpscaleDescription = image.Description;
         await ShowNewImageAsync(image, token);
         Notice = $"Saved a {image.Width} × {image.Height} picture to Library.";

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0-alpha.5 — 2026-10-17
+
+- **Save a copy…** on a Library image or the latest Create/Tools result opens a Windows save picker and exports the original PNG to your chosen folder. The copy must match its recorded SHA-256 before it replaces the destination; failed or cancelled copies keep an existing destination intact. Copies go outside the managed data folder so originals and job records cannot be overwritten.
+- Native core expansion: Rust now owns the complete verified export transaction, including completed-job parsing, containment/reparse-point checks, cancellable streaming/hash verification, and atomic file replacement. The GUI calls it directly through the C ABI; Python provides a thin adapter for worker clients.
+- **Open image** opens a Library image or latest result in your default PNG viewer.
+
 ## 0.2.0-alpha.4 — 2026-10-17
 
 - Library searches prompts, things to avoid, seeds, and job IDs, with filters for generated or upscaled images. **Search / refresh** (or Enter in the search box) applies the filters; **Older images** and **Newer images** browse 48 images at a time, with a matching-image count. Images beyond the previous 200-image limit are now accessible.

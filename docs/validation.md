@@ -114,3 +114,19 @@ Validated on the Windows 11 development machine, 17 October 2026. This change do
 | View-model navigation during inference | Completing generation while Library is open refreshes its applied filters from page one |
 
 The new controls have behavioral and window-load coverage; their full interactive workflow and clean-machine installer behavior remain to be checked. No additional GPU/driver coverage is claimed.
+
+## Native artifact export (0.2.0-alpha.5)
+
+Validated on the same Windows 11 machine, 17 October 2026. Rust owns the export transaction; the GUI calls the C ABI directly and worker clients use a ctypes adapter.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1` | Passed: 7 Rust tests plus formatting/Clippy, 84 Python tests, 69 C# checks |
+| Release publish and published core/UI self-tests | Passed, zero build warnings/errors |
+| Copy integrity, original/job preservation, existing destination replacement | Passed through the real Rust library |
+| Hash mismatch, cancellation, failed replacement, callback exception | Destination preserved; temporary copy cleaned up |
+| Direct native callers bypassing Python preflight | Managed destinations (including alternate Windows path casing), nonterminal jobs, ID mismatch, and traversal rejected |
+| Null/short output buffers | Required size returned without creating any output |
+| C# direct native export and managed-folder refusal | Passed |
+
+The native save dialog's complete interactive overwrite/cancel workflow and clean-machine update installation still need validation. Automated tests cover the underlying native transaction and actual GUI resource initialization.
