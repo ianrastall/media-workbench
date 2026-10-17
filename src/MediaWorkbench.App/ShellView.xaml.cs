@@ -10,6 +10,8 @@ public sealed partial class ShellView : UserControl
 {
     public MainViewModel ViewModel { get; }
     public FrameworkElement TitleBarElement => Header;
+    /// <summary>The owning window's handle; unpackaged file pickers need it.</summary>
+    public IntPtr WindowHandle { get; set; }
     private bool _ready;
     public ShellView(MainViewModel viewModel)
     {
@@ -33,6 +35,29 @@ public sealed partial class ShellView : UserControl
     }
     private void RetryJob(object sender, RoutedEventArgs args) => ViewModel.RetryJobCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void OpenJobLog(object sender, RoutedEventArgs args) => ViewModel.OpenJobLogCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
+    private void UseLibraryPicture(object sender, RoutedEventArgs args) => ViewModel.UseAsStartingPicture((sender as FrameworkElement)?.Tag as string);
+    private async void ChoosePicture(object sender, RoutedEventArgs args)
+    {
+        var picker = new Windows.Storage.Pickers.FileOpenPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.PicturesLibrary };
+        foreach (string extension in GenerationSettings.PictureExtensions) picker.FileTypeFilter.Add(extension);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowHandle);
+        var file = await picker.PickSingleFileAsync();
+        if (file is not null) ViewModel.UseAsStartingPicture(file.Path);
+    }
+    private void AcceptPictureDrag(object sender, DragEventArgs args)
+    {
+        if (args.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+        {
+            args.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+            args.DragUIOverride.Caption = "Start from this picture";
+        }
+    }
+    private async void DropPicture(object sender, DragEventArgs args)
+    {
+        if (!args.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+        var items = await args.DataView.GetStorageItemsAsync();
+        ViewModel.UseAsStartingPicture(items.OfType<Windows.Storage.StorageFile>().FirstOrDefault()?.Path);
+    }
     // Confirm buttons live in flyouts; close them before the long-running removal starts.
     private void ClearStorage(object sender, RoutedEventArgs args)
     {

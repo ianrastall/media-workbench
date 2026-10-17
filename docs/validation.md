@@ -81,3 +81,17 @@ Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
 | Settings, Library, and Create pages with a throwaway data folder | Rendered as intended |
 
 The 512 × 512 time was about twice this morning's 14.1 s on the same settings, so absolute timings vary with the machine's state; the ratio between sizes is the useful figure. Clearing caches and removing the installation were exercised only on temporary folders, not on the real data folder.
+
+## Image from an image and updates
+
+Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
+
+| Check | Result |
+|---|---|
+| Rust tests/format/Clippy, 58 Python tests, 49 C# checks | Passed |
+| Image-to-image from a 768 × 512 painting, moderate change, 20 steps | Succeeded: landscape shape kept, composition preserved, peak 5207 MiB; 274 s while builds ran alongside |
+| Library → Use as starting picture → Create, driven through UI Automation | Create opened with the picture, change level, and no shape picker |
+| `update-check` as 0.2.0-alpha.2, and pretending to be 0.2.0-alpha.1 with `--download` | Up to date; then found 0.2.0-alpha.2 and downloaded the 75 MB installer through GitHub's redirects with a matching SHA-256 |
+| Home page of the published build | Showed the installed version and a live "up to date" check |
+
+Running the downloaded installer silently and reopening the app was not exercised, because it would install over this machine's environment; it needs a clean-machine or sandbox run.

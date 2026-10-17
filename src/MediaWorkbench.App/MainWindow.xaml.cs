@@ -23,7 +23,7 @@ public sealed partial class MainWindow : Window
             new UpdateService(UpdateService.CreateClient(version), version));
         ViewModel.InstallerReady += RunInstallerAndExit;
         InitializeComponent();
-        var shell = new ShellView(ViewModel);
+        var shell = new ShellView(ViewModel) { WindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this) };
         Host.Children.Add(shell);
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(shell.TitleBarElement);

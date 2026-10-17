@@ -47,7 +47,7 @@ def ready_install(app, root):
 
 def fake_generation(app, data, operation, payload, cancel, progress, log_id=None):
     image = data / "artifacts" / payload["jobId"] / "image.png"
-    image.parent.mkdir(parents=True)
+    image.parent.mkdir(parents=True, exist_ok=True)
     image.write_bytes(b"png")
     return {"imagePath": payload["jobId"] + "/image.png", "imageSha256": "0" * 64, "seconds": 1.0, "gpu": "Test GPU"}
 
@@ -258,6 +258,45 @@ class ReadinessTests(unittest.TestCase):
             self.assertEqual(stored["imagePath"], record["id"] + "/image.png")
             self.assertEqual(stored["log"], f"generate-{record['id']}.log")
             self.assertEqual(setup.status(app, {"dataRoot": str(root)})["status"], "ready")
+
+    def test_image_to_image_works_from_a_private_copy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            original = Path(folder) / "My Pictures" / "holiday photo.JPG"
+            original.parent.mkdir()
+            original.write_bytes(b"jpeg bytes")
+            seen = {}
+            def child(app_, data, operation, payload, cancel, progress, log_id=None):
+                seen.update(payload)
+                self.assertEqual(Path(payload["sourceImage"]).read_bytes(), b"jpeg bytes")
+                result = fake_generation(app_, data, operation, payload, cancel, progress)
+                return dict(result, width=768, height=512)
+            with patch.object(setup, "inference", side_effect=child):
+                record = setup.generate(app, {"dataRoot": str(root), "prompt": "watercolor", "sourceImage": str(original), "strength": 0.35},
+                                        threading.Event(), lambda _: None)
+            job = record["id"]
+            self.assertEqual(Path(seen["sourceImage"]), setup.owned(root, f"artifacts/{job}/source.jpg"))
+            stored = json.loads((root / "jobs" / f"{job}.json").read_text())["settings"]
+            self.assertEqual((stored["sourceImage"], stored["strength"], stored["width"], stored["height"]), (f"{job}/source.jpg", 0.35, 768, 512))
+            self.assertNotIn("My Pictures", json.dumps(stored))  # The user's own path is not recorded.
+            original.unlink()
+            listed = setup.library({"dataRoot": str(root)})["artifacts"][0]["settings"]
+            self.assertEqual(Path(listed["sourceImage"]), (root / "artifacts" / job / "source.jpg").resolve())
+
+    def test_starting_picture_is_validated_before_any_record(self):
+        with tempfile.TemporaryDirectory() as folder:
+            picture = Path(folder) / "photo.png"
+            picture.write_bytes(b"png")
+            (Path(folder) / "notes.txt").write_text("x")
+            for bad in [{"sourceImage": "photo.png"}, {"sourceImage": str(Path(folder) / "missing.png")},
+                        {"sourceImage": str(Path(folder) / "notes.txt")}, {"sourceImage": str(picture), "strength": 0},
+                        {"sourceImage": str(picture), "strength": 1.5}, {"sourceImage": 7}]:
+                with self.subTest(bad=bad), self.assertRaises(ValueError):
+                    setup.validate_generation(dict(bad, prompt="house"))
+            self.assertEqual(setup.validate_generation({"prompt": "house", "sourceImage": str(picture)})["strength"], 0.6)
+            self.assertNotIn("sourceImage", setup.validate_generation({"prompt": "house", "sourceImage": ""}))
+        self.assertEqual([setup.shape_for(*size) for size in [(1600, 900), (900, 1600), (1000, 1100)]], [(768, 512), (512, 768), (512, 512)])
 
     def test_changed_model_file_blocks_generation_and_revokes_ready(self):
         with tempfile.TemporaryDirectory() as folder:

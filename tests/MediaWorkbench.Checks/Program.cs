@@ -105,6 +105,20 @@ await vm.ClearStorageCommand.ExecuteAsync("installation");
 Check(workbench.Cleared.SequenceEqual(["installation"]) && !vm.ModelReady && vm.StorageText.Contains("use 0 KiB"), "Removing the installation clears readiness and shows the new sizes");
 Check(!vm.ClearStorageCommand.CanExecute(null), "Clearing storage requires a named area");
 
+// Starting from a picture (image-to-image).
+string picture = Path.Combine(output, "holiday photo.png");
+await File.WriteAllBytesAsync(picture, [1, 2, 3]);
+Check(!vm.UseAsStartingPicture(Path.Combine(output, "notes.txt")) && !vm.HasSourceImage, "Only picture files can start an image");
+vm.SelectedPage = "library";
+Check(vm.UseAsStartingPicture(picture) && vm.SourceImagePath == picture && vm.SelectedPage == "create", "Choosing a starting picture opens Create with it");
+vm.ChangeIndex = 0;
+await vm.GenerateCommand.ExecuteAsync(null);
+Check(workbench.LastGeneration is { SourceImage: var sent, Strength: 0.35 } && sent == picture, "Generation sends the starting picture and how much to change it");
+Check(workbench.LastGeneration!.Summary.StartsWith("From your picture, changed a little") && !legacy.Summary.Contains("picture"), "Summaries say when an image started from a picture");
+vm.ClearStartingPictureCommand.Execute(null);
+await vm.GenerateCommand.ExecuteAsync(null);
+Check(!vm.HasSourceImage && workbench.LastGeneration!.SourceImage is null, "Removing the picture returns to description-only generation");
+
 // Updates: check, then ask. Nothing is downloaded or run until the user chooses Update now.
 await vm.CheckForUpdatesQuietlyAsync();
 Check(vm.HasUpdate && vm.UpdateText.Contains("0.3.0-alpha.1") && vm.UpdateNotes == "New things", "A newer release is offered with its notes");

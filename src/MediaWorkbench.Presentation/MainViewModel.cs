@@ -39,6 +39,8 @@ public partial class MainViewModel : ObservableObject
         RetryJobCommand = new RelayCommand<JobSummary?>(RetryJob, job => !IsBusy && job?.CanRetry == true);
         OpenJobLogCommand = new RelayCommand<JobSummary?>(OpenJobLog, job => job?.HasLog == true);
         RefreshStorageCommand = new AsyncRelayCommand(RefreshStorageAsync, () => !IsBusy);
+        UseAsStartingPictureCommand = new RelayCommand<string?>(path => UseAsStartingPicture(path));
+        ClearStartingPictureCommand = new RelayCommand(() => SourceImagePath = "");
         ClearStorageCommand = new AsyncRelayCommand<string?>(ClearStorageAsync, area => !IsBusy && !string.IsNullOrEmpty(area));
         DataRootDraft = DataRoot;
         try
@@ -84,6 +86,15 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial int SamplerIndex { get; set; }
     public IReadOnlyList<string> SizeLabels { get; } = [.. GenerationSettings.Sizes.Select(size => size.Label)];
     public IReadOnlyList<string> SamplerLabels { get; } = [.. GenerationSettings.Samplers.Select(sampler => sampler.Label)];
+    /// <summary>An optional picture to start from (image-to-image); empty for a description only.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSourceImage), nameof(HasNoSourceImage), nameof(SourceImageName))]
+    public partial string SourceImagePath { get; set; } = "";
+    public bool HasSourceImage => SourceImagePath.Length > 0;
+    public bool HasNoSourceImage => !HasSourceImage;
+    public string SourceImageName => HasSourceImage ? Path.GetFileName(SourceImagePath) : "";
+    /// <summary>Index into <see cref="GenerationSettings.ChangeLevels"/>.</summary>
+    [ObservableProperty] public partial int ChangeIndex { get; set; } = 1;
+    public IReadOnlyList<string> ChangeLabels { get; } = [.. GenerationSettings.ChangeLevels.Select(level => level.Label)];
     [ObservableProperty] public partial string PreviewPath { get; set; } = "";
     [ObservableProperty] public partial string ImageDescription { get; set; } = "Your generated image will appear here.";
     [ObservableProperty] public partial double ProgressPercent { get; set; }
@@ -121,6 +132,8 @@ public partial class MainViewModel : ObservableObject
     public IRelayCommand<JobSummary?> OpenJobLogCommand { get; }
     public IAsyncRelayCommand RefreshStorageCommand { get; }
     public IAsyncRelayCommand CheckForUpdatesCommand { get; }
+    public IRelayCommand<string?> UseAsStartingPictureCommand { get; }
+    public IRelayCommand ClearStartingPictureCommand { get; }
     public IAsyncRelayCommand InstallUpdateCommand { get; }
     /// <summary>Raised with a checksum-verified installer path once the user chose to update; the shell runs it and exits.</summary>
     public event Action<string>? InstallerReady;
@@ -215,8 +228,11 @@ public partial class MainViewModel : ObservableObject
             throw new InvalidDataException("Use a guidance value from 1 to 20.");
         var size = GenerationSettings.Sizes[Math.Clamp(SizeIndex, 0, GenerationSettings.Sizes.Length - 1)];
         var sampler = GenerationSettings.Samplers[Math.Clamp(SamplerIndex, 0, GenerationSettings.Samplers.Length - 1)];
+        string? source = HasSourceImage ? SourceImagePath : null;
+        if (source is not null && !File.Exists(source)) throw new InvalidDataException("The starting picture is no longer there. Choose it again or remove it.");
+        var change = GenerationSettings.ChangeLevels[Math.Clamp(ChangeIndex, 0, GenerationSettings.ChangeLevels.Length - 1)];
         var image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps,
-            Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id), ObserveProgress(), token);
+            Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source, change.Strength), ObserveProgress(), token);
         PreviewPath = image.ImagePath;
         ImageDescription = image.Description;
         Images.Insert(0, image);
@@ -274,8 +290,28 @@ public partial class MainViewModel : ObservableObject
         GuidanceScale = Math.Clamp(settings.GuidanceScale, 1, 20);
         SizeIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Sizes, size => size.Width == settings.Width && size.Height == settings.Height));
         SamplerIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Samplers, sampler => sampler.Id == settings.Sampler));
+        SourceImagePath = settings.SourceImage is { } source && File.Exists(source) ? source : "";
+        ChangeIndex = NearestChange(settings.Strength);
         SelectedPage = "create";
         Notice = $"Loaded the settings of a {job.Status} generation. Select Generate image to try again.";
+    }
+
+    private static int NearestChange(double strength) => Array.IndexOf(GenerationSettings.ChangeLevels,
+        GenerationSettings.ChangeLevels.MinBy(level => Math.Abs(level.Strength - strength)));
+
+    /// <summary>Starts the next image from a picture: one of the user's files, a Library image, or the current preview.</summary>
+    public bool UseAsStartingPicture(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !Path.IsPathFullyQualified(path) || !File.Exists(path)
+            || !GenerationSettings.PictureExtensions.Contains(Path.GetExtension(path).ToLowerInvariant()))
+        {
+            Notice = "Choose a PNG, JPEG, WebP, or BMP picture.";
+            return false;
+        }
+        SourceImagePath = path;
+        SelectedPage = "create";
+        Notice = "Starting from your picture. Describe what it should become, choose how much to change it, and select Generate image.";
+        return true;
     }
 
     private void OpenJobLog(JobSummary? job)

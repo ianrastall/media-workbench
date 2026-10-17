@@ -113,7 +113,8 @@
                         </Grid>
                     </StackPanel>
 
-                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsCreate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsCreate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}"
+                        AllowDrop="True" DragOver="AcceptPictureDrag" Drop="DropPicture">
                         <!-- Once ready, setup shrinks to one line so Create is about the picture, not the plumbing. -->
                         <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                             <FontIcon Glyph="&#xE73E;" Foreground="{ThemeResource SystemFillColorSuccessBrush}" VerticalAlignment="Center" />
@@ -132,9 +133,29 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Start from a picture (optional)" />
+                            <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind ViewModel.HasNoSourceImage, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                                <Button Content="Choose a picture…" Click="ChoosePicture" />
+                                <TextBlock Text="or drag one here. Leave empty to create from your description alone." VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <Grid ColumnSpacing="16" Visibility="{x:Bind ViewModel.HasSourceImage, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Image Source="{x:Bind ViewModel.SourceImagePath, Mode=OneWay, Converter={StaticResource LocalImage}, ConverterParameter=160}" Width="160" Height="160" Stretch="Uniform" AutomationProperties.Name="Starting picture" />
+                                <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Bind ViewModel.SourceImageName, Mode=OneWay}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <ComboBox Header="How much to change it" ItemsSource="{x:Bind ViewModel.ChangeLabels}" SelectedIndex="{x:Bind ViewModel.ChangeIndex, Mode=TwoWay}" Width="200" />
+                                    <TextBlock Text="The result keeps your picture's proportions (square, portrait, or landscape)." TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Choose another…" Click="ChoosePicture" />
+                                        <Button Content="Remove picture" Command="{x:Bind ViewModel.ClearStartingPictureCommand}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
                         <TextBox Header="Describe the picture" Text="{x:Bind ViewModel.Prompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxLength="2000" />
                         <TextBox Header="Things to avoid (optional)" PlaceholderText="For example: blurry, text, extra fingers" Text="{x:Bind ViewModel.NegativePrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="2000" />
-                        <ComboBox Header="Shape" ItemsSource="{x:Bind ViewModel.SizeLabels}" SelectedIndex="{x:Bind ViewModel.SizeIndex, Mode=TwoWay}" Width="260" />
+                        <ComboBox Header="Shape" ItemsSource="{x:Bind ViewModel.SizeLabels}" SelectedIndex="{x:Bind ViewModel.SizeIndex, Mode=TwoWay}" Width="260" Visibility="{x:Bind ViewModel.HasNoSourceImage, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                         <Expander Header="Advanced options" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                             <StackPanel Spacing="16">
                                 <TextBlock Text="The defaults work well. Change these only if you want to fine-tune a result." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -151,6 +172,7 @@
                         <Button Content="Generate image" Command="{x:Bind ViewModel.GenerateCommand}" Style="{ThemeResource AccentButtonStyle}" />
                         <Image Source="{x:Bind ViewModel.PreviewPath, Mode=OneWay, Converter={StaticResource LocalImage}}" MaxWidth="512" MaxHeight="512" HorizontalAlignment="Left" Stretch="Uniform" AutomationProperties.Name="Generated image preview" />
                         <TextBlock Text="{x:Bind ViewModel.ImageDescription, Mode=OneWay}" TextWrapping="Wrap" />
+                        <Button Content="Use as starting picture" Command="{x:Bind ViewModel.UseAsStartingPictureCommand}" CommandParameter="{x:Bind ViewModel.PreviewPath, Mode=OneWay}" />
                     </StackPanel>
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsLibrary, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
@@ -167,6 +189,7 @@
                                             <Image Source="{x:Bind ImagePath, Converter={StaticResource LocalImage}, ConverterParameter=320}" Width="320" Height="320" HorizontalAlignment="Left" Stretch="Uniform" AutomationProperties.Name="{x:Bind Settings.Prompt}" />
                                             <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" />
                                             <TextBlock Text="{x:Bind ImagePath}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <Button Content="Use as starting picture" Tag="{x:Bind ImagePath}" Click="UseLibraryPicture" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

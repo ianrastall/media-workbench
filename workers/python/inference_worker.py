@@ -76,8 +76,9 @@ def main():
             return
         progress("Loading inference runtime")
         import torch
-        from diffusers import DPMSolverMultistepScheduler, EulerAncestralDiscreteScheduler, StableDiffusionPipeline
-        from PIL import ImageStat
+        from diffusers import (DPMSolverMultistepScheduler, EulerAncestralDiscreteScheduler,
+                               StableDiffusionImg2ImgPipeline, StableDiffusionPipeline)
+        from PIL import Image, ImageOps, ImageStat
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is unavailable. Check your NVIDIA driver; this profile requires an NVIDIA GPU.")
         # The parent sets CUDA_DEVICE_ORDER=PCI_BUS_ID, so device 0 is the GPU its preflight inspected.
@@ -87,8 +88,11 @@ def main():
         if not inference_setup.meets_vram(total, minimum):
             raise RuntimeError(f"{gpu} reports {total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
         # FP32 avoids known half-precision limitations on GTX 16-series devices.
+        source = payload.get("sourceImage") if args.operation == "generate" else None
         progress("Loading Stable Diffusion 1.5")
-        pipe = StableDiffusionPipeline.from_pretrained(str(model), torch_dtype=torch.float32,
+        # The same weights serve both modes; image-to-image starts from the user's picture.
+        pipeline_class = StableDiffusionImg2ImgPipeline if source else StableDiffusionPipeline
+        pipe = pipeline_class.from_pretrained(str(model), torch_dtype=torch.float32,
             variant="fp16", use_safetensors=True, local_files_only=True)
         pipe.enable_model_cpu_offload()
         pipe.enable_vae_slicing()
@@ -106,12 +110,20 @@ def main():
         elif sampler != "pndm":
             raise ValueError("Unknown sampler: " + str(sampler)[:40])
         width, height = settings.get("width", 512), settings.get("height", 512)
+        extra = {}
+        if source:
+            with Image.open(source) as opened:
+                picture = ImageOps.exif_transpose(opened).convert("RGB")
+            width, height = inference_setup.shape_for(*picture.size)
+            extra = dict(image=ImageOps.fit(picture, (width, height), Image.Resampling.LANCZOS), strength=settings["strength"])
+        else:
+            extra = dict(width=width, height=height)
         def step_end(pipeline, step, timestep, callback_kwargs):
-            progress("Generating image", step + 1, len(pipeline.scheduler.timesteps))
+            progress("Generating image", step + 1, getattr(pipeline, "num_timesteps", None) or len(pipeline.scheduler.timesteps))
             return callback_kwargs
         started = time.monotonic()
         output = pipe(prompt=settings["prompt"], negative_prompt=settings["negativePrompt"],
-            width=width, height=height, num_inference_steps=settings["steps"],
+            num_inference_steps=settings["steps"], **extra,
             guidance_scale=settings.get("guidanceScale", 7.5), generator=torch.Generator(device="cpu").manual_seed(settings["seed"]),
             callback_on_step_end=step_end)
         image = output.images[0]
@@ -129,7 +141,7 @@ def main():
             if len(job_id) != 32 or any(c not in "0123456789abcdef" for c in job_id):
                 raise ValueError("Invalid artifact identifier")
             directory = args.data_root / "artifacts" / job_id
-            directory.mkdir(parents=True, exist_ok=False)
+            directory.mkdir(parents=True, exist_ok=True)  # The coordinator may already hold the starting picture here.
             temporary = directory / "image.partial"
             image.save(temporary, format="PNG")
             target = directory / "image.png"

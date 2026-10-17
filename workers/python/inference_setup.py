@@ -24,6 +24,8 @@ SETUP_ACTIVE = ["preparing", "runtime", "downloading", "verifying"]
 # Output sizes and samplers offered for SD 1.5; verification itself always runs the 512 x 512 default.
 SIZES = [(512, 512), (512, 768), (768, 512)]
 SAMPLERS = ["pndm", "dpmpp-2m", "euler-a"]
+SOURCE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+SOURCE_MAX_BYTES = 50 * 1024**2
 LIBRARY_IMAGES = 200
 LIBRARY_PROBLEMS = 50
 PROBLEM_STATUSES = {"failed", "cancelled", "interrupted"}
@@ -526,6 +528,8 @@ def validate_generation(payload):
     guidance = payload.get("guidanceScale", 7.5)
     size = (payload.get("width", 512), payload.get("height", 512))
     sampler = payload.get("sampler", "pndm")
+    source = payload.get("sourceImage") or None
+    strength = payload.get("strength", 0.6)
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 2000:
         raise ValueError("Enter a prompt of 1–2000 characters")
     if not isinstance(negative, str) or len(negative) > 2000:
@@ -540,8 +544,42 @@ def validate_generation(payload):
         raise ValueError("Size must be 512 × 512, 512 × 768, or 768 × 512")
     if sampler not in SAMPLERS:
         raise ValueError("Sampler must be one of: " + ", ".join(SAMPLERS))
-    return {"prompt": prompt.strip(), "negativePrompt": negative, "seed": seed, "steps": steps,
-            "width": size[0], "height": size[1], "guidanceScale": round(float(guidance), 2), "sampler": sampler}
+    settings = {"prompt": prompt.strip(), "negativePrompt": negative, "seed": seed, "steps": steps,
+                "width": size[0], "height": size[1], "guidanceScale": round(float(guidance), 2), "sampler": sampler}
+    if source is not None:
+        if not isinstance(source, str) or not Path(source).is_absolute():
+            raise ValueError("Choose the starting picture by its full path")
+        path = Path(source)
+        if path.suffix.lower() not in SOURCE_SUFFIXES:
+            raise ValueError("The starting picture must be a PNG, JPEG, WebP, or BMP file")
+        if not path.is_file():
+            raise ValueError("The starting picture could not be found")
+        if path.stat().st_size > SOURCE_MAX_BYTES:
+            raise ValueError("The starting picture is larger than 50 MB")
+        if type(strength) not in (int, float) or not 0.05 <= strength <= 1:
+            raise ValueError("How much to change must be from 0.05 to 1")
+        settings.update(sourceImage=str(path), strength=round(float(strength), 2))
+    return settings
+
+
+def shape_for(width, height):
+    """The supported shape closest to a picture's proportions."""
+    ratio = width / height
+    return (768, 512) if ratio >= 1.25 else (512, 768) if ratio <= 0.8 else (512, 512)
+
+
+def resolve_settings(root, record):
+    """Settings for clients: a stored starting picture becomes its absolute path, or is dropped if gone."""
+    settings = dict(record.get("settings") or {})
+    source = settings.get("sourceImage")
+    if isinstance(source, str) and job_id_valid(record.get("id")):
+        relative = Path(source)
+        path = (owned(root, "artifacts") / relative).resolve() if not relative.is_absolute() else None
+        if path and relative.parts[:1] == (record["id"],) and path.is_relative_to(owned(root, "artifacts").resolve() / record["id"]) and path.is_file():
+            settings["sourceImage"] = str(path)
+        else:
+            settings.pop("sourceImage", None)
+    return settings
 
 
 def generate(app, payload, cancel, progress):
@@ -562,16 +600,26 @@ def generate(app, payload, cancel, progress):
                       source=dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"]),
                       log=f"generate-{job_id}.log")
         job = owned(root, f"jobs/{job_id}.json")
+        child = dict(settings, jobId=job_id)
+        if "sourceImage" in settings:
+            # Work from a private copy so the job stays reproducible if the original moves or changes.
+            name = "source" + Path(settings["sourceImage"]).suffix.lower()
+            copy = owned(root, f"artifacts/{job_id}/{name}")
+            copy.parent.mkdir(parents=True, exist_ok=False)
+            shutil.copyfile(settings["sourceImage"], copy)
+            settings["sourceImage"] = f"{job_id}/{name}"
+            child["sourceImage"] = str(copy)
         atomic_json(job, record)
         try:
-            result = inference(app, root, "generate", dict(settings, jobId=job_id), cancel, progress, log_id=job_id)
+            result = inference(app, root, "generate", child, cancel, progress, log_id=job_id)
             check_cancel(cancel)
             record.update(status="succeeded", completedUtc=datetime.now(timezone.utc).isoformat(), **result)
+            settings.update(width=result.get("width", settings["width"]), height=result.get("height", settings["height"]))
             image = artifact_image(root, record)
             if image is None:
                 raise SetupError("The inference child reported an image outside this job's artifact folder.")
             atomic_json(job, record)
-            return dict(record, imagePath=str(image))
+            return dict(record, imagePath=str(image), settings=resolve_settings(root, record))
         except Exception as exc:
             record.update(status="cancelled" if isinstance(exc, Cancelled) else "failed", message=str(exc))
             atomic_json(job, record)
@@ -624,10 +672,10 @@ def library(payload):
         if record.get("status") == "succeeded" and len(results) < LIBRARY_IMAGES:
             image = artifact_image(root, record)
             if image is not None:
-                results.append(dict(record, imagePath=str(image)))
+                results.append(dict(record, imagePath=str(image), settings=resolve_settings(root, record)))
         elif record.get("status") in PROBLEM_STATUSES and len(problems) < LIBRARY_PROBLEMS:
             log = job_log(root, record)
             problems.append({"id": record["id"], "status": record["status"], "message": str(record.get("message", ""))[:2000],
-                             "startedUtc": record.get("startedUtc", ""), "settings": record.get("settings"),
+                             "startedUtc": record.get("startedUtc", ""), "settings": resolve_settings(root, record) or None,
                              "logPath": str(log) if log else None})
     return {"artifacts": results, "problems": problems, "recovered": recovered}
