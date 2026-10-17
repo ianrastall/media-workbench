@@ -2,7 +2,7 @@
 
 A dark Windows desktop workspace for local image and video tools, built with **WinUI 3, MVVM, C# 14, .NET 10, a Rust core exposed through a C ABI, and out-of-process Python workers**.
 
-**Status: 0.2.0-alpha.2 — first local image pipeline.** Discover public Hugging Face models, install an isolated Stable Diffusion 1.5 environment, verify your GPU, and generate images from prompts. Video generation remains planned.
+**Status: 0.2.0-alpha.3 — local image creation from text or a picture.** Discover public Hugging Face models, install an isolated Stable Diffusion 1.5 environment, verify your GPU, and generate images from prompts. Video generation remains planned.
 
 ## Install
 

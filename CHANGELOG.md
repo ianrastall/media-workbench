@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-alpha.3 — 2026-10-17
 
 - Settings has a Storage section: free space, and the size of the runtime, model, download caches, images, logs, and job records in the saved data folder.
 - **Clear…** removes the download caches (about 4 GiB after setup) or logs; **Remove Stable Diffusion 1.5…** removes the runtime, model, and caches while keeping images and their records. Each asks for confirmation and waits for any running operation.

@@ -1,6 +1,6 @@
 # Current implementation status
 
-Version: **0.2.0-alpha.2**. Development started 17 October 2026.
+Version: **0.2.0-alpha.3**. Development started 17 October 2026.
 
 ## Technology decisions
 
