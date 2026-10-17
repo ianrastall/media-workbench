@@ -13,6 +13,9 @@
 - A second launch brings forward the running copy's own window, found through its process, rather than any window titled "Media Workbench"; a minimized window is restored and a maximized one stays maximized.
 - Release builds ignore `MEDIA_WORKBENCH_PYTHON`; only Debug builds allow overriding the bundled interpreter.
 - Tests validate bundled recipes and live worker messages against `schemas/`, and a repository-hygiene test rejects personal paths, private email addresses, and built binaries in tracked files. The unused C# `JobLifecycle` contract was removed.
+- Library lists recent failed, cancelled, and interrupted generations with their reason, a **Use settings** button that loads them into Create, and **Open log** for that generation's own inference log. Failures no longer push older images out of the 200-image listing.
+- Library images use a virtualized grid and decode at thumbnail size.
+- The main view model moved into a UI-free `MediaWorkbench.Presentation` library that the C# checks load directly.
 - CI publishes the installer that the checked build produced instead of rebuilding it in the release job, and no longer runs the published-app check twice.
 
 Existing ready installations need **Install / verify** once more because the readiness stamp changed.

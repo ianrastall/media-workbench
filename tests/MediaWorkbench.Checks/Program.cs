@@ -1,6 +1,6 @@
 using MediaWorkbench.Core;
 using MediaWorkbench.Infrastructure;
-using MediaWorkbench_App.ViewModels;
+using MediaWorkbench.Presentation;
 
 if (args.Length < 3) throw new ArgumentException("Checks require absolute Python path, scaffold root, and test output root; optional absolute ffprobe path.");
 string python = args[0], root = Path.GetFullPath(args[1]);
@@ -85,6 +85,12 @@ Check(vm.DataRoot == nextRoot && vm.DataRootDraft == nextRoot && vmStore.Load().
     "Saving applies the draft and clears state that belonged to the previous folder");
 await vm.RefreshLibraryCommand.ExecuteAsync(null);
 Check(workbench.DataRoots[^1] == nextRoot, "Operations after saving use the newly saved folder");
+var problem = vm.Problems.SingleOrDefault();
+Check(vm.HasProblems && problem is { Status: "failed" } && vm.Images.Count == 1, "Library lists unfinished generations beside saved images");
+Check(!vm.OpenJobLogCommand.CanExecute(problem), "A job without a log offers no log to open");
+vm.RetryJobCommand.Execute(problem);
+Check(vm.Prompt == "retry me" && vm.NegativePrompt == "blurry" && vm.Seed == 42 && vm.Steps == 7 && vm.SelectedPage == "create",
+    "Using an unfinished job's settings loads them into Create");
 
 
 async Task<string> Fixture(string name, string body)

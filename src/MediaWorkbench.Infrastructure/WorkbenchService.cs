@@ -56,6 +56,7 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
     {
         var result = await Execute("library.list", new { dataRoot }, cancellationToken);
         var images = JsonSerializer.Deserialize<GeneratedImage[]>(result.GetProperty("artifacts"), Wire.Json) ?? [];
-        return new(images, result.TryGetProperty("recovered", out var recovered) ? recovered.GetInt32() : 0);
+        var problems = result.TryGetProperty("problems", out var listed) ? JsonSerializer.Deserialize<JobSummary[]>(listed, Wire.Json) ?? [] : [];
+        return new(images, result.TryGetProperty("recovered", out var recovered) ? recovered.GetInt32() : 0, problems);
     }
 }

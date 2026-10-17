@@ -1,9 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/MediaWorkbench.Infrastructure/MediaWorkbench.Infrastructure.csproj" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <!-- The view model has no WinUI dependency; compiling it here checks it without the desktop shell. -->
-    <Compile Include="../../src/MediaWorkbench.App/ViewModels/MainViewModel.cs" Link="Linked/MainViewModel.cs" />
+    <ProjectReference Include="../../src/MediaWorkbench.Presentation/MediaWorkbench.Presentation.csproj" />
   </ItemGroup>
 </Project>

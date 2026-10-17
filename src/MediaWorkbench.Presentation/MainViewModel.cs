@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using MediaWorkbench.Core;
 using MediaWorkbench.Infrastructure;
 
-namespace MediaWorkbench_App.ViewModels;
+namespace MediaWorkbench.Presentation;
 
 public partial class MainViewModel : ObservableObject
 {
@@ -29,6 +29,8 @@ public partial class MainViewModel : ObservableObject
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
         GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
+        RetryJobCommand = new RelayCommand<JobSummary?>(RetryJob, job => !IsBusy && job?.CanRetry == true);
+        OpenJobLogCommand = new RelayCommand<JobSummary?>(OpenJobLog, job => job?.HasLog == true);
         DataRootDraft = DataRoot;
         try
         {
@@ -72,7 +74,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -81,6 +83,9 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<HubModel> Models { get; } = [];
     public ObservableCollection<string> Activity { get; } = [];
     public ObservableCollection<GeneratedImage> Images { get; } = [];
+    /// <summary>Recent failed, cancelled, and interrupted generations in the saved data folder.</summary>
+    public ObservableCollection<JobSummary> Problems { get; } = [];
+    [ObservableProperty] public partial bool HasProblems { get; set; }
     public IAsyncRelayCommand SearchCommand { get; }
     public IAsyncRelayCommand DetailsCommand { get; }
     public IAsyncRelayCommand DiagnosticsCommand { get; }
@@ -93,6 +98,8 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand RefreshInstallationCommand { get; }
     public IAsyncRelayCommand GenerateCommand { get; }
     public IAsyncRelayCommand RefreshLibraryCommand { get; }
+    public IRelayCommand<JobSummary?> RetryJobCommand { get; }
+    public IRelayCommand<JobSummary?> OpenJobLogCommand { get; }
 
     public bool IsHome => SelectedPage == "home";
     public bool CanEdit => !IsBusy;
@@ -183,14 +190,39 @@ public partial class MainViewModel : ObservableObject
         var library = await _service.GetLibraryAsync(DataRoot, token);
         Images.Clear();
         foreach (var image in library.Images) Images.Add(image);
-        Notice = $"Loaded {library.Images.Count} saved images (up to 200 recent jobs).";
+        Problems.Clear();
+        foreach (var job in library.Problems) Problems.Add(job);
+        HasProblems = Problems.Count > 0;
+        Notice = $"Loaded {library.Images.Count} saved images (up to 200 most recent).";
+        if (library.Problems.Count > 0) Notice += $" {library.Problems.Count} recent generation(s) did not finish; see below the images.";
         if (library.Recovered > 0)
         {
             Notice += $" {library.Recovered} unfinished job(s) from an earlier session were marked interrupted.";
             Record($"Recorded {library.Recovered} interrupted job(s)");
         }
     });
-    partial void OnDataRootChanged(string value) { ModelReady = false; Images.Clear(); PreviewPath = ""; }
+    partial void OnDataRootChanged(string value) { ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = ""; }
+
+    private void RetryJob(JobSummary? job)
+    {
+        if (job?.Settings is not { } settings || !job.CanRetry) return;
+        Prompt = settings.Prompt;
+        NegativePrompt = settings.NegativePrompt ?? "";
+        Seed = settings.Seed;
+        Steps = Math.Clamp(settings.Steps, 1, 50);
+        SelectedPage = "create";
+        Notice = $"Loaded the settings of a {job.Status} generation. Select Generate image to try again.";
+    }
+
+    private void OpenJobLog(JobSummary? job)
+    {
+        try
+        {
+            if (job?.LogPath is not { } path || !Path.IsPathFullyQualified(path) || !File.Exists(path)) { Notice = "That job's log is no longer available."; return; }
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Notice = ex.Message; }
+    }
     partial void OnSelectedPageChanged(string value)
     {
         if (value == "create" && !IsBusy) RefreshInstallationCommand.Execute(null);

@@ -2,7 +2,8 @@
 
 ## Layout
 
-- `src/MediaWorkbench.App`: WinUI views, view models, Windows identity and composition.
+- `src/MediaWorkbench.App`: WinUI views, converters, Windows identity and composition.
+- `src/MediaWorkbench.Presentation`: UI-free view models (CommunityToolkit.Mvvm), loaded directly by the C# checks.
 - `src/MediaWorkbench.Core`: typed contracts and domain state.
 - `src/MediaWorkbench.Infrastructure`: native interop, Python supervisor, settings and application services.
 - `src/MediaWorkbench.Cli`: direct worker access and developer diagnostics.
@@ -10,7 +11,7 @@
 - `workers/python`: metadata/setup coordinator, Hub adapter, and isolated inference child.
 - `recipes`, `profiles`, `schemas`: integration recipes, runtime/model locks, and protocol design.
 - `packaging`: pinned runtime/tool sources and installer definition.
-- `tests`: real native/worker boundary checks and Python behavioral tests.
+- `tests`: real native/worker boundary checks, view-model checks against a recording fake service, and Python behavioral, schema, and repository-hygiene tests.
 
 ## Build and run
 

@@ -17,7 +17,8 @@ sealed class RecordingWorkbench : IWorkbenchService
     public Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         Record(dataRoot, Image(dataRoot));
     public Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken) =>
-        Record(dataRoot, new LibrarySnapshot([Image(dataRoot)], 0));
+        Record(dataRoot, new LibrarySnapshot([Image(dataRoot)], 0,
+            [new JobSummary(new string('a', 32), "failed", "CUDA out of memory", "2026-10-17T00:00:00+00:00", new("retry me", "blurry", 42, 7), null)]));
 
     public static GeneratedImage Image(string dataRoot) => new(Guid.NewGuid().ToString("N"),
         Path.Combine(dataRoot, "artifacts", "image.png"), "", new("house", "", 1, 1), "", 1, "Test GPU");

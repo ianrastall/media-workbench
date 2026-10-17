@@ -126,19 +126,44 @@
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsLibrary, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                         <Button Content="Refresh images" Command="{x:Bind ViewModel.RefreshLibraryCommand}" />
-                        <ItemsControl ItemsSource="{x:Bind ViewModel.Images}">
-                            <ItemsControl.ItemTemplate>
+                        <!-- ItemsRepeater virtualizes against the page's ScrollViewer; thumbnails decode at display size. -->
+                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.Images}">
+                            <ItemsRepeater.Layout>
+                                <UniformGridLayout MinItemWidth="360" MinColumnSpacing="16" MinRowSpacing="16" ItemsStretch="Fill" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
                                 <DataTemplate x:DataType="core:GeneratedImage">
-                                    <Border Padding="16" Margin="0,0,0,16" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                    <Border Padding="16" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                                         <StackPanel Spacing="12">
-                                            <Image Source="{x:Bind ImagePath, Converter={StaticResource LocalImage}}" MaxWidth="384" MaxHeight="384" HorizontalAlignment="Left" Stretch="Uniform" />
+                                            <Image Source="{x:Bind ImagePath, Converter={StaticResource LocalImage}, ConverterParameter=320}" Width="320" Height="320" HorizontalAlignment="Left" Stretch="Uniform" AutomationProperties.Name="{x:Bind Settings.Prompt}" />
                                             <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" />
                                             <TextBlock Text="{x:Bind ImagePath}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                        <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.HasProblems, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                            <TextBlock Text="Unfinished generations" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Recent generations that failed, were cancelled, or stopped when the app closed. No image was saved for these." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <ItemsControl ItemsSource="{x:Bind ViewModel.Problems}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="core:JobSummary">
+                                        <Grid Padding="16" Margin="0,0,0,8" CornerRadius="10" ColumnSpacing="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="4">
+                                                <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" IsTextSelectionEnabled="True" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <Button Content="Use settings" Tag="{x:Bind}" Click="RetryJob" IsEnabled="{x:Bind CanRetry}" />
+                                                <Button Content="Open log" Tag="{x:Bind}" Click="OpenJobLog" IsEnabled="{x:Bind HasLog}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                     </StackPanel>
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsSettings, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">

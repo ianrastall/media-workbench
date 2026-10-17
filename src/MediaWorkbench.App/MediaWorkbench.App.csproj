@@ -23,8 +23,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <ProjectReference Include="../MediaWorkbench.Infrastructure/MediaWorkbench.Infrastructure.csproj" />
+    <ProjectReference Include="../MediaWorkbench.Presentation/MediaWorkbench.Presentation.csproj" />
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\workers\python\*.py" Link="workers\python\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\recipes\*.json" Link="recipes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

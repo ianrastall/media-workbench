@@ -19,8 +19,17 @@ public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha
 {
     public string Description => $"{Settings.Prompt}\nSeed {Settings.Seed} · {Settings.Steps} steps · {Seconds:N1}s · {Gpu}";
 }
-/// <summary>Recent successful images, plus jobs this listing marked interrupted after their owner stopped.</summary>
-public sealed record LibrarySnapshot(IReadOnlyList<GeneratedImage> Images, int Recovered);
+/// <summary>A generation that failed, was cancelled, or was interrupted, with its reason and its own child log.</summary>
+public sealed record JobSummary(string Id, string Status, string Message, string StartedUtc, GenerationSettings? Settings, string? LogPath)
+{
+    public string Title => Status.Length > 0 && DateTimeOffset.TryParse(StartedUtc, out var started)
+        ? $"{char.ToUpperInvariant(Status[0])}{Status[1..]} · {started.ToLocalTime():g}" : Status;
+    public string Description => Settings is null ? Message : $"{Settings.Prompt}\nSeed {Settings.Seed} · {Settings.Steps} steps\n{Message}";
+    public bool CanRetry => Settings is not null && !string.IsNullOrWhiteSpace(Settings.Prompt);
+    public bool HasLog => LogPath is not null;
+}
+/// <summary>Recent successful images and unfinished generations, plus how many jobs this listing marked interrupted.</summary>
+public sealed record LibrarySnapshot(IReadOnlyList<GeneratedImage> Images, int Recovered, IReadOnlyList<JobSummary> Problems);
 public interface ISettingsStore
 {
     AppSettings Load();

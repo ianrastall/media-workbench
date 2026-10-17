@@ -21,6 +21,9 @@ import zipfile
 PROFILE = "sd15-cu126-v1"
 RECIPE = "sd15-baseline"
 SETUP_ACTIVE = ["preparing", "runtime", "downloading", "verifying"]
+LIBRARY_IMAGES = 200
+LIBRARY_PROBLEMS = 50
+PROBLEM_STATUSES = {"failed", "cancelled", "interrupted"}
 # Bump when this module or inference_worker.py changes what a verified installation means
 # (pipeline loading, precision, checks). Source edits alone no longer revoke readiness.
 ADAPTER_VERSION = 1
@@ -425,7 +428,7 @@ def run_child(arguments, cancel, progress, environment=None, protocol=False, log
         child.stdout.close()
 
 
-def inference(app, root, operation, payload, cancel, progress):
+def inference(app, root, operation, payload, cancel, progress, log_id=None):
     python = owned(root, f"runtimes/{PROFILE}/python/python.exe")
     environment = os.environ.copy()
     environment.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
@@ -435,7 +438,7 @@ def inference(app, root, operation, payload, cancel, progress):
     return run_child([python, "-I", "-u", app / "workers/python/inference_worker.py", "--root", app,
         "--data-root", root, "--operation", operation, "--payload", json.dumps(payload)],
         cancel, progress, environment, protocol=True,
-        log_path=owned(root, f"logs/{operation}-{uuid.uuid4().hex}.log"))
+        log_path=owned(root, f"logs/{operation}-{log_id or uuid.uuid4().hex}.log"))
 
 
 def verify_files(app, root, cancel, progress):
@@ -544,11 +547,12 @@ def generate(app, payload, cancel, progress):
         record = dict(schemaVersion=1, id=job_id, status="running", settings=settings,
                       startedUtc=datetime.now(timezone.utc).isoformat(), recipeId=RECIPE,
                       profileStamp=ready["profileStamp"], runtimeProfileId=PROFILE,
-                      source=dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"]))
+                      source=dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"]),
+                      log=f"generate-{job_id}.log")
         job = owned(root, f"jobs/{job_id}.json")
         atomic_json(job, record)
         try:
-            result = inference(app, root, "generate", dict(settings, jobId=job_id), cancel, progress)
+            result = inference(app, root, "generate", dict(settings, jobId=job_id), cancel, progress, log_id=job_id)
             check_cancel(cancel)
             record.update(status="succeeded", completedUtc=datetime.now(timezone.utc).isoformat(), **result)
             image = artifact_image(root, record)
@@ -584,15 +588,34 @@ def artifact_image(root, record):
     return image
 
 
+def job_log(root, record):
+    """The generation's own child log, if it exists; the name is fixed by the job ID, never taken from the record."""
+    if not job_id_valid(record.get("id")) or record.get("log") != f"generate-{record['id']}.log":
+        return None
+    path = owned(root, "logs") / record["log"]
+    return path if path.is_file() else None
+
+
 def library(payload):
+    """Recent successful images, plus recent failed, cancelled, and interrupted generations with their reasons."""
     root = data_root(payload)
     recovered = recover_if_idle(root)
     jobs = owned(root, "jobs")
-    results = []
-    for path in sorted(jobs.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:200]:
+    results, problems = [], []
+    paths = sorted(jobs.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in paths:
+        if len(results) >= LIBRARY_IMAGES and len(problems) >= LIBRARY_PROBLEMS:
+            break
         record = read_record(path)
-        if record and record.get("status") == "succeeded":
+        if not record or not job_id_valid(record.get("id")):
+            continue  # Damaged records and the setup attempt are not generation jobs.
+        if record.get("status") == "succeeded" and len(results) < LIBRARY_IMAGES:
             image = artifact_image(root, record)
             if image is not None:
                 results.append(dict(record, imagePath=str(image)))
-    return {"artifacts": results, "recovered": recovered}
+        elif record.get("status") in PROBLEM_STATUSES and len(problems) < LIBRARY_PROBLEMS:
+            log = job_log(root, record)
+            problems.append({"id": record["id"], "status": record["status"], "message": str(record.get("message", ""))[:2000],
+                             "startedUtc": record.get("startedUtc", ""), "settings": record.get("settings"),
+                             "logPath": str(log) if log else None})
+    return {"artifacts": results, "problems": problems, "recovered": recovered}

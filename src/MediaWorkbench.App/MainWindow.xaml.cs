@@ -1,5 +1,5 @@
 using MediaWorkbench.Infrastructure;
-using MediaWorkbench_App.ViewModels;
+using MediaWorkbench.Presentation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Windowing;
 using System.Runtime.InteropServices;

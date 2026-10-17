@@ -45,7 +45,7 @@ def ready_install(app, root):
     setup.atomic_json(setup.state_path(root), {"status": "ready", "profileStamp": setup.profile_stamp(app), "files": stamps})
 
 
-def fake_generation(app, data, operation, payload, cancel, progress):
+def fake_generation(app, data, operation, payload, cancel, progress, log_id=None):
     image = data / "artifacts" / payload["jobId"] / "image.png"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"png")
@@ -246,6 +246,7 @@ class ReadinessTests(unittest.TestCase):
             self.assertEqual(Path(record["imagePath"]), (root / "artifacts" / record["id"] / "image.png").resolve())
             stored = json.loads((root / "jobs" / f"{record['id']}.json").read_text())
             self.assertEqual(stored["imagePath"], record["id"] + "/image.png")
+            self.assertEqual(stored["log"], f"generate-{record['id']}.log")
             self.assertEqual(setup.status(app, {"dataRoot": str(root)})["status"], "ready")
 
     def test_changed_model_file_blocks_generation_and_revokes_ready(self):
@@ -376,6 +377,37 @@ class LibraryTests(unittest.TestCase):
             self.write_job(root, str(root / "artifacts" / self.JOB / ".." / ".." / "escape.png"), "e" * 32)
             self.write_job(root, f"{self.JOB}/image.png", "f" * 32)  # Another job's folder.
             self.assertEqual(setup.library({"dataRoot": folder})["artifacts"], [])
+
+    def test_unfinished_jobs_are_listed_with_reason_and_own_log(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            failed, interrupted = "1" * 32, "2" * 32
+            setup.atomic_json(root / "jobs" / f"{failed}.json", {"id": failed, "status": "failed", "message": "CUDA out of memory",
+                "startedUtc": "2026-10-17T00:00:00+00:00", "settings": {"prompt": "house"}, "log": f"generate-{failed}.log"})
+            setup.atomic_json(root / "jobs" / f"{interrupted}.json", {"id": interrupted, "status": "running", "log": "../../escape.log"})
+            (root / "logs").mkdir()
+            (root / "logs" / f"generate-{failed}.log").write_text("trace")
+            setup.atomic_json(setup.state_path(root), {"status": "failed", "message": "Setup failed"})
+            listing = setup.library({"dataRoot": folder})
+            problems = {p["id"]: p for p in listing["problems"]}
+            self.assertEqual(set(problems), {failed, interrupted})  # The setup attempt is not a generation job.
+            self.assertEqual(problems[failed]["message"], "CUDA out of memory")
+            self.assertEqual(Path(problems[failed]["logPath"]), root / "logs" / f"generate-{failed}.log")
+            self.assertEqual((problems[interrupted]["status"], problems[interrupted]["logPath"]), ("interrupted", None))
+
+    def test_failures_do_not_push_images_out_of_the_library(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.image(root)
+            self.write_job(root, f"{self.JOB}/image.png")
+            old = (root / "jobs" / f"{self.JOB}.json").stat().st_mtime - 100
+            os.utime(root / "jobs" / f"{self.JOB}.json", (old, old))
+            for i in range(setup.LIBRARY_IMAGES + 10):
+                job_id = f"{i:032x}"
+                setup.atomic_json(root / "jobs" / f"{job_id}.json", {"id": job_id, "status": "failed", "message": "x"})
+            listing = setup.library({"dataRoot": folder})
+            self.assertEqual([a["id"] for a in listing["artifacts"]], [self.JOB])
+            self.assertEqual(len(listing["problems"]), setup.LIBRARY_PROBLEMS)
 
     def test_legacy_absolute_records_survive_a_moved_data_folder(self):
         with tempfile.TemporaryDirectory() as folder:
