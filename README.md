@@ -2,7 +2,19 @@
 
 A dark Windows desktop workspace for local image and video tools, built with **WinUI 3, MVVM, C# 14, .NET 10, a Rust core exposed through a C ABI, and out-of-process Python workers**.
 
-**Status: 0.2.0-alpha.6 — local image creation, upscaling, and a searchable Library.** Discover public Hugging Face models, install an isolated Stable Diffusion 1.5 environment, verify your GPU, and generate images from prompts. Video generation remains planned.
+**Status: experimental alpha — local image creation, upscaling, and a searchable Library.** Discover public Hugging Face models, install an isolated Stable Diffusion 1.5 environment, verify your GPU, and generate images from prompts. Video generation remains planned.
+
+<!-- release-summary:start -->
+## Current release
+
+**[0.2.0-alpha.7](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.7)** · 2026-10-17 · Pre-release · Windows x64
+
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.7/MediaWorkbench-0.2.0-alpha.7-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.7/MediaWorkbench-0.2.0-alpha.7-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.7/MediaWorkbench-0.2.0-alpha.7-README.md)
+
+- Release documentation is generated from the version, changelog, and current README. Every release includes installation steps, runtime/hardware requirements, supported features, MCP setup guidance, limitations, license links, and checksum instructions in its release body and a downloadable README asset alongside the installer and checksum.
+- Builds refresh the main README's current-release summary and download links; checks block publication if it is stale. Documentation links in release notes are pinned to that release's source tag.
+- The public repository now has a descriptive summary and topics for Windows, Rust, local AI image generation/upscaling, WinUI 3, and MCP discovery.
+<!-- release-summary:end -->
 
 ## Install
 
@@ -35,6 +47,7 @@ Cancel stops the owned worker operation. Retrying setup reuses completed downloa
 - Live public Hugging Face search with task filters.
 - Model details: publisher/repository, revision, task, library, license metadata, access state, and repository files.
 - Rust installation-plan validation, relative-path policy, and streaming SHA-256 through C ABI 1.
+- Rust-owned completed-job validation and cancellable, checksum-verified PNG export with atomic replacement.
 - Bundled Python worker diagnostics and read-only NVIDIA GPU detection.
 - Persistent storage settings, cancellation, and session activity.
 - Pinned SD 1.5 model files with SHA-256 checks and an exact, hash-locked inference dependency set.
@@ -60,7 +73,7 @@ WinUI 3 views → MVVM view models → Core contracts / Infrastructure
                          │                          │
                    Rust DLL / C ABI          Python child workers
                    plans · path policy       Hugging Face metadata/setup
-                   file verification         isolated Diffusers/CUDA child
+                   hashes · verified export  isolated Diffusers/CUDA child
 ```
 
 The Rust ABI uses caller-owned UTF-8 buffers; allocation ownership never crosses language boundaries. Workers use versioned JSON lines over owned child-process streams. Native executable adapters can be added alongside Python workers.
@@ -79,7 +92,7 @@ Prerequisites: Windows x64, PowerShell 7, .NET SDK 10, Rust/rustup with the MSVC
 
 The Rust version is pinned in `rust-toolchain.toml`, dependencies in `native/Cargo.lock`, and downloaded runtime/compiler artifacts in `packaging/dependencies.json`. Initial builds fetch the official Python embeddable runtime and verify its SHA-256. The application never depends on a developer's global Python installation.
 
-Official releases are built and published by GitHub Actions when the version changes on `main` (see [development](docs/development.md#release-discipline)). To create the self-contained application and installer locally:
+Official releases are built and published by GitHub Actions when the version changes on `main` (see [development](docs/development.md#release-discipline)). Builds refresh the current-release summary above; checks require it to match the version and changelog before publication. Each release has generated installation/feature/license guidance in its release notes and a downloadable README alongside its installer and checksum. To create the self-contained application and installer locally:
 
 ```powershell
 ./scripts/build.ps1 -Configuration Release -Installer

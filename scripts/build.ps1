@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $taskRoot
 try {
+    & (Join-Path $PSScriptRoot 'update-release-readme.ps1')
     & (Join-Path $PSScriptRoot 'prepare-runtime.ps1') -WithInstallerTools:$Installer
     cargo build --manifest-path native/Cargo.toml --target-dir artifacts/native --release --locked
     if ($LASTEXITCODE -ne 0) { throw 'Native core build failed.' }

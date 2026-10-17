@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0-alpha.7 — 2026-10-17
+
+- Release documentation is generated from the version, changelog, and current README. Every release includes installation steps, runtime/hardware requirements, supported features, MCP setup guidance, limitations, license links, and checksum instructions in its release body and a downloadable README asset alongside the installer and checksum.
+- Builds refresh the main README's current-release summary and download links; checks block publication if it is stale. Documentation links in release notes are pinned to that release's source tag.
+- The public repository now has a descriptive summary and topics for Windows, Rust, local AI image generation/upscaling, WinUI 3, and MCP discovery.
+
 ## 0.2.0-alpha.6 — 2026-10-17
 
 - LLM tool access: an opt-in local MCP stdio host lets compatible desktop LLM clients inspect model readiness/storage/Library, read native plans, and search public Hub metadata. Settings → **Connect an LLM client (MCP)** generates and copies the client configuration for the saved data folder.

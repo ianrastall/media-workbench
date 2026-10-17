@@ -1,12 +1,10 @@
-# Writes the CHANGELOG.md section for a version to a file; fails if the section is missing or empty.
-param([Parameter(Mandatory)][string]$Version, [Parameter(Mandatory)][string]$OutputPath)
+# Generate the release body and optional downloadable README from the changelog and public README.
+param([Parameter(Mandatory)][string]$Version, [Parameter(Mandatory)][string]$OutputPath, [string]$ReadmeOutputPath)
 $ErrorActionPreference = 'Stop'
-$taskLines = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'CHANGELOG.md') -Encoding utf8
-$taskStart = [Array]::FindIndex($taskLines, [Predicate[string]]{ param($l) $l -match ('^## ' + [regex]::Escape($Version) + '(\s|$)') })
-if ($taskStart -lt 0) { throw "CHANGELOG.md has no '## $Version' section." }
-$taskEnd = [Array]::FindIndex($taskLines, $taskStart + 1, [Predicate[string]]{ param($l) $l -match '^## ' })
-if ($taskEnd -lt 0) { $taskEnd = $taskLines.Count }
-$taskBody = ($taskLines[($taskStart + 1)..($taskEnd - 1)] -join "`n").Trim()
-if (-not $taskBody) { throw "CHANGELOG.md section for $Version is empty." }
-$taskBody += "`n`nDownload the Windows x64 setup file; verify it with the adjacent SHA-256 file. Built and published by GitHub Actions from this tag."
-Set-Content -LiteralPath $OutputPath -Value $taskBody -Encoding utf8
+Import-Module (Join-Path $PSScriptRoot 'ReleaseContent.psm1') -Force
+$taskRoot = Split-Path -Parent $PSScriptRoot
+$taskNotes = Get-ReleaseNotes -RepositoryRoot $taskRoot -Version $Version
+[IO.File]::WriteAllText([IO.Path]::GetFullPath($OutputPath), $taskNotes, [Text.UTF8Encoding]::new($false))
+if ($ReadmeOutputPath) {
+    [IO.File]::WriteAllText([IO.Path]::GetFullPath($ReadmeOutputPath), $taskNotes, [Text.UTF8Encoding]::new($false))
+}

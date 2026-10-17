@@ -15,6 +15,9 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Install pinned Rust toolchain
         run: rustup show
+      - name: Verify committed release README
+        shell: pwsh
+        run: ./scripts/update-release-readme.ps1 -Check
       - name: Build application and installer
         # Publishes, verifies the published resources and worker (test-publish.ps1 -SkipUI), then packages.
         shell: pwsh
@@ -57,7 +60,6 @@ jobs:
           $needed = $LASTEXITCODE -ne 0
           $ErrorActionPreference = 'Stop'
           $global:LASTEXITCODE = 0
-          if ($needed) { ./scripts/release-notes.ps1 -Version $version -OutputPath (Join-Path $env:RUNNER_TEMP 'notes.md') }
           "version=$version" >> $env:GITHUB_OUTPUT
           "needed=$($needed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           Write-Output ($needed ? "Releasing v$version" : "v$version is already released")
@@ -73,6 +75,10 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           $assets = @(Get-ChildItem dist -File | Where-Object Name -like "MediaWorkbench-$version-win-x64-setup.exe*" | ForEach-Object FullName)
           if ($assets.Count -ne 2) { throw "Expected installer and checksum for $version, found $($assets.Count) files." }
+          ./scripts/update-release-readme.ps1 -Check
+          $readme = Join-Path $env:RUNNER_TEMP "MediaWorkbench-$version-README.md"
+          ./scripts/release-notes.ps1 -Version $version -OutputPath (Join-Path $env:RUNNER_TEMP 'notes.md') -ReadmeOutputPath $readme
+          $assets += $readme
           $arguments = @("v$version") + $assets + @('--repo', $env:GITHUB_REPOSITORY, '--target', $env:GITHUB_SHA,
             '--title', "Media Workbench $version", '--notes-file', (Join-Path $env:RUNNER_TEMP 'notes.md'))
           if ($version.Contains('-')) { $arguments += '--prerelease' } else { $arguments += '--latest' }

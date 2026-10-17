@@ -6,6 +6,8 @@ if (-not $Artifacts) { $Artifacts = Join-Path $taskRoot 'artifacts/checks' }
 $Artifacts = [IO.Path]::GetFullPath($Artifacts)
 Push-Location $taskRoot
 try {
+    & (Join-Path $PSScriptRoot 'update-release-readme.ps1') -Check
+    & (Join-Path $PSScriptRoot 'test-release-content.ps1')
     cargo fmt --manifest-path native/Cargo.toml --check
     if ($LASTEXITCODE -ne 0) { throw 'Rust formatting failed.' }
     cargo test --manifest-path native/Cargo.toml --target-dir artifacts/native --locked
