@@ -7,6 +7,8 @@ import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+# GitHub's runner reports its temp folder by an 8.3 short name; the app resolves data roots to long names.
+tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
 sys.path.insert(0, str(ROOT / "workers/python"))
 import inference_setup as setup
 import storage
