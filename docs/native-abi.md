@@ -24,7 +24,7 @@ Relative paths use `/`. Absolute paths, drive prefixes, `..`, empty components, 
 
 ## Installation planning
 
-The recipe shape currently follows schema 1. The core reports missing pinned model revisions, unverified recipes, and missing runtime profiles. All plans remain nonexecutable until a real installer and target-hardware verification exist. Discovery is not an installation compatibility claim.
+The recipe shape follows schema 1. The core blocks unsupported schemas/providers, draft recipes, missing immutable revisions, and missing runtime profiles. Pinned experimental recipes may run installation and local verification; `canExecute` authorizes that workflow rather than certifying an installed model. Only successful file/runtime/inference checks can produce a ready installation record. Discovery is not an installation compatibility claim.
 
 ## Future additions
 

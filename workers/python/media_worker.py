@@ -13,8 +13,11 @@ import sys
 import threading
 import uuid
 
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hub_catalog
+import inference_setup
 
 PROTOCOL = 1
 MAX_REQUEST_BYTES = 1_048_576
@@ -64,15 +67,25 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
             result = {"python": platform.python_version(), "executable": sys.executable,
                       "platform": platform.system(), "gpu": gpu_probe(),
                       "mode": "alpha", "generationAvailable": False,
-                      "installationAvailable": False}
+                      "installationAvailable": True}
         elif operation == "catalog.list":
             recipes = [json.loads(path.read_text(encoding="utf-8"))
                        for path in sorted((root / "recipes").glob("*.json"))]
-            result = {"source": "local draft recipes; not a live Hub search", "recipes": recipes}
+            result = {"source": "bundled recipes; readiness requires per-machine verification", "recipes": recipes}
         elif operation == "catalog.search":
             result = hub_catalog.search(payload)
         elif operation == "catalog.details":
             result = hub_catalog.details(payload)
+        elif operation == "installation.status":
+            result = inference_setup.status(root, payload)
+        elif operation == "installation.run":
+            result = inference_setup.install(root, payload, cancellation,
+                lambda value: emit(request_id, "progress", value))
+        elif operation == "generate.image":
+            result = inference_setup.generate(root, payload, cancellation,
+                lambda value: emit(request_id, "progress", value))
+        elif operation == "library.list":
+            result = inference_setup.library(payload)
         elif operation == "demo.run":
             steps = payload.get("steps", 5)
             delay_ms = payload.get("delayMs", 50)
@@ -106,13 +119,15 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
             finish(request_id, "error", {"code": "not_implemented", "message": f"Operation is not implemented: {operation}"})
             return
         finish(request_id, "result", result)
+    except inference_setup.SetupError as exc:
+        finish(request_id, "error", {"code": "cancelled" if isinstance(exc, inference_setup.Cancelled) else "inference_failed", "message": str(exc)})
     except hub_catalog.CatalogError as exc:
         finish(request_id, "error", {"code": "catalog_unavailable", "message": str(exc)})
     except (ValueError, TypeError) as exc:
         finish(request_id, "error", {"code": "invalid_input", "message": str(exc)})
     except Exception as exc:
         print(f"Worker operation failed ({type(exc).__name__})", file=sys.stderr, flush=True)
-        finish(request_id, "error", {"code": "worker_error", "message": "Operation failed; inspect diagnostics"})
+        finish(request_id, "error", {"code": "worker_error", "message": f"{type(exc).__name__}: {str(exc)[:1500]}"})
     finally:
         with ACTIVE_LOCK:
             if active and active[0] == request_id:
@@ -128,8 +143,9 @@ def main() -> int:
         print("The selected root must contain recipes/", file=sys.stderr)
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
-                         "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "demo.run"],
-                         "generationAvailable": False, "installationAvailable": False})
+                         "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "demo.run",
+                                        "installation.status", "installation.run", "generate.image", "library.list"],
+                         "generationAvailable": False, "installationAvailable": True})
     while True:
         raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
         if not raw:

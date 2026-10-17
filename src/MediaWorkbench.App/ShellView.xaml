@@ -5,6 +5,7 @@
     xmlns:converters="using:MediaWorkbench_App.Converters">
     <UserControl.Resources>
         <converters:BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+        <converters:LocalImageConverter x:Key="LocalImage" />
     </UserControl.Resources>
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
@@ -14,7 +15,7 @@
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE8B9;" FontSize="19" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                 <TextBlock Text="Media Workbench" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
-                <TextBlock Text="0.1.0 · Alpha" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                <TextBlock Text="0.2.0 · Alpha" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
             </StackPanel>
         </Grid>
         <NavigationView x:Name="Navigation" Grid.Row="1" OpenPaneLength="220" PaneDisplayMode="Auto"
@@ -55,7 +56,7 @@
                             </Border>
                         </Grid>
                         <TextBlock Text="First model pipeline" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                        <TextBlock Text="A Stable Diffusion 1.5 baseline is being prepared with a pinned runtime, hardware verification, and recoverable installation." TextWrapping="Wrap" />
+                        <TextBlock Text="Open Create to install Stable Diffusion 1.5, verify your GPU, and generate your first image." TextWrapping="Wrap" />
                         <Button Content="Preview installation plan" Command="{x:Bind ViewModel.PlanCommand}" />
                         <TextBlock Text="{x:Bind ViewModel.PlanText, Mode=OneWay}" TextWrapping="Wrap" />
                     </StackPanel>
@@ -98,9 +99,51 @@
                         </Grid>
                     </StackPanel>
 
+                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsCreate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Stable Diffusion 1.5" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.InstallationText, Mode=OneWay}" TextWrapping="Wrap" />
+                                <TextBlock Text="Setup downloads about 5 GiB plus dependency files. Allow 20 GiB free for the runtime, model, and cache. NVIDIA GPU with 6 GB VRAM required. Downloads stay in the data folder shown in Settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <HyperlinkButton Content="Model card and CreativeML Open RAIL-M license" NavigateUri="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5" Padding="0" />
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button Content="Install / verify" Command="{x:Bind ViewModel.InstallCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                    <Button Content="Check model status" Command="{x:Bind ViewModel.RefreshInstallationCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <TextBox Header="Prompt" Text="{x:Bind ViewModel.Prompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxLength="2000" />
+                        <TextBox Header="Negative prompt (optional)" Text="{x:Bind ViewModel.NegativePrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="2000" />
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <NumberBox Header="Seed" Value="{x:Bind ViewModel.Seed, Mode=TwoWay}" Minimum="0" Maximum="4294967295" Width="200" SpinButtonPlacementMode="Compact" />
+                            <NumberBox Header="Steps" Value="{x:Bind ViewModel.Steps, Mode=TwoWay}" Minimum="1" Maximum="50" Width="130" SpinButtonPlacementMode="Compact" />
+                            <TextBlock Text="512 × 512 · FP32" VerticalAlignment="Bottom" Margin="0,0,0,10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                        <Button Content="Generate image" Command="{x:Bind ViewModel.GenerateCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                        <Image Source="{x:Bind ViewModel.PreviewPath, Mode=OneWay, Converter={StaticResource LocalImage}}" MaxWidth="512" MaxHeight="512" HorizontalAlignment="Left" Stretch="Uniform" AutomationProperties.Name="Generated image preview" />
+                        <TextBlock Text="{x:Bind ViewModel.ImageDescription, Mode=OneWay}" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsLibrary, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <Button Content="Refresh images" Command="{x:Bind ViewModel.RefreshLibraryCommand}" />
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.Images}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="core:GeneratedImage">
+                                    <Border Padding="16" Margin="0,0,0,16" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                        <StackPanel Spacing="12">
+                                            <Image Source="{x:Bind ImagePath, Converter={StaticResource LocalImage}}" MaxWidth="384" MaxHeight="384" HorizontalAlignment="Left" Stretch="Uniform" />
+                                            <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{x:Bind ImagePath}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsSettings, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                        <TextBox Text="{x:Bind ViewModel.DataRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Data folder" PlaceholderText="Choose an absolute folder path" />
-                        <TextBlock Text="Models, future inference environments, and media will use this folder. Changing it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBox IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Text="{x:Bind ViewModel.DataRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Data folder" PlaceholderText="Choose an absolute folder path" />
+                        <TextBlock Text="Models, private inference environments, and media use this folder. Changing it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Button Content="Save settings" Command="{x:Bind ViewModel.SaveSettingsCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             <Button Content="Open folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
@@ -136,7 +179,10 @@
         <Grid Grid.Row="2" Padding="24,10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" ColumnSpacing="16">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="18" Height="18" />
-            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Status, Mode=OneWay}" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Spacing="4">
+                <TextBlock Text="{x:Bind ViewModel.Status, Mode=OneWay}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <ProgressBar IsIndeterminate="{x:Bind ViewModel.ProgressIndeterminate, Mode=OneWay}" Value="{x:Bind ViewModel.ProgressPercent, Mode=OneWay}" Maximum="100" Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
+            </StackPanel>
             <Button Grid.Column="2" Content="Cancel" Command="{x:Bind ViewModel.CancelCommand}" />
         </Grid>
     </Grid>

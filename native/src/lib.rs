@@ -68,8 +68,8 @@ fn make_plan(input: &[u8]) -> Result<Vec<u8>, i32> {
     if recipe.schema_version != 1 {
         blockers.push("Unsupported recipe schema.".into());
     }
-    if recipe.status != "verified" {
-        blockers.push("Recipe has no approved verification evidence.".into());
+    if recipe.status != "verified" && recipe.status != "experimental" {
+        blockers.push("Recipe is not approved for local inference verification.".into());
     }
     if recipe.source.provider != "huggingface" {
         blockers.push("Source provider is unsupported.".into());
@@ -89,10 +89,9 @@ fn make_plan(input: &[u8]) -> Result<Vec<u8>, i32> {
     {
         blockers.push("A tested, locked inference runtime profile must be selected.".into());
     }
-    blockers.push("Model installation is scheduled for the next milestone.".into());
     let plan = Plan {
         recipe_id: recipe.id,
-        can_execute: false,
+        can_execute: blockers.is_empty(),
         blockers,
         steps: vec![
             Step {
@@ -281,7 +280,14 @@ mod tests {
         let json = br#"{"schemaVersion":1,"id":"sd15","status":"draft","source":{"provider":"huggingface","revision":null},"runtimeProfileId":null}"#;
         let result: serde_json::Value = serde_json::from_slice(&make_plan(json).unwrap()).unwrap();
         assert_eq!(result["canExecute"], false);
-        assert!(result["blockers"].as_array().unwrap().len() >= 4);
+        assert!(result["blockers"].as_array().unwrap().len() >= 3);
+    }
+    #[test]
+    fn pinned_experimental_recipe_can_be_verified_locally() {
+        let json = br#"{"schemaVersion":1,"id":"sd15","status":"experimental","source":{"provider":"huggingface","revision":"451f4fe16113bff5a5d2269ed5ad43b0592e9a14"},"runtimeProfileId":"sd15-cu126-v1"}"#;
+        let result: serde_json::Value = serde_json::from_slice(&make_plan(json).unwrap()).unwrap();
+        assert_eq!(result["canExecute"], true);
+        assert!(result["blockers"].as_array().unwrap().is_empty());
     }
     #[test]
     fn abi_reports_required_size_and_contains_bad_input() {

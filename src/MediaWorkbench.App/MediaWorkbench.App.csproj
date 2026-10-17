@@ -28,6 +28,7 @@
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\workers\python\*.py" Link="workers\python\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\recipes\*.json" Link="recipes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\profiles\*" Link="profiles\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\runtime\python\**\*" Link="runtime\python\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\THIRD-PARTY-NOTES.md" Link="THIRD-PARTY-NOTES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\WINDOWS-APP-SDK-LICENSE.txt" Link="WINDOWS-APP-SDK-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
@@ -35,6 +36,7 @@
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
   <Target Name="CopyUnpackagedXamlToPublish" AfterTargets="Publish">
+    <Delete Files="$(PublishDir)recipes\sd15-draft.json" />
     <ItemGroup>
       <WorkbenchXbf Include="$(TargetDir)**\*.xbf" />
       <WorkbenchPri Include="$(TargetDir)$(AssemblyName).pri" />
@@ -42,5 +44,8 @@
     <Error Condition="!Exists('$(TargetDir)$(AssemblyName).pri')" Text="The generated application PRI is missing." />
     <Copy SourceFiles="@(WorkbenchXbf)" DestinationFiles="@(WorkbenchXbf->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(WorkbenchPri)" DestinationFolder="$(PublishDir)" />
+  </Target>
+  <Target Name="RemoveRetiredRecipe" AfterTargets="Build">
+    <Delete Files="$(TargetDir)recipes\sd15-draft.json" />
   </Target>
 </Project>

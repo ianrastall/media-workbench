@@ -2,7 +2,7 @@ param([string]$ApplicationDirectory, [switch]$SkipUI)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 if (-not $ApplicationDirectory) { $ApplicationDirectory = Join-Path $taskRoot 'artifacts/publish/win-x64' }
-$taskRequired = @('MediaWorkbench.exe','MediaWorkbench.pri','App.xbf','MainWindow.xbf','ShellView.xbf','media_workbench_core.dll','runtime/python/python.exe','workers/python/media_worker.py','workers/python/hub_catalog.py')
+$taskRequired = @('MediaWorkbench.exe','MediaWorkbench.pri','App.xbf','MainWindow.xbf','ShellView.xbf','media_workbench_core.dll','runtime/python/python.exe','workers/python/media_worker.py','workers/python/hub_catalog.py','workers/python/inference_setup.py','workers/python/inference_worker.py','profiles/sd15-cu126.json','profiles/sd15-cu126.lock','profiles/sd15-files.json')
 foreach ($taskFile in $taskRequired) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published application is incomplete: $taskFile" }
 }

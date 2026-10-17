@@ -1,0 +1,65 @@
+# First inference pipeline
+
+The desktop app coordinates one SD 1.5 recipe. Search results never become executable code or automatically installable models. The recipe is experimental; each machine must pass inference verification before it is ready.
+
+## Runtime boundary
+
+```mermaid
+sequenceDiagram
+    participant UI as WinUI / MVVM
+    participant Core as C# service + Rust plan
+    participant Setup as Discovery Python 3.14 child
+    participant ML as Private Python 3.12 child
+    participant Disk as Selected data folder
+    UI->>Core: Install / verify
+    Core->>Core: Validate pinned recipe through C ABI
+    Core->>Setup: installation.run (JSON lines)
+    Setup->>Disk: Acquire lock; save attempt
+    Setup->>Setup: Verify Python/uv archives; sync locked wheels
+    Setup->>ML: Download selected files using Hub SDK
+    ML-->>Setup: Progress
+    Setup->>Disk: Check all model sizes and SHA-256
+    Setup->>ML: Verify real 512 × 512 CUDA inference
+    ML-->>Setup: GPU, precision, time, memory evidence
+    Setup->>Disk: Atomic ready record
+    Setup-->>UI: Terminal result
+```
+
+The bundled discovery interpreter remains independent of the ML runtime. Official CPython 3.12.10 embeddable x64 is extracted under `runtimes/sd15-cu126-v1/python`. Its isolated path file adds only its private site-packages directory. A checksum-pinned uv executable installs wheel-only packages into that directory. No system Python, PATH, global pip environment, or CUDA toolkit is modified.
+
+The ML child uses `-I -u` and a closed stdin rather than inheriting the coordinator's protocol input. Python user-site packages and inherited Python configuration are excluded. Child output/diagnostics are saved under the data folder's `logs/` directory; only parsed progress and terminal events reach the GUI protocol. CPython 3.12.10 is the final official 3.12 maintenance binary; moving to a newer security-patched Windows runtime is a separate profile update, not an automatic untested interpreter replacement.
+
+`profiles/sd15-cu126.in` records direct dependencies; `.lock` records exact transitive versions and hashes. PyTorch's CUDA 12.6 wheel is an immutable URL with a pinned SHA-256. uv is invoked with hash enforcement, no configuration discovery, an explicit interpreter, an owned cache, and no source builds. Inherited pip/uv configuration variables are excluded. See [uv hash checking](https://docs.astral.sh/uv/reference/settings/#require-hashes) and [official PyTorch builds](https://pytorch.org/get-started/previous-versions/).
+
+`profiles/sd15-files.json` selects 16 files, approximately 2.55 GiB, from model commit `451f4fe16113bff5a5d2269ed5ad43b0592e9a14`. It excludes pickle checkpoints and duplicate full-precision weights. The supported Hub SDK handles selected-file downloads and its local cache. Each selected file has a checked size and SHA-256 before inference. Public requests explicitly disable implicit account tokens. Review the [model card and license](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5).
+
+## Execution and evidence
+
+The inference child uses the built-in `StableDiffusionPipeline`, safetensors, local files only, and offline environment flags. Model files cannot select custom remote Python code. The safety checker remains enabled. Stored fp16 weights are loaded into FP32 computation, with model CPU offload and VAE slicing. This is the conservative initial GTX 16-series profile; there is no automatic precision tuning or arbitrary pipeline adapter yet. See [Diffusers memory management](https://huggingface.co/docs/diffusers/en/optimization/memory).
+
+Setup requires free space, NVIDIA device detection, CUDA availability, and at least 6 GB VRAM. Verification renders a fixed 512 × 512 prompt with four inference steps, checks output dimensions and image variation, and rejects safety-filtered output. The ready record includes GPU name, Torch/CUDA versions, precision, inference duration, peak allocated GPU memory, UTC timestamp, and a digest of the profile/lock/manifest/inference adapter. This is a smoke test, not a performance certification or guarantee for every prompt or driver.
+
+Generation rechecks the model files and matching ready profile, validates inputs, starts an isolated inference child, and forwards per-step progress. A PNG is written under a unique artifact directory and finalized by atomic rename. Only then is the job marked succeeded. The job JSON stores the prompt, negative prompt, seed, steps, fixed dimensions/guidance, model recipe/profile, output SHA-256, device, and timing. Seeds reproduce settings; identical pixels across different drivers/hardware are not guaranteed.
+
+## Data and recovery
+
+```text
+<data folder>/
+  .operation.lock                     OS-released exclusive lock
+  bootstrap/                          verified Python/uv archives and uv executable
+  runtimes/sd15-cu126-v1/python/       private interpreter and packages
+  models/sd15-baseline/               selected model files and Hub download metadata
+  cache/uv/                           wheel cache, separate from system caches
+  jobs/install-sd15.json              latest setup attempt and readiness evidence
+  jobs/<id>.json                     generation settings, status, output evidence
+  artifacts/<id>/image.png            finalized generated image
+  logs/<operation>-<id>.log           local child output/diagnostics
+```
+
+One operation owns a data folder at a time, including across separate clients. Setup writes preparing/runtime/downloading/verifying states before each stage; ready is atomic and last. Normal failures and cancellation record their outcome. Work left in progress with no lock owner is changed to interrupted the next time the folder is idle and checked: a setup attempt at status, install, or generation; a `running` generation job at status, Library, install, or generation. Recovery removes that job's `image.partial`, unfinished atomic-write temporary records, and reports how many jobs it recorded so Library can say so. Damaged job records are skipped rather than blocking Library. A changed inference profile invalidates readiness. Retry retains completed downloads; no rollback deletes a previous model/runtime automatically.
+
+Cancellation reaches the child through the coordinator and kills the ML process if needed. The C# transport escalates after three seconds to terminating its owned process tree. GPU kernels/imports are not guaranteed to exit cooperatively. Each worker is placed in its own Windows Job Object with kill-on-close before it receives a request, so the ML child, uv, and any other descendant inherit it. Forced stops terminate the whole job, including a descendant whose coordinator already exited; disposing a worker closes its job; and if the app itself crashes or is killed, Windows closes the handle and ends the tree. The coordinator's lock is then released and the next check records the job as interrupted. Partial, uncommitted outputs do not enter Library. Library shows up to 200 recent successful job records, not a database-backed, indexed or virtualized asset manager.
+
+## Current limits
+
+Windows x64/NVIDIA only; one model, 512 × 512, guidance 7.5, FP32 offload. No account tokens, LoRAs, schedulers UI, image input, video, queue, model deletion UI, cache pruning, runtime removal, signature-verified updates, or telemetry. Repeated generation currently reloads the model in a fresh child. Downloads and runtime caches can consume substantially more disk than the model alone. Installed package hashes are enforced on download, rather than continuously auditing every extracted package file. The worker is dependency/process isolation, not a hostile-code sandbox. Clean-machine Visual C++ runtime and Windows 10 testing remain necessary before broad support claims.

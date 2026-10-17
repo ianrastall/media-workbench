@@ -25,6 +25,10 @@ public partial class MainViewModel : ObservableObject
         OpenDataFolderCommand = new RelayCommand(OpenDataFolder);
         CancelCommand = new RelayCommand(() => _operation?.Cancel(), () => IsBusy);
         OpenModelCommand = new RelayCommand(OpenModel, () => SelectedModel is not null);
+        InstallCommand = new AsyncRelayCommand(InstallAsync, () => !IsBusy);
+        RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
+        GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
+        RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
         try
         {
             var saved = settings.Load();
@@ -39,7 +43,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsHome), nameof(IsDiscover), nameof(IsSettings), nameof(IsDiagnostics), nameof(IsPlanned), nameof(PageTitle), nameof(PageDescription))]
+    [NotifyPropertyChangedFor(nameof(IsHome), nameof(IsDiscover), nameof(IsCreate), nameof(IsLibrary), nameof(IsSettings), nameof(IsDiagnostics), nameof(IsPlanned), nameof(PageTitle), nameof(PageDescription))]
     public partial string SelectedPage { get; set; } = "home";
     [ObservableProperty] public partial string SearchQuery { get; set; } = "stable-diffusion";
     [ObservableProperty] public partial int TaskIndex { get; set; } = 1;
@@ -48,12 +52,23 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string NativeStatus { get; set; } = "Checking native core…";
     [ObservableProperty] public partial string WorkerStatus { get; set; } = "Checking worker…";
     [ObservableProperty] public partial string Status { get; set; } = "Ready";
-    [ObservableProperty] public partial string Notice { get; set; } = "This first alpha supports model discovery and diagnostics. Installation and generation are in development.";
+    [ObservableProperty] public partial string Notice { get; set; } = "Start in Create to install and verify Stable Diffusion 1.5. Requires an NVIDIA GPU with 6 GB VRAM and 20 GiB free space.";
+    [ObservableProperty] public partial string InstallationText { get; set; } = "Check model status, or install / verify to prepare image generation.";
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand))] public partial bool ModelReady { get; set; }
+    [ObservableProperty] public partial string Prompt { get; set; } = "A small red ceramic house beside a green tree, watercolor illustration, daylight";
+    [ObservableProperty] public partial string NegativePrompt { get; set; } = "";
+    [ObservableProperty] public partial double Seed { get; set; } = 20261017;
+    [ObservableProperty] public partial double Steps { get; set; } = 20;
+    [ObservableProperty] public partial string PreviewPath { get; set; } = "";
+    [ObservableProperty] public partial string ImageDescription { get; set; } = "Your generated image will appear here.";
+    [ObservableProperty] public partial double ProgressPercent { get; set; }
+    [ObservableProperty] public partial bool ProgressIndeterminate { get; set; } = true;
     [ObservableProperty] public partial string DetailsText { get; set; } = "Select a model to inspect its source, revision, and files.";
     [ObservableProperty] public partial string DiagnosticsText { get; set; } = "Run diagnostics to check the native core and Python worker.";
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand))]
+    [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -61,6 +76,7 @@ public partial class MainViewModel : ObservableObject
 
     public ObservableCollection<HubModel> Models { get; } = [];
     public ObservableCollection<string> Activity { get; } = [];
+    public ObservableCollection<GeneratedImage> Images { get; } = [];
     public IAsyncRelayCommand SearchCommand { get; }
     public IAsyncRelayCommand DetailsCommand { get; }
     public IAsyncRelayCommand DiagnosticsCommand { get; }
@@ -69,12 +85,19 @@ public partial class MainViewModel : ObservableObject
     public IRelayCommand OpenDataFolderCommand { get; }
     public IRelayCommand CancelCommand { get; }
     public IRelayCommand OpenModelCommand { get; }
+    public IAsyncRelayCommand InstallCommand { get; }
+    public IAsyncRelayCommand RefreshInstallationCommand { get; }
+    public IAsyncRelayCommand GenerateCommand { get; }
+    public IAsyncRelayCommand RefreshLibraryCommand { get; }
 
     public bool IsHome => SelectedPage == "home";
+    public bool CanEdit => !IsBusy;
     public bool IsDiscover => SelectedPage == "discover";
+    public bool IsCreate => SelectedPage == "create";
+    public bool IsLibrary => SelectedPage == "library";
     public bool IsSettings => SelectedPage == "settings";
     public bool IsDiagnostics => SelectedPage == "diagnostics";
-    public bool IsPlanned => SelectedPage is "create" or "library" or "tools";
+    public bool IsPlanned => SelectedPage == "tools";
     public string PageTitle => SelectedPage switch
     {
         "discover" => "Discover models", "create" => "Create", "library" => "Library",
@@ -83,26 +106,91 @@ public partial class MainViewModel : ObservableObject
     public string PageDescription => SelectedPage switch
     {
         "discover" => "Search public Hugging Face models and inspect their metadata before choosing a local pipeline.",
-        "create" => "Image and video creation will use verified model recipes and isolated inference workers.",
-        "library" => "Generated media and reproducible settings will appear here as generation support is added.",
+        "create" => "Generate 512 × 512 images locally with Stable Diffusion 1.5. The first setup downloads a private runtime and model, then tests your GPU.",
+        "library" => "Images and their prompts, seeds, and runtime evidence are saved in your data folder.",
         "tools" => "Focused native tools will add upscaling, frame processing, and export capabilities.",
-        "settings" => "Choose where future models, environments, and media will be stored.",
+        "settings" => "Choose where models, private environments, and media are stored.",
         "diagnostics" => "Check the components that power Media Workbench.",
         _ => "Discover local generation models, understand their requirements, and prepare a dependable creative setup."
     };
 
-    private async Task RunAsync(string description, Func<CancellationToken, Task> action)
+    private async Task RunAsync(string description, Func<CancellationToken, Task> action, bool longRunning = false)
     {
         if (IsBusy) return;
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        using var cancellation = new CancellationTokenSource(longRunning ? TimeSpan.FromHours(4) : TimeSpan.FromSeconds(45));
         _operation = cancellation;
         IsBusy = true;
         Status = description;
+        ProgressIndeterminate = true;
         Record(description);
         try { await action(cancellation.Token); Status = "Ready"; }
         catch (OperationCanceledException) { Status = "Cancelled"; Record("Operation cancelled"); }
         catch (Exception ex) { Notice = ex.Message; Status = "Operation could not finish"; Record(ex.Message); }
-        finally { _operation = null; IsBusy = false; }
+        finally { _operation = null; IsBusy = false; ProgressIndeterminate = false; }
+    }
+
+    private IProgress<OperationProgress> ObserveProgress() => new Progress<OperationProgress>(value =>
+    {
+        Status = value.Total > 0 ? value.Unit == "bytes"
+            ? $"{value.Stage} · {value.Completed / 1048576.0:N0}/{value.Total / 1048576.0:N0} MiB"
+            : $"{value.Stage} · {value.Completed:N0}/{value.Total:N0} {value.Unit}" : value.Stage;
+        ProgressIndeterminate = value.Total <= 0;
+        ProgressPercent = value.Total > 0 ? Math.Clamp(100.0 * value.Completed / value.Total, 0, 100) : 0;
+    });
+
+    private async Task UpdateInstallation(CancellationToken token)
+    {
+        var state = await _service.GetInstallationAsync(DataRoot, token);
+        InstallationText = $"{state.Status.Replace('_', ' ')} · {state.Message}";
+        ModelReady = state.Status == "ready";
+    }
+    private Task RefreshInstallationAsync() => RunAsync("Checking model state…", UpdateInstallation);
+    private Task InstallAsync() => RunAsync("Preparing Stable Diffusion 1.5…", async token =>
+    {
+        ModelReady = false;
+        try
+        {
+            var state = await _service.InstallAsync(DataRoot, ObserveProgress(), token);
+            InstallationText = state.Message;
+            ModelReady = state.Status == "ready";
+            Notice = state.Message;
+            Record(state.Message);
+        }
+        finally
+        {
+            // A force-stopped worker leaves an interrupted attempt that the next check recovers.
+            if (!ModelReady) InstallationText = "Setup did not finish. Check model status for details; install / verify resumes retained downloads.";
+        }
+    }, longRunning: true);
+    private Task GenerateAsync() => RunAsync("Preparing image generation…", async token =>
+    {
+        if (!double.IsFinite(Seed) || Seed != Math.Truncate(Seed) || Seed < 0 || Seed > uint.MaxValue ||
+            !double.IsFinite(Steps) || Steps != Math.Truncate(Steps) || Steps < 1 || Steps > 50)
+            throw new InvalidDataException("Use a whole-number seed (0–4294967295) and 1–50 steps.");
+        var image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps), ObserveProgress(), token);
+        PreviewPath = image.ImagePath;
+        ImageDescription = image.Description;
+        Images.Insert(0, image);
+        Notice = $"Image saved in {image.Seconds:N1} seconds of inference.";
+        Record("Saved " + image.ImagePath);
+    }, longRunning: true);
+    private Task RefreshLibraryAsync() => RunAsync("Loading saved images…", async token =>
+    {
+        var library = await _service.GetLibraryAsync(DataRoot, token);
+        Images.Clear();
+        foreach (var image in library.Images) Images.Add(image);
+        Notice = $"Loaded {library.Images.Count} saved images (up to 200 recent jobs).";
+        if (library.Recovered > 0)
+        {
+            Notice += $" {library.Recovered} unfinished job(s) from an earlier session were marked interrupted.";
+            Record($"Recorded {library.Recovered} interrupted job(s)");
+        }
+    });
+    partial void OnDataRootChanged(string value) { ModelReady = false; Images.Clear(); PreviewPath = ""; }
+    partial void OnSelectedPageChanged(string value)
+    {
+        if (value == "create" && !IsBusy) RefreshInstallationCommand.Execute(null);
+        if (value == "library" && !IsBusy) RefreshLibraryCommand.Execute(null);
     }
 
     private Task SearchAsync() => RunAsync("Searching Hugging Face…", async token =>
@@ -138,7 +226,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var plan = _service.GetBaselinePlan();
-            PlanText = $"Stable Diffusion 1.5 baseline\n\nPrerequisites:\n{string.Join("\n", plan.Blockers.Select(b => "• " + b))}\n\nPlanned stages:\n{string.Join("\n", plan.Steps.Select(s => "• " + s.Description))}";
+            PlanText = $"Stable Diffusion 1.5 baseline\n\n{(plan.CanExecute ? "Recipe permits installation and local verification. Open Create to begin." : string.Join("\n", plan.Blockers))}\n\nStages:\n{string.Join("\n", plan.Steps.Select(s => "• " + s.Description))}";
             Record("Rust core prepared the baseline installation plan");
         }
         catch (Exception ex) { Notice = ex.Message; }

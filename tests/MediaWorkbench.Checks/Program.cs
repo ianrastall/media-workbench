@@ -20,7 +20,7 @@ await using (var client = await PythonWorkerClient.StartAsync(python, root, dead
     var health = await client.ExecuteAsync("health", new { }, cancellationToken: deadline.Token);
     Check(health.Kind == "result" && !health.Payload.GetProperty("generationAvailable").GetBoolean(), "Health does not claim generation availability");
     var catalog = await client.ExecuteAsync("catalog.list", new { }, cancellationToken: deadline.Token);
-    Check(catalog.Kind == "result" && catalog.Payload.GetProperty("recipes")[0].GetProperty("status").GetString() == "draft", "Catalog reports draft status");
+    Check(catalog.Kind == "result" && catalog.Payload.GetProperty("recipes")[0].GetProperty("runtimeProfileId").GetString() == "sd15-cu126-v1", "Catalog reports the pinned runtime profile");
     List<WorkerEvent> events = [];
     const string label = "Unicode: café — 森林; spaces & $ characters";
     var result = await client.ExecuteAsync("demo.run", new { label, outputDirectory = Path.Combine(output, "folder with spaces"), steps = 3, delayMs = 5 }, events.Add, deadline.Token);
@@ -34,7 +34,7 @@ await using (var client = await PythonWorkerClient.StartAsync(python, root, dead
     var afterCancel = await client.ExecuteAsync("catalog.list", new { }, cancellationToken: deadline.Token);
     Check(afterCancel.Kind == "result", "Worker remains usable after cooperative cancellation");
     var unknown = await client.ExecuteAsync("generate.image", new { }, cancellationToken: deadline.Token);
-    Check(unknown.ErrorCode == "not_implemented", "Unimplemented generation is explicit");
+    Check(unknown.ErrorCode == "invalid_input", "Generation rejects missing prompt before touching storage");
     var invalid = await client.ExecuteAsync("demo.run", new { outputDirectory = "relative", steps = 1 }, cancellationToken: deadline.Token);
     Check(invalid.ErrorCode == "invalid_input", "Invalid output location is rejected before writing");
 }
@@ -53,7 +53,9 @@ bool rootRejected = false;
 try { store.Save(settings with { DataRoot = Path.GetPathRoot(output)! }); } catch (InvalidDataException) { rootRejected = true; }
 Check(rootRejected && store.Load() == settings, "Invalid drive-root storage leaves saved settings unchanged");
 var plan = new InstallationPlanner().Plan(recipe);
-Check(!plan.CanExecute && plan.Blockers.Length >= 3, "Draft recipe cannot become an executable installation");
+Check(plan.CanExecute && plan.Blockers.Length == 0, "Pinned experimental recipe permits local verification");
+var draftPlan = new InstallationPlanner().Plan(recipe with { Status = "draft" });
+Check(!draftPlan.CanExecute, "Draft recipe cannot become an executable installation");
 var job = new JobLifecycle();
 job.MoveTo(JobState.Preparing); job.MoveTo(JobState.Running); job.MoveTo(JobState.Finalizing); job.MoveTo(JobState.Succeeded);
 bool transitionRejected = false;
@@ -82,6 +84,23 @@ await using (var crash = await PythonWorkerClient.StartAsync(python, crashRoot, 
     catch (IOException) { crashReported = true; }
 }
 Check(crashReported, "Unexpected worker exit becomes a transport failure");
+
+// A worker that dies after starting a child must not leave that child running; the job owns the whole tree.
+var orphanRoot = await Fixture("orphan", "import json,sys,os,subprocess\nprint(json.dumps({'protocol':1,'id':None,'kind':'hello','payload':{}}),flush=True)\n" +
+    "request=json.loads(sys.stdin.readline())\nchild=subprocess.Popen([sys.executable,'-c','import time; time.sleep(120)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n" +
+    "print(json.dumps({'protocol':1,'id':request['id'],'kind':'progress','payload':{'stage':'child','completed':child.pid}}),flush=True)\nos._exit(9)\n");
+int orphanPid = 0;
+await using (var orphan = await PythonWorkerClient.StartAsync(python, orphanRoot, deadline.Token))
+{
+    try { await orphan.ExecuteAsync("health", new { }, e => orphanPid = e.Payload.GetProperty("completed").GetInt32(), deadline.Token); }
+    catch (IOException) { }
+}
+static bool Ended(int pid)
+{
+    try { using var process = System.Diagnostics.Process.GetProcessById(pid); return process.WaitForExit(5000); }
+    catch (ArgumentException) { return true; }
+}
+Check(orphanPid > 0 && Ended(orphanPid), "Descendants of a failed worker are terminated with its job object");
 
 if (args.Length > 3)
 {

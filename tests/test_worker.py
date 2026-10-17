@@ -41,9 +41,9 @@ class WorkerTests(unittest.TestCase):
         self.send({"protocol": 2, "id": "test", "operation": "health", "payload": {}})
         self.assertEqual(self.read()["payload"]["code"], "invalid_request")
 
-    def test_unsupported_generation_is_explicit(self):
+    def test_generation_rejects_missing_prompt(self):
         self.send({"protocol": 1, "id": "test", "operation": "generate.image", "payload": {}})
-        self.assertEqual(self.read()["payload"]["code"], "not_implemented")
+        self.assertEqual(self.read()["payload"]["code"], "invalid_input")
 
     def test_output_requires_absolute_directory(self):
         self.send({"protocol": 1, "id": "test", "operation": "demo.run", "payload": {"outputDirectory": "relative"}})

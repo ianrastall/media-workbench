@@ -1,6 +1,6 @@
 # Current implementation status
 
-Version: **0.1.0-alpha.1**. Development started 17 October 2026.
+Version: **0.2.0-alpha.1**. Development started 17 October 2026.
 
 ## Technology decisions
 
@@ -15,35 +15,36 @@ Version: **0.1.0-alpha.1**. Development started 17 October 2026.
 | Bundled discovery runtime | Official CPython 3.14.8 x64 embeddable distribution |
 | Installer | Per-user Inno Setup, self-contained app bundle |
 
-The small metadata worker deliberately has no machine-learning packages. A later inference worker will use an independently tested Python/PyTorch/Diffusers profile; the discovery interpreter version is not a claim about inference compatibility.
+The small metadata/setup worker has no machine-learning packages. An independently provisioned Python 3.12 child loads a locked PyTorch CUDA 12.6 / Diffusers profile. No AI runtime enters the GUI process.
 
 ## Implemented
 
 Live public model search and details, native planning and SHA-256, worker health, storage settings, visible errors/cancellation, session activity, application identity, singleton launch, Start menu integration, and installer build/publish scripts. The GUI uses real view-model commands rather than implementing operations in click handlers. View code handles navigation, title bar, and window geometry.
 
+Create provisions a private Python/uv runtime and hash-locked wheels, fetches selected SD 1.5 safetensors/configuration files at an immutable Hub commit, verifies all model SHA-256 values, and tests actual 512 × 512 CUDA inference before recording ready state. It supports a prompt, negative prompt, seed, 1–50 steps, progress/cancel, PNG preview, and durable settings/output evidence. Library reads successful jobs in the selected data folder. Setup attempts survive restarts and can be retried with retained downloads. Each worker process tree is owned by a kill-on-close Windows Job Object, so an app crash or forced stop cannot leave the inference child running, and generation jobs orphaned by a crash are recorded as interrupted. See [inference lifecycle](inference.md).
+
 ## Still planned
 
-Protected Hugging Face account access, verified model recipes, automatic inference-environment installation, model downloads, image generation, image editing, video generation, durable job state/database, artifact library, tool installation, packaging updates, and production-grade process ownership/recovery. Create, Library, and Tools display their development status.
+Protected Hugging Face account access, arbitrary model installation, additional hardware/runtime profiles, image editing, video generation, an indexed artifact database, queues, enhancement/tool installation, cache pruning, and application updates. Tools displays its development status. The SD 1.5 recipe remains experimental and each installation must pass its own inference test; discovery results do not imply runnable pipelines.
 
 ## Verification
 
 - Rust unit tests, formatting, and Clippy are part of `scripts/check.ps1`.
 - Python unit tests cover request validation, cancellation, search normalization, input rejection, and repository metadata.
-- C# checks exercise a real Python child, native C ABI loading, hashing, path policy, installation blocking, settings round trips, cancellation, protocol failures, and unexpected process exit.
+- Python tests also cover recovery of orphaned generation jobs, preserving jobs whose owner is alive, and skipping damaged records.
+- C# checks exercise a real Python child, native C ABI loading, hashing, path policy, installation blocking, settings round trips, cancellation, protocol failures, unexpected process exit, and termination of a descendant left behind by a failed worker.
 - The optional live-network check searches public Hub models and reads a returned repository.
 - `MediaWorkbench.exe --self-test <absolute-report-path>` checks the published/installed native core and bundled worker without using system Python.
 - `MediaWorkbench.exe --ui-self-test <absolute-report-path>` checks the real window/resource/binding initialization; `scripts/test-publish.ps1` combines both checks.
 - Actual UI launch, navigation, public search, and model selection are checked interactively during development.
 
-Windows 11 is the current test host. The installer targets Windows 10 22H2 and Windows 11 x64; a clean Windows 10 test is pending. No inference compatibility or speed claims have been made. See release notes for the final validation of a particular build.
+Windows 11 is the current test host. The installer targets Windows 10 22H2 and Windows 11 x64; a clean Windows 10 test is pending. The first inference profile has passed real 512 × 512 generation on a GTX 1660 Ti (6 GB); this does not certify other GPUs or drivers. See [validation](validation.md) and release notes for the tested build.
 
-## Next vertical slice
+## Next areas
 
-1. Persist a model installation attempt and its resolved recipe.
-2. Resolve a pinned model revision and exact inference dependency lock.
-3. Provision that runtime in the selected data folder, with visible download/install progress.
-4. Fetch the selected model files through Hugging Face's supported SDK/cache.
-5. Verify real inference on the target GPU, then mark the installation ready.
-6. Add prompt-to-image creation, validated artifact finalization, and history.
+1. Clean-machine Windows 10/11 and additional GPU/driver coverage.
+2. Storage inspection/pruning and richer durable job diagnostics, including showing interrupted/failed jobs.
+3. A warm inference worker, queue, and indexed/virtualized artifact library.
+4. More model adapters, image editing, and video only after explicit runtime/hardware validation.
 
 This deliberately follows a complete working path before expanding model coverage or video features.

@@ -11,6 +11,16 @@ public sealed record HubModel(string Id, long Downloads, long Likes, string Task
 }
 public sealed record ModelDetails(string Id, string Revision, string Task, string Library,
     string License, string Access, string[] Files);
+public sealed record InstallationState(string Status, string Message);
+public sealed record OperationProgress(string Stage, long Completed = 0, long Total = 0, string Unit = "");
+public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps);
+public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha256, GenerationSettings Settings,
+    string CompletedUtc, double Seconds, string Gpu)
+{
+    public string Description => $"{Settings.Prompt}\nSeed {Settings.Seed} · {Settings.Steps} steps · {Seconds:N1}s · {Gpu}";
+}
+/// <summary>Recent successful images, plus jobs this listing marked interrupted after their owner stopped.</summary>
+public sealed record LibrarySnapshot(IReadOnlyList<GeneratedImage> Images, int Recovered);
 public interface ISettingsStore
 {
     AppSettings Load();
@@ -22,4 +32,8 @@ public interface IWorkbenchService
     Task<ModelDetails> GetDetailsAsync(string repoId, CancellationToken cancellationToken);
     Task<string> GetHealthAsync(CancellationToken cancellationToken);
     InstallationPlan GetBaselinePlan();
+    Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken);
+    Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken);
 }

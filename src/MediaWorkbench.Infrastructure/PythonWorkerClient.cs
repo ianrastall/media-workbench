@@ -5,19 +5,21 @@ using MediaWorkbench.Core;
 
 namespace MediaWorkbench.Infrastructure;
 
-/// <summary>One in-flight operation, one owned worker, no shell or network listener.</summary>
+/// <summary>One in-flight operation, one owned worker tree, no shell or network listener.</summary>
 public sealed class PythonWorkerClient : IWorkerClient
 {
     private readonly Process _process;
+    private readonly ProcessTreeJob _job;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Task _stderrPump;
     private readonly Queue<string> _diagnostics = new();
     private bool _disposed;
     public WorkerEvent Handshake { get; private set; } = null!;
 
-    private PythonWorkerClient(Process process)
+    private PythonWorkerClient(Process process, ProcessTreeJob job)
     {
         _process = process;
+        _job = job;
         _stderrPump = Task.Run(async () =>
         {
             while (await process.StandardError.ReadLineAsync() is { } line)
@@ -49,8 +51,26 @@ public sealed class PythonWorkerClient : IWorkerClient
         start.ArgumentList.Add("--root");
         start.ArgumentList.Add(root);
         start.Environment["PYTHONUTF8"] = "1";
-        var process = Process.Start(start) ?? throw new IOException("Python did not start.");
-        var client = new PythonWorkerClient(process);
+        var job = new ProcessTreeJob();
+        Process process;
+        try
+        {
+            process = Process.Start(start) ?? throw new IOException("Python did not start.");
+        }
+        catch { job.Dispose(); throw; }
+        try
+        {
+            // The worker starts no children before its first request, so assignment here covers its whole tree.
+            job.Assign(process);
+        }
+        catch
+        {
+            try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            process.Dispose();
+            job.Dispose();
+            throw;
+        }
+        var client = new PythonWorkerClient(process, job);
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -131,6 +151,8 @@ public sealed class PythonWorkerClient : IWorkerClient
     private string DiagnosticTail() { lock (_diagnostics) return string.Join(" | ", _diagnostics.TakeLast(4)); }
     private void StopOwnedProcess()
     {
+        // The job also reaches descendants whose worker parent already exited.
+        _job.Terminate();
         try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); }
         catch (InvalidOperationException) { }
     }
@@ -146,8 +168,10 @@ public sealed class PythonWorkerClient : IWorkerClient
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             try { await _process.WaitForExitAsync(timeout.Token); }
             catch (OperationCanceledException) { StopOwnedProcess(); await _process.WaitForExitAsync(); }
+            // Closing the job ends any descendant that outlived the worker before draining diagnostics.
+            _job.Dispose();
             await _stderrPump;
         }
-        finally { _process.Dispose(); _gate.Dispose(); }
+        finally { _job.Dispose(); _process.Dispose(); _gate.Dispose(); }
     }
 }

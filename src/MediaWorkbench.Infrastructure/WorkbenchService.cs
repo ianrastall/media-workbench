@@ -5,12 +5,20 @@ namespace MediaWorkbench.Infrastructure;
 
 public sealed class WorkbenchService(string applicationRoot, string pythonExecutable) : IWorkbenchService
 {
-    private async Task<JsonElement> Execute(string operation, object payload, CancellationToken token)
+    private async Task<JsonElement> Execute(string operation, object payload, CancellationToken token, IProgress<OperationProgress>? progress = null)
     {
         await using var worker = await PythonWorkerClient.StartAsync(pythonExecutable, applicationRoot, token);
-        var response = await worker.ExecuteAsync(operation, payload, cancellationToken: token);
+        var response = await worker.ExecuteAsync(operation, payload, onEvent: value =>
+        {
+            if (value.Kind == "progress" && progress is not null)
+            {
+                var update = JsonSerializer.Deserialize<OperationProgress>(value.Payload, Wire.Json);
+                if (update is not null) progress.Report(update);
+            }
+        }, cancellationToken: token);
         if (response.Kind == "error")
         {
+            if (response.ErrorCode == "cancelled") throw new OperationCanceledException(token);
             string message = response.Payload.TryGetProperty("message", out var detail) ? detail.GetString() ?? "Worker failed" : "Worker failed";
             throw new InvalidOperationException(message);
         }
@@ -31,7 +39,23 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         uint abi = NativeCore.VerifyAbi();
         var data = await Execute("health", new { }, cancellationToken);
         return $"Rust native core: ABI {abi}\nPython worker: {data.GetProperty("python").GetString()}\n" +
-            $"GPU: {data.GetProperty("gpu").GetRawText()}\n\nDiscovery is available. Model installation and image/video generation are the next milestones.";
+            $"GPU: {data.GetProperty("gpu").GetRawText()}\n\nDiscovery and the SD 1.5 installation workflow are available. Check the model state on Create for inference readiness.";
     }
     public InstallationPlan GetBaselinePlan() => new InstallationPlanner().Plan(InstallationPlanner.ReadCatalog(applicationRoot).Single(r => r.Id == "sd15-baseline"));
+    public async Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<InstallationState>(await Execute("installation.status", new { dataRoot }, cancellationToken), Wire.Json)!;
+    public async Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        var plan = GetBaselinePlan();
+        if (!plan.CanExecute) throw new InvalidOperationException(string.Join("\n", plan.Blockers));
+        return JsonSerializer.Deserialize<InstallationState>(await Execute("installation.run", new { dataRoot }, cancellationToken, progress), Wire.Json)!;
+    }
+    public async Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<GeneratedImage>(await Execute("generate.image", new { dataRoot, settings.Prompt, settings.NegativePrompt, settings.Seed, settings.Steps }, cancellationToken, progress), Wire.Json)!;
+    public async Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken)
+    {
+        var result = await Execute("library.list", new { dataRoot }, cancellationToken);
+        var images = JsonSerializer.Deserialize<GeneratedImage[]>(result.GetProperty("artifacts"), Wire.Json) ?? [];
+        return new(images, result.TryGetProperty("recovered", out var recovered) ? recovered.GetInt32() : 0);
+    }
 }

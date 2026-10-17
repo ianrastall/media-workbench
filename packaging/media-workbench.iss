@@ -4,7 +4,7 @@
 #ifndef OutputDir
   #define OutputDir "..\dist"
 #endif
-#define AppVersion "0.1.0-alpha.1"
+#define AppVersion "0.2.0-alpha.1"
 
 [Setup]
 AppId={{BEE45A8B-343B-42B8-A09C-EA6F2CFF1421}
@@ -23,7 +23,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.19045
 OutputDir={#OutputDir}
-OutputBaseFilename=MediaWorkbench-0.1.0-alpha.1-win-x64-setup
+OutputBaseFilename=MediaWorkbench-{#AppVersion}-win-x64-setup
 SetupIconFile={#SourceDir}\Assets\AppIcon.ico
 UninstallDisplayIcon={app}\MediaWorkbench.exe
 Compression=lzma2
@@ -38,6 +38,10 @@ Name: desktopicon; Description: "Create a &desktop shortcut"; GroupDescription: 
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; Retired application-owned recipe from 0.1; user data is outside {app}.
+Type: files; Name: "{app}\recipes\sd15-draft.json"
 
 [Icons]
 Name: "{userprograms}\Media Workbench"; Filename: "{app}\MediaWorkbench.exe"; WorkingDir: "{app}"; AppUserModelID: "ianrastall.MediaWorkbench"

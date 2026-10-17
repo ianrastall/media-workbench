@@ -47,10 +47,12 @@ public partial class App : Application
                 var service = new MediaWorkbench.Infrastructure.WorkbenchService(root, Path.Combine(root, "runtime", "python", "python.exe"));
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 string health = await service.GetHealthAsync(deadline.Token);
+                var plan = service.GetBaselinePlan();
+                if (!plan.CanExecute) throw new InvalidDataException("Published baseline recipe does not permit local verification.");
                 string hash = MediaWorkbench.Infrastructure.NativeCore.Sha256File(Path.Combine(root, "workers", "python", "media_worker.py"));
                 string report = arguments[checkIndex + 1];
                 Directory.CreateDirectory(Path.GetDirectoryName(report)!);
-                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, workerSha256 = hash }));
+                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash }));
                 Environment.ExitCode = 0;
             }
             catch (Exception ex)
