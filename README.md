@@ -12,7 +12,7 @@ Target: **Windows 10 22H2 or Windows 11, x64**. This alpha has been tested on Wi
 
 The GUI, .NET/Windows App SDK runtime, Rust library, and private discovery Python runtime are bundled. You do not need system Python or .NET. Internet access is required for discovery and first-time model setup. Inference setup downloads its own Python 3.12, CUDA PyTorch, and locked packages into your chosen data folder.
 
-For image generation, this first profile requires an **NVIDIA GPU with at least 6 GB VRAM**, a compatible driver, and **20 GiB free space** during setup. It produces 512 × 512 images using FP32 computation and CPU offload. Other GPU vendors and CPU-only generation are not yet supported.
+For image generation, this first profile requires an **NVIDIA GPU with at least 6 GB VRAM**, a compatible driver, and **20 GiB free space** during first-time setup (re-verifying an existing installation needs space only for missing files). It produces 512 × 512 images using FP32 computation and CPU offload. Other GPU vendors and CPU-only generation are not yet supported.
 
 1. Open **Settings**, choose a data folder on a drive with enough space, and save.
 2. Open **Create**, review the linked model card/license, and select **Install / verify**.

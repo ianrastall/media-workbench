@@ -32,6 +32,7 @@ Protected Hugging Face account access, arbitrary model installation, additional 
 - Rust unit tests, formatting, and Clippy are part of `scripts/check.ps1`.
 - Python unit tests cover request validation, cancellation, search normalization, input rejection, and repository metadata.
 - Python tests also cover recovery of orphaned generation jobs, preserving jobs whose owner is alive, and skipping damaged records.
+- Python tests validate bundled recipes and live worker messages against `schemas/`, run the coordinator's native installation gate through the real Rust library, size re-verification free space, and check tracked files for personal paths, private email addresses, and built binaries.
 - Python tests cover the readiness stamp (adapter version and pinned files, not worker source or line endings), size/mtime checks that replace per-generation hashing, the recipe-driven VRAM limit and GPU selection, unreadable nvidia-smi output, and Library path containment for relative, traversal, and moved-folder records.
 - C# checks exercise a real Python child, native C ABI loading, hashing, path policy, installation blocking, settings round trips, the view model's saved-versus-draft data folder, cancellation, protocol failures, unexpected process exit, and termination of a descendant left behind by a failed worker.
 - The optional live-network check searches public Hub models and reads a returned repository.

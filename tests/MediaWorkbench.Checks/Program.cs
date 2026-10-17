@@ -86,11 +86,6 @@ Check(vm.DataRoot == nextRoot && vm.DataRootDraft == nextRoot && vmStore.Load().
 await vm.RefreshLibraryCommand.ExecuteAsync(null);
 Check(workbench.DataRoots[^1] == nextRoot, "Operations after saving use the newly saved folder");
 
-var job = new JobLifecycle();
-job.MoveTo(JobState.Preparing); job.MoveTo(JobState.Running); job.MoveTo(JobState.Finalizing); job.MoveTo(JobState.Succeeded);
-bool transitionRejected = false;
-try { job.MoveTo(JobState.Running); } catch (InvalidOperationException) { transitionRejected = true; }
-Check(transitionRejected, "Terminal job state cannot be reopened");
 
 async Task<string> Fixture(string name, string body)
 {

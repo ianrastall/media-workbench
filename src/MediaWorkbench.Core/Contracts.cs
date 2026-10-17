@@ -34,28 +34,3 @@ public interface IInstallationPlanner
 {
     InstallationPlan Plan(ModelRecipe recipe);
 }
-
-public enum JobState { Queued, Preparing, Running, Finalizing, Cancelling, Succeeded, Failed, Cancelled, Interrupted }
-
-public sealed class JobLifecycle
-{
-    public JobState State { get; private set; } = JobState.Queued;
-    public bool IsTerminal => State is JobState.Succeeded or JobState.Failed or JobState.Cancelled or JobState.Interrupted;
-
-    public void MoveTo(JobState next)
-    {
-        bool allowed = !IsTerminal && (next switch
-        {
-            JobState.Preparing => State == JobState.Queued,
-            JobState.Running => State == JobState.Preparing,
-            JobState.Finalizing => State == JobState.Running,
-            JobState.Succeeded => State == JobState.Finalizing,
-            JobState.Cancelling => State != JobState.Cancelling,
-            JobState.Cancelled => State == JobState.Cancelling,
-            JobState.Failed or JobState.Interrupted => true,
-            _ => false
-        });
-        if (!allowed) throw new InvalidOperationException($"Invalid job transition: {State} -> {next}");
-        State = next;
-    }
-}

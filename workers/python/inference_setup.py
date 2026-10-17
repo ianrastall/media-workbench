@@ -3,6 +3,7 @@
 This module stays standard-library only and runs in the small discovery interpreter.
 """
 from contextlib import contextmanager
+import ctypes
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -25,6 +26,8 @@ SETUP_ACTIVE = ["preparing", "runtime", "downloading", "verifying"]
 ADAPTER_VERSION = 1
 STAMPED_FILES = ["profiles/sd15-cu126.json", "profiles/sd15-cu126.lock", "profiles/sd15-files.json",
                  "recipes/sd15-baseline.json"]
+FRESH_SETUP_BYTES = 20 * 1024**3  # Runtime, wheel cache, model, and download temporaries.
+SETUP_HEADROOM_BYTES = 2 * 1024**3
 # Drivers report slightly less than nominal capacity (a 6 GB GTX 1660 Ti reports 6143.7 MiB to CUDA).
 VRAM_REPORTING_MARGIN_MIB = 128
 
@@ -113,6 +116,68 @@ def profile_stamp(app):
         content = (app / name).read_bytes().replace(b"\r\n", b"\n")  # Checkout line endings are not a recipe change.
         lines.append(f"{name}={hashlib.sha256(content).hexdigest()}")
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
+def native_core_path(app):
+    """The Rust core beside the published app, or the developer build output in a source checkout."""
+    for candidate in [app / "media_workbench_core.dll", app / "artifacts/native/release/media_workbench_core.dll"]:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def plan_installation(app):
+    """Run the recipe through the Rust installation gate (C ABI 1), so every client of the worker passes it."""
+    path = native_core_path(app)
+    if path is None:
+        raise SetupError("The native installation planner is missing. Reinstall Media Workbench.")
+    recipe = (app / "recipes/sd15-baseline.json").read_bytes()
+    try:
+        core = ctypes.CDLL(str(path))
+    except OSError as exc:
+        raise SetupError(f"The native installation planner could not be loaded: {exc}") from None
+    core.mw_abi_version.restype = ctypes.c_uint32
+    if core.mw_abi_version() != 1:
+        raise SetupError("The native installation planner has an incompatible ABI.")
+    plan = core.mw_plan_installation
+    plan.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    plan.restype = ctypes.c_int32
+    required = ctypes.c_size_t()
+    code = plan(recipe, len(recipe), None, 0, ctypes.byref(required))
+    if code != 2 or required.value > 1024 * 1024:
+        raise SetupError(f"Native installation planning failed ({code}).")
+    output = ctypes.create_string_buffer(required.value)
+    code = plan(recipe, len(recipe), output, required.value, ctypes.byref(required))
+    if code != 0:
+        raise SetupError(f"Native installation planning failed ({code}).")
+    result = json.loads(output.raw[:required.value])
+    if not result.get("canExecute"):
+        raise SetupError("This recipe may not be installed: " + "; ".join(result.get("blockers") or ["blocked"]))
+    return result
+
+
+def lock_digest(app):
+    return hashlib.sha256((app / "profiles/sd15-cu126.lock").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def runtime_marker(root):
+    return owned(root, f"runtimes/{PROFILE}/.synced-lock-sha256")
+
+
+def required_free_bytes(app, root):
+    """A fresh setup needs room for everything; re-verifying a synced runtime needs only the missing model bytes."""
+    marker = runtime_marker(root)
+    python = owned(root, f"runtimes/{PROFILE}/python/python.exe")
+    if not python.is_file() or not marker.is_file() or marker.read_text(encoding="utf-8").strip() != lock_digest(app):
+        return FRESH_SETUP_BYTES
+    manifest = json.loads((app / "profiles/sd15-files.json").read_text())
+    model = owned(root, f"models/{RECIPE}")
+    missing = 0
+    for entry in manifest["files"]:
+        path = owned(model, entry["path"])
+        if not path.is_file() or path.stat().st_size != entry["size"]:
+            missing += entry["size"]
+    return missing + SETUP_HEADROOM_BYTES
 
 
 def minimum_vram_mib(app):
@@ -392,6 +457,7 @@ def verify_files(app, root, cancel, progress):
 
 def install(app, payload, cancel, progress):
     root = data_root(payload)
+    plan_installation(app)  # Before any record: a blocked recipe never starts an attempt.
     with exclusive(root):
         recover_interrupted(root)
         record = {"schemaVersion": 1, "recipeId": RECIPE, "attemptId": uuid.uuid4().hex,
@@ -404,8 +470,9 @@ def install(app, payload, cancel, progress):
             progress({"stage": message})
         try:
             stage("preparing", "Checking storage and NVIDIA GPU")
-            if shutil.disk_usage(root).free < 20 * 1024**3:
-                raise SetupError("At least 20 GiB of free space is required for setup and its download cache.")
+            needed = required_free_bytes(app, root)
+            if shutil.disk_usage(root).free < needed:
+                raise SetupError(f"At least {needed / 1024**3:.1f} GiB of free space is required in the data folder for this setup step.")
             if os.name != "nt" or not shutil.which("nvidia-smi"):
                 raise SetupError("This first inference profile requires Windows x64 and an NVIDIA CUDA GPU.")
             check_gpu(app)
@@ -426,6 +493,7 @@ def install(app, payload, cancel, progress):
                 "--python", runtime / "python.exe", "--target", owned(runtime, "Lib/site-packages"),
                 "--require-hashes", "--only-binary", ":all:", "--no-config", "--no-progress",
                 "--cache-dir", owned(root, "cache/uv"), "--link-mode", "copy"], cancel, progress, environment)
+            runtime_marker(root).write_text(lock_digest(app), encoding="utf-8")
             stage("downloading", "Fetching pinned Hugging Face model files")
             inference(app, root, "download", {}, cancel, progress)
             stage("verifying", "Verifying all model checksums")

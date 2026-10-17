@@ -8,6 +8,12 @@
 - Setup and the inference child apply one VRAM limit, read from the recipe's `minimumVramMiB`, to the same GPU (`CUDA_DEVICE_ORDER=PCI_BUS_ID`, honouring `CUDA_VISIBLE_DEVICES`).
 - An unreadable nvidia-smi memory value such as `[N/A]` is reported as a setup failure with a clear message instead of invalid input.
 - New generation records store the image path relative to `artifacts/`; Library resolves paths before checking containment, rejects `..` escapes, and still lists older absolute-path records after the data folder moves.
+- The Python coordinator runs the recipe through the Rust installation gate itself (via the C ABI), so no client of the worker can skip it; a blocked recipe never starts a setup attempt.
+- Re-verifying an installation whose runtime is already synced needs free space only for missing model files plus 2 GiB, instead of a flat 20 GiB.
+- A second launch brings forward the running copy's own window, found through its process, rather than any window titled "Media Workbench"; a minimized window is restored and a maximized one stays maximized.
+- Release builds ignore `MEDIA_WORKBENCH_PYTHON`; only Debug builds allow overriding the bundled interpreter.
+- Tests validate bundled recipes and live worker messages against `schemas/`, and a repository-hygiene test rejects personal paths, private email addresses, and built binaries in tracked files. The unused C# `JobLifecycle` contract was removed.
+- CI publishes the installer that the checked build produced instead of rebuilding it in the release job, and no longer runs the published-app check twice.
 
 Existing ready installations need **Install / verify** once more because the readiness stamp changed.
 

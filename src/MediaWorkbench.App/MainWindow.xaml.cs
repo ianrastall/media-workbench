@@ -13,8 +13,11 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         string stateRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench");
-        string python = Environment.GetEnvironmentVariable("MEDIA_WORKBENCH_PYTHON")
-            ?? Path.Combine(AppContext.BaseDirectory, "runtime", "python", "python.exe");
+        string python = Path.Combine(AppContext.BaseDirectory, "runtime", "python", "python.exe");
+#if DEBUG
+        // Development override only; a shipped build always runs its bundled interpreter.
+        python = Environment.GetEnvironmentVariable("MEDIA_WORKBENCH_PYTHON") ?? python;
+#endif
         ViewModel = new(new WorkbenchService(AppContext.BaseDirectory, python), new SettingsStore(stateRoot));
         InitializeComponent();
         var shell = new ShellView(ViewModel);

@@ -268,6 +268,46 @@ class ReadinessTests(unittest.TestCase):
             self.assertEqual(setup.status(app, {"dataRoot": str(root)})["status"], "needs_verification")
 
 
+NATIVE_CORE = setup.native_core_path(ROOT)
+
+
+class InstallGateTests(unittest.TestCase):
+    @unittest.skipUnless(NATIVE_CORE, "build the native core first (scripts/check.ps1 does)")
+    def test_bundled_recipe_passes_the_native_gate(self):
+        self.assertTrue(setup.plan_installation(ROOT)["canExecute"])
+
+    @unittest.skipUnless(NATIVE_CORE, "build the native core first (scripts/check.ps1 does)")
+    def test_blocked_recipe_never_starts_an_attempt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            recipe = json.loads((app / "recipes/sd15-baseline.json").read_text())
+            (app / "recipes/sd15-baseline.json").write_text(json.dumps(dict(recipe, status="draft")))
+            with patch.object(setup, "native_core_path", return_value=NATIVE_CORE):
+                with self.assertRaisesRegex(setup.SetupError, "may not be installed"):
+                    setup.install(app, {"dataRoot": str(root)}, threading.Event(), lambda _: None)
+            self.assertFalse(setup.state_path(root).exists())
+
+    def test_missing_native_core_blocks_install(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            with self.assertRaisesRegex(setup.SetupError, "planner is missing"):
+                setup.install(app, {"dataRoot": str(root)}, threading.Event(), lambda _: None)
+            self.assertFalse(setup.state_path(root).exists())
+
+    def test_reverification_needs_space_only_for_missing_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            self.assertEqual(setup.required_free_bytes(app, root), setup.FRESH_SETUP_BYTES)  # Runtime not yet recorded as synced.
+            setup.runtime_marker(root).write_text(setup.lock_digest(app))
+            self.assertEqual(setup.required_free_bytes(app, root), setup.SETUP_HEADROOM_BYTES)
+            (root / "models" / setup.RECIPE / "unet/weights.bin").unlink()
+            self.assertEqual(setup.required_free_bytes(app, root), setup.SETUP_HEADROOM_BYTES + len(b"weights"))
+            with (app / "profiles/sd15-cu126.lock").open("a") as lock:
+                lock.write("# changed pin\n")
+            self.assertEqual(setup.required_free_bytes(app, root), setup.FRESH_SETUP_BYTES)
+
+
 class GpuTests(unittest.TestCase):
     LISTING = "0, GPU-aaaa, NVIDIA Small, 4096\n1, GPU-bbbb, NVIDIA Large, 6144\n"
 

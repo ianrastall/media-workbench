@@ -15,22 +15,25 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Install pinned Rust toolchain
         run: rustup show
-      - name: Build application
+      - name: Build application and installer
+        # Publishes, verifies the published resources and worker (test-publish.ps1 -SkipUI), then packages.
         shell: pwsh
-        run: ./scripts/build.ps1 -Configuration Release -Publish
+        run: ./scripts/build.ps1 -Configuration Release -Installer
       - name: Run checks
         shell: pwsh
         run: ./scripts/check.ps1
-      - name: Verify published resources and worker
-        shell: pwsh
-        run: ./scripts/test-publish.ps1 -SkipUI
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: MediaWorkbench-win-x64
           path: artifacts/publish/win-x64/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: MediaWorkbench-installer
+          path: dist/
+          if-no-files-found: error
 
   release:
-    # Publishes v<Directory.Build.props version> once, from main, after the checks above pass.
+    # Publishes v<Directory.Build.props version> once, from main, using the installer the checked job built.
     needs: windows
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-2025
@@ -58,17 +61,11 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "needed=$($needed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           Write-Output ($needed ? "Releasing v$version" : "v$version is already released")
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: steps.version.outputs.needed == 'true'
         with:
-          dotnet-version: '10.0.x'
-      - name: Install pinned Rust toolchain
-        if: steps.version.outputs.needed == 'true'
-        run: rustup show
-      - name: Build installer
-        if: steps.version.outputs.needed == 'true'
-        shell: pwsh
-        run: ./scripts/build.ps1 -Configuration Release -Installer
+          name: MediaWorkbench-installer
+          path: dist/
       - name: Publish GitHub release
         if: steps.version.outputs.needed == 'true'
         shell: pwsh
