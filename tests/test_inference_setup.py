@@ -61,6 +61,16 @@ class SetupTests(unittest.TestCase):
                     setup.generate(ROOT, dict(bad, dataRoot=str(root)), threading.Event(), lambda _: None)
             self.assertFalse(root.exists())
 
+    def test_generation_controls_are_validated(self):
+        defaults = setup.validate_generation({"prompt": "house"})
+        self.assertEqual((defaults["width"], defaults["height"], defaults["guidanceScale"], defaults["sampler"]), (512, 512, 7.5, "pndm"))
+        chosen = setup.validate_generation({"prompt": "house", "width": 768, "height": 512, "guidanceScale": 4, "sampler": "dpmpp-2m"})
+        self.assertEqual((chosen["width"], chosen["height"], chosen["guidanceScale"], chosen["sampler"]), (768, 512, 4.0, "dpmpp-2m"))
+        for bad in [{"guidanceScale": 0.5}, {"guidanceScale": 21}, {"guidanceScale": True}, {"guidanceScale": "7"},
+                    {"width": 640, "height": 640}, {"width": 768, "height": 768}, {"width": 512.0}, {"sampler": "ddim"}, {"sampler": None}]:
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                setup.validate_generation(dict(bad, prompt="house"))
+
     def test_interrupted_install_is_recovered_without_claiming_ready(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

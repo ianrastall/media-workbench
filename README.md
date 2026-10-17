@@ -12,12 +12,12 @@ Target: **Windows 10 22H2 or Windows 11, x64**. This alpha has been tested on Wi
 
 The GUI, .NET/Windows App SDK runtime, Rust library, and private discovery Python runtime are bundled. You do not need system Python or .NET. Internet access is required for discovery and first-time model setup. Inference setup downloads its own Python 3.12, CUDA PyTorch, and locked packages into your chosen data folder.
 
-For image generation, this first profile requires an **NVIDIA GPU with at least 6 GB VRAM**, a compatible driver, and **20 GiB free space** during first-time setup (re-verifying an existing installation needs space only for missing files). It produces 512 × 512 images using FP32 computation and CPU offload. Other GPU vendors and CPU-only generation are not yet supported.
+For image generation, this first profile requires an **NVIDIA GPU with at least 6 GB VRAM**, a compatible driver, and **20 GiB free space** during first-time setup (re-verifying an existing installation needs space only for missing files). It produces 512 × 512, 512 × 768, or 768 × 512 images using FP32 computation and CPU offload, with a choice of guidance and three samplers. Other GPU vendors and CPU-only generation are not yet supported.
 
 1. Open **Settings**, choose a data folder on a drive with enough space, and save.
 2. Open **Create**, review the linked model card/license, and select **Install / verify**.
 3. Setup downloads roughly 5 GiB plus dependencies and tests real inference. A model becomes ready only after the checks pass on your machine.
-4. Enter a prompt and select **Generate image**. Your PNG and its settings appear in **Library** and remain in your data folder. Generations that fail, are cancelled, or are stopped by closing the app are listed under **Unfinished generations** with the reason; **Use settings** loads them back into Create and **Open log** shows the inference log.
+4. Describe the picture, pick a shape, and select **Generate image** (seed, steps, prompt strength, and sampling method are under **Advanced options**). Your PNG and its settings appear in **Library** and remain in your data folder. Generations that fail, are cancelled, or are stopped by closing the app are listed under **Unfinished generations** with the reason; **Use settings** loads them back into Create and **Open log** shows the inference log.
 
 **Settings → Storage** shows what the data folder uses. You can clear the download caches (about 4 GiB that only speed up repairs) and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept.
 

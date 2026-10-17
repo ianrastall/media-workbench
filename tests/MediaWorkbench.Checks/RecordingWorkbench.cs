@@ -14,11 +14,15 @@ sealed class RecordingWorkbench : IWorkbenchService
         Record(dataRoot, new InstallationState("ready", "Ready"));
     public Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         Record(dataRoot, new InstallationState("ready", "Ready"));
-    public Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
-        Record(dataRoot, Image(dataRoot));
+    public GenerationSettings? LastGeneration { get; private set; }
+    public Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        LastGeneration = settings;
+        return Record(dataRoot, Image(dataRoot));
+    }
     public Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken) =>
         Record(dataRoot, new LibrarySnapshot([Image(dataRoot)], 0,
-            [new JobSummary(new string('a', 32), "failed", "CUDA out of memory", "2026-10-17T00:00:00+00:00", new("retry me", "blurry", 42, 7), null)]));
+            [new JobSummary(new string('a', 32), "failed", "CUDA out of memory", "2026-10-17T00:00:00+00:00", new("retry me", "blurry", 42, 7, 4.5, 768, 512, "euler-a"), null)]));
 
     public List<string> Cleared { get; } = [];
     public Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken) => Record(dataRoot, Storage(5L << 30));

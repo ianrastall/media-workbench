@@ -51,7 +51,8 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         return JsonSerializer.Deserialize<InstallationState>(await Execute("installation.run", new { dataRoot }, cancellationToken, progress), Wire.Json)!;
     }
     public async Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
-        JsonSerializer.Deserialize<GeneratedImage>(await Execute("generate.image", new { dataRoot, settings.Prompt, settings.NegativePrompt, settings.Seed, settings.Steps }, cancellationToken, progress), Wire.Json)!;
+        JsonSerializer.Deserialize<GeneratedImage>(await Execute("generate.image", new { dataRoot, settings.Prompt, settings.NegativePrompt, settings.Seed, settings.Steps,
+            settings.GuidanceScale, settings.Width, settings.Height, settings.Sampler }, cancellationToken, progress), Wire.Json)!;
     public async Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken)
     {
         var result = await Execute("library.list", new { dataRoot }, cancellationToken);

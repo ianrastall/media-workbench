@@ -21,6 +21,9 @@ import zipfile
 PROFILE = "sd15-cu126-v1"
 RECIPE = "sd15-baseline"
 SETUP_ACTIVE = ["preparing", "runtime", "downloading", "verifying"]
+# Output sizes and samplers offered for SD 1.5; verification itself always runs the 512 x 512 default.
+SIZES = [(512, 512), (512, 768), (768, 512)]
+SAMPLERS = ["pndm", "dpmpp-2m", "euler-a"]
 LIBRARY_IMAGES = 200
 LIBRARY_PROBLEMS = 50
 PROBLEM_STATUSES = {"failed", "cancelled", "interrupted"}
@@ -520,6 +523,9 @@ def validate_generation(payload):
     negative = payload.get("negativePrompt", "")
     seed = payload.get("seed", 0)
     steps = payload.get("steps", 20)
+    guidance = payload.get("guidanceScale", 7.5)
+    size = (payload.get("width", 512), payload.get("height", 512))
+    sampler = payload.get("sampler", "pndm")
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 2000:
         raise ValueError("Enter a prompt of 1–2000 characters")
     if not isinstance(negative, str) or len(negative) > 2000:
@@ -528,8 +534,14 @@ def validate_generation(payload):
         raise ValueError("Seed must be an integer from 0 to 4294967295")
     if type(steps) is not int or not 1 <= steps <= 50:
         raise ValueError("Steps must be an integer from 1 to 50")
+    if type(guidance) not in (int, float) or not 1 <= guidance <= 20:
+        raise ValueError("Guidance must be a number from 1 to 20")
+    if not all(type(side) is int for side in size) or size not in SIZES:
+        raise ValueError("Size must be 512 × 512, 512 × 768, or 768 × 512")
+    if sampler not in SAMPLERS:
+        raise ValueError("Sampler must be one of: " + ", ".join(SAMPLERS))
     return {"prompt": prompt.strip(), "negativePrompt": negative, "seed": seed, "steps": steps,
-            "width": 512, "height": 512, "guidanceScale": 7.5}
+            "width": size[0], "height": size[1], "guidanceScale": round(float(guidance), 2), "sampler": sampler}
 
 
 def generate(app, payload, cancel, progress):

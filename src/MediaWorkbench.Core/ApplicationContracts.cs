@@ -13,18 +13,28 @@ public sealed record ModelDetails(string Id, string Revision, string Task, strin
     string License, string Access, string[] Files);
 public sealed record InstallationState(string Status, string Message);
 public sealed record OperationProgress(string Stage, long Completed = 0, long Total = 0, string Unit = "");
-public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps);
+/// <summary>Defaults match records written before guidance, size, and sampler were selectable.</summary>
+public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps,
+    double GuidanceScale = 7.5, int Width = 512, int Height = 512, string Sampler = "pndm")
+{
+    public static readonly (int Width, int Height, string Label)[] Sizes = [(512, 512, "Square · 512 × 512 (fastest)"), (512, 768, "Portrait · 512 × 768 (slower)"), (768, 512, "Landscape · 768 × 512 (slower)")];
+    public static readonly (string Id, string Label)[] Samplers = [("pndm", "Balanced (model default, PNDM)"), ("dpmpp-2m", "Crisp detail (DPM++ 2M Karras)"), ("euler-a", "Softer and more varied (Euler ancestral)")];
+    public string Summary => $"{Width} × {Height} · seed {Seed} · {Steps} steps · prompt strength {GuidanceScale:0.##}" + Sampler switch
+    {
+        "dpmpp-2m" => " · crisp detail sampling", "euler-a" => " · softer sampling", _ => ""
+    };
+}
 public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha256, GenerationSettings Settings,
     string CompletedUtc, double Seconds, string Gpu)
 {
-    public string Description => $"{Settings.Prompt}\nSeed {Settings.Seed} · {Settings.Steps} steps · {Seconds:N1}s · {Gpu}";
+    public string Description => $"{Settings.Prompt}\n{Settings.Summary} · {Seconds:N1}s · {Gpu}";
 }
 /// <summary>A generation that failed, was cancelled, or was interrupted, with its reason and its own child log.</summary>
 public sealed record JobSummary(string Id, string Status, string Message, string StartedUtc, GenerationSettings? Settings, string? LogPath)
 {
     public string Title => Status.Length > 0 && DateTimeOffset.TryParse(StartedUtc, out var started)
         ? $"{char.ToUpperInvariant(Status[0])}{Status[1..]} · {started.ToLocalTime():g}" : Status;
-    public string Description => Settings is null ? Message : $"{Settings.Prompt}\nSeed {Settings.Seed} · {Settings.Steps} steps\n{Message}";
+    public string Description => Settings is null ? Message : $"{Settings.Prompt}\n{Settings.Summary}\n{Message}";
     public bool CanRetry => Settings is not null && !string.IsNullOrWhiteSpace(Settings.Prompt);
     public bool HasLog => LogPath is not null;
 }

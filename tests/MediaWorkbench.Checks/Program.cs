@@ -89,8 +89,13 @@ var problem = vm.Problems.SingleOrDefault();
 Check(vm.HasProblems && problem is { Status: "failed" } && vm.Images.Count == 1, "Library lists unfinished generations beside saved images");
 Check(!vm.OpenJobLogCommand.CanExecute(problem), "A job without a log offers no log to open");
 vm.RetryJobCommand.Execute(problem);
-Check(vm.Prompt == "retry me" && vm.NegativePrompt == "blurry" && vm.Seed == 42 && vm.Steps == 7 && vm.SelectedPage == "create",
-    "Using an unfinished job's settings loads them into Create");
+Check(vm.Prompt == "retry me" && vm.NegativePrompt == "blurry" && vm.Seed == 42 && vm.Steps == 7 && vm.SelectedPage == "create"
+    && vm.GuidanceScale == 4.5 && vm.SizeIndex == 2 && vm.SamplerIndex == 2, "Using an unfinished job's settings loads them into Create");
+await vm.GenerateCommand.ExecuteAsync(null);
+Check(workbench.LastGeneration is { Width: 768, Height: 512, Sampler: "euler-a", GuidanceScale: 4.5, Seed: 42, Steps: 7 },
+    "Generation sends the chosen size, sampler, and guidance");
+var legacy = System.Text.Json.JsonSerializer.Deserialize<GenerationSettings>("{\"prompt\":\"old\",\"negativePrompt\":\"\",\"seed\":1,\"steps\":20}", Wire.Json)!;
+Check(legacy is { Width: 512, Height: 512, Sampler: "pndm", GuidanceScale: 7.5 }, "Older job records read with the original fixed settings");
 await vm.RefreshStorageCommand.ExecuteAsync(null);
 Check(vm.StorageItems.Count == 2 && vm.StorageText.Contains("5.00 GiB") && workbench.DataRoots[^1] == nextRoot, "Storage is measured in the saved data folder");
 vm.ModelReady = true;

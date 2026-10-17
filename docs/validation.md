@@ -65,3 +65,19 @@ Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
 | Second launch with the first window minimized | Exited and restored the first instance's window |
 
 Focus changes could not be observed from a background shell, so bringing the window to the foreground on a second launch was not separately confirmed.
+
+## Generation controls and Storage
+
+Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
+
+| Check | Result |
+|---|---|
+| Rust tests/format/Clippy, 56 Python tests, 33 C# checks; Release publish self-test | Passed |
+| 768 × 512, DPM++ 2M Karras, 20 steps, guidance 7 | Succeeded, coherent image, peak 4880 MiB allocated |
+| 512 × 768, Euler ancestral, 20 steps | Succeeded, coherent image, peak 4879 MiB |
+| 512 × 512, PNDM, 20 steps, guidance 4 | Succeeded, coherent image, peak 4841 MiB |
+| 10 steps, nothing else running: 512 × 512 vs 768 × 512 | 28.9 s vs 111.5 s inference (about 3.9×) |
+| Storage summary of the real data folder (read-only) | Runtime 4.14 GiB, model 2.55 GiB, reclaimable download caches 4.13 GiB |
+| Settings, Library, and Create pages with a throwaway data folder | Rendered as intended |
+
+The 512 × 512 time was about twice this morning's 14.1 s on the same settings, so absolute timings vary with the machine's state; the ratio between sizes is the useful figure. Clearing caches and removing the installation were exercised only on temporary folders, not on the real data folder.

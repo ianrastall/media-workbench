@@ -62,11 +62,19 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string Status { get; set; } = "Ready";
     [ObservableProperty] public partial string Notice { get; set; } = "Start in Create to install and verify Stable Diffusion 1.5. Requires an NVIDIA GPU with 6 GB VRAM and 20 GiB free space.";
     [ObservableProperty] public partial string InstallationText { get; set; } = "Check model status, or install / verify to prepare image generation.";
-    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand))] public partial bool ModelReady { get; set; }
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand)), NotifyPropertyChangedFor(nameof(NeedsSetup))] public partial bool ModelReady { get; set; }
+    public bool NeedsSetup => !ModelReady;
     [ObservableProperty] public partial string Prompt { get; set; } = "A small red ceramic house beside a green tree, watercolor illustration, daylight";
     [ObservableProperty] public partial string NegativePrompt { get; set; } = "";
     [ObservableProperty] public partial double Seed { get; set; } = 20261017;
     [ObservableProperty] public partial double Steps { get; set; } = 20;
+    [ObservableProperty] public partial double GuidanceScale { get; set; } = 7.5;
+    /// <summary>Index into <see cref="GenerationSettings.Sizes"/>.</summary>
+    [ObservableProperty] public partial int SizeIndex { get; set; }
+    /// <summary>Index into <see cref="GenerationSettings.Samplers"/>.</summary>
+    [ObservableProperty] public partial int SamplerIndex { get; set; }
+    public IReadOnlyList<string> SizeLabels { get; } = [.. GenerationSettings.Sizes.Select(size => size.Label)];
+    public IReadOnlyList<string> SamplerLabels { get; } = [.. GenerationSettings.Samplers.Select(sampler => sampler.Label)];
     [ObservableProperty] public partial string PreviewPath { get; set; } = "";
     [ObservableProperty] public partial string ImageDescription { get; set; } = "Your generated image will appear here.";
     [ObservableProperty] public partial double ProgressPercent { get; set; }
@@ -123,7 +131,7 @@ public partial class MainViewModel : ObservableObject
     public string PageDescription => SelectedPage switch
     {
         "discover" => "Search public Hugging Face models and inspect their metadata before choosing a local pipeline.",
-        "create" => "Generate 512 × 512 images locally with Stable Diffusion 1.5. The first setup downloads a private runtime and model, then tests your GPU.",
+        "create" => "Generate images locally with Stable Diffusion 1.5. The first setup downloads a private runtime and model, then tests your GPU.",
         "library" => "Images and their prompts, seeds, and runtime evidence are saved in your data folder.",
         "tools" => "Focused native tools will add upscaling, frame processing, and export capabilities.",
         "settings" => "Choose where models, private environments, and media are stored.",
@@ -158,7 +166,7 @@ public partial class MainViewModel : ObservableObject
     private async Task UpdateInstallation(CancellationToken token)
     {
         var state = await _service.GetInstallationAsync(DataRoot, token);
-        InstallationText = $"{state.Status.Replace('_', ' ')} · {state.Message}";
+        InstallationText = state.Message;
         ModelReady = state.Status == "ready";
     }
     private Task RefreshInstallationAsync() => RunAsync("Checking model state…", UpdateInstallation);
@@ -184,7 +192,12 @@ public partial class MainViewModel : ObservableObject
         if (!double.IsFinite(Seed) || Seed != Math.Truncate(Seed) || Seed < 0 || Seed > uint.MaxValue ||
             !double.IsFinite(Steps) || Steps != Math.Truncate(Steps) || Steps < 1 || Steps > 50)
             throw new InvalidDataException("Use a whole-number seed (0–4294967295) and 1–50 steps.");
-        var image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps), ObserveProgress(), token);
+        if (!double.IsFinite(GuidanceScale) || GuidanceScale < 1 || GuidanceScale > 20)
+            throw new InvalidDataException("Use a guidance value from 1 to 20.");
+        var size = GenerationSettings.Sizes[Math.Clamp(SizeIndex, 0, GenerationSettings.Sizes.Length - 1)];
+        var sampler = GenerationSettings.Samplers[Math.Clamp(SamplerIndex, 0, GenerationSettings.Samplers.Length - 1)];
+        var image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps,
+            Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id), ObserveProgress(), token);
         PreviewPath = image.ImagePath;
         ImageDescription = image.Description;
         Images.Insert(0, image);
@@ -239,6 +252,9 @@ public partial class MainViewModel : ObservableObject
         NegativePrompt = settings.NegativePrompt ?? "";
         Seed = settings.Seed;
         Steps = Math.Clamp(settings.Steps, 1, 50);
+        GuidanceScale = Math.Clamp(settings.GuidanceScale, 1, 20);
+        SizeIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Sizes, size => size.Width == settings.Width && size.Height == settings.Height));
+        SamplerIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Samplers, sampler => sampler.Id == settings.Sampler));
         SelectedPage = "create";
         Notice = $"Loaded the settings of a {job.Status} generation. Select Generate image to try again.";
     }

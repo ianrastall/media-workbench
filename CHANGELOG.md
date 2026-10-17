@@ -5,6 +5,8 @@
 - Settings has a Storage section: free space, and the size of the runtime, model, download caches, images, logs, and job records in the saved data folder.
 - **Clear…** removes the download caches (about 4 GiB after setup) or logs; **Remove Stable Diffusion 1.5…** removes the runtime, model, and caches while keeping images and their records. Each asks for confirmation and waits for any running operation.
 - The developer CLI gains a read-only `storage` command.
+- Create is simpler: once Stable Diffusion 1.5 is verified, setup shrinks to one status line, and the main path is a description, things to avoid, a Square/Portrait/Landscape shape (512 × 512, 512 × 768, 768 × 512), and Generate.
+- A collapsed **Advanced options** section holds seed, refinement steps, prompt strength (guidance 1–20), and sampling method (balanced PNDM default, crisp-detail DPM++ 2M Karras, or softer Euler ancestral), with a plain explanation. Older job records read as 512 × 512, guidance 7.5, PNDM; **Use settings** restores all of them.
 
 ## 0.2.0-alpha.2 — 2026-10-17
 

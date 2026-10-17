@@ -76,7 +76,7 @@ def main():
             return
         progress("Loading inference runtime")
         import torch
-        from diffusers import StableDiffusionPipeline
+        from diffusers import DPMSolverMultistepScheduler, EulerAncestralDiscreteScheduler, StableDiffusionPipeline
         from PIL import ImageStat
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is unavailable. Check your NVIDIA driver; this profile requires an NVIDIA GPU.")
@@ -96,22 +96,32 @@ def main():
         settings = payload if args.operation == "generate" else dict(
             prompt="A small red ceramic house beside a green tree, watercolor illustration, daylight",
             negativePrompt="", seed=20261017, steps=4, width=512, height=512)
+        # The coordinator validated the sampler; the model's own PNDM scheduler is the default.
+        sampler = settings.get("sampler", "pndm")
+        if sampler == "dpmpp-2m":
+            pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config,
+                algorithm_type="dpmsolver++", use_karras_sigmas=True)
+        elif sampler == "euler-a":
+            pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
+        elif sampler != "pndm":
+            raise ValueError("Unknown sampler: " + str(sampler)[:40])
+        width, height = settings.get("width", 512), settings.get("height", 512)
         def step_end(pipeline, step, timestep, callback_kwargs):
             progress("Generating image", step + 1, len(pipeline.scheduler.timesteps))
             return callback_kwargs
         started = time.monotonic()
         output = pipe(prompt=settings["prompt"], negative_prompt=settings["negativePrompt"],
-            width=settings["width"], height=settings["height"], num_inference_steps=settings["steps"],
+            width=width, height=height, num_inference_steps=settings["steps"],
             guidance_scale=settings.get("guidanceScale", 7.5), generator=torch.Generator(device="cpu").manual_seed(settings["seed"]),
             callback_on_step_end=step_end)
         image = output.images[0]
         blocked = bool(output.nsfw_content_detected and output.nsfw_content_detected[0])
         if blocked:
             raise RuntimeError("The model safety checker rejected the result. Try a different prompt.")
-        if image.size != (512, 512) or max(ImageStat.Stat(image).stddev) < 1:
+        if image.size != (width, height) or max(ImageStat.Stat(image).stddev) < 1:
             raise RuntimeError("Inference produced an empty or invalid image; the installation is not verified.")
         result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda,
-            precision="float32", seconds=round(time.monotonic() - started, 2), width=512, height=512,
+            precision="float32", seconds=round(time.monotonic() - started, 2), width=width, height=height, sampler=sampler,
             peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2),
             python=sys.version.split()[0], isolated=bool(sys.flags.isolated), userSiteDisabled=bool(sys.flags.no_user_site))
         if args.operation == "generate":
