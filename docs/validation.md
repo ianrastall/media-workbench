@@ -94,4 +94,7 @@ Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
 | `update-check` as 0.2.0-alpha.2, and pretending to be 0.2.0-alpha.1 with `--download` | Up to date; then found 0.2.0-alpha.2 and downloaded the 75 MB installer through GitHub's redirects with a matching SHA-256 |
 | Home page of the published build | Showed the installed version and a live "up to date" check |
 
+| Install / verify after the upscaler was added (existing install) | Reported needs verification; fetched only the 64 MiB upscaler; both GPU tests passed (643 s while a build ran alongside) |
+| 4× upscale of a 768 × 512 image | 3072 × 2048 in 4.1 s, peak 754 MiB; tiles show no visible seams; sharper than a Lanczos resize |
+
 Running the downloaded installer silently and reopening the app was not exercised, because it would install over this machine's environment; it needs a clean-machine or sandbox run.

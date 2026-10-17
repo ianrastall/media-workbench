@@ -49,11 +49,44 @@ def progress(stage, completed=0, total=0, unit="steps"):
     emit("progress", dict(stage=stage, completed=completed, total=total, unit=unit))
 
 
+def save_artifact(data_root, job_id, image, result):
+    if len(job_id) != 32 or any(c not in "0123456789abcdef" for c in job_id):
+        raise ValueError("Invalid artifact identifier")
+    directory = data_root / "artifacts" / job_id
+    directory.mkdir(parents=True, exist_ok=True)  # The coordinator may already hold the input picture here.
+    temporary = directory / "image.partial"
+    image.save(temporary, format="PNG")
+    target = directory / "image.png"
+    os.replace(temporary, target)
+    # Stored relative to artifacts/ so the data folder can move; the coordinator resolves it.
+    result.update(imagePath=f"{job_id}/image.png", imageSha256=hashlib.sha256(target.read_bytes()).hexdigest())
+
+
+def enlarge(payload, data_root, weights, gpu, torch, upscaler):
+    from PIL import Image, ImageOps
+    with Image.open(payload["sourceImage"]) as opened:
+        picture = ImageOps.exif_transpose(opened).convert("RGB")
+    if max(picture.size) > inference_setup.UPSCALE_MAX_SIDE:
+        raise ValueError(f"Pictures up to {inference_setup.UPSCALE_MAX_SIDE} pixels on the longest side can be upscaled; "
+                         f"this one is {picture.width} × {picture.height}.")
+    progress("Loading the upscaler")
+    model = upscaler.load(weights, "cuda")
+    started = time.monotonic()
+    image = upscaler.upscale(model, picture, "cuda", progress=lambda done, total: progress("Enlarging picture", done, total, "tiles"))
+    if payload["scale"] == 2:
+        image = image.resize((picture.width * 2, picture.height * 2), Image.Resampling.LANCZOS)
+    result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda, precision="float32",
+        seconds=round(time.monotonic() - started, 2), width=image.width, height=image.height, scale=payload["scale"],
+        peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2), python=sys.version.split()[0])
+    save_artifact(data_root, payload["jobId"], image, result)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--data-root", type=Path, required=True)
-    parser.add_argument("--operation", choices=["download", "verify", "generate"], required=True)
+    parser.add_argument("--operation", choices=["download", "verify", "generate", "upscale"], required=True)
     parser.add_argument("--payload", required=True)
     args = parser.parse_args()
     if not sys.flags.isolated or not sys.flags.no_user_site:
@@ -76,6 +109,7 @@ def main():
             return
         progress("Loading inference runtime")
         import torch
+        import upscaler
         from diffusers import (DPMSolverMultistepScheduler, EulerAncestralDiscreteScheduler,
                                StableDiffusionImg2ImgPipeline, StableDiffusionPipeline)
         from PIL import Image, ImageOps, ImageStat
@@ -88,6 +122,10 @@ def main():
         if not inference_setup.meets_vram(total, minimum):
             raise RuntimeError(f"{gpu} reports {total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
         # FP32 avoids known half-precision limitations on GTX 16-series devices.
+        upscaler_weights = args.data_root / "models" / inference_setup.UPSCALER / "RealESRGAN_x4plus.pth"
+        if args.operation == "upscale":
+            emit("result", enlarge(payload, args.data_root, upscaler_weights, gpu, torch, upscaler))
+            return
         source = payload.get("sourceImage") if args.operation == "generate" else None
         progress("Loading Stable Diffusion 1.5")
         # The same weights serve both modes; image-to-image starts from the user's picture.
@@ -132,22 +170,20 @@ def main():
             raise RuntimeError("The model safety checker rejected the result. Try a different prompt.")
         if image.size != (width, height) or max(ImageStat.Stat(image).stddev) < 1:
             raise RuntimeError("Inference produced an empty or invalid image; the installation is not verified.")
+        if args.operation == "verify":
+            # The upscaler shares this runtime; a small real enlargement proves it loads and runs here.
+            progress("Testing the picture upscaler")
+            model = upscaler.load(upscaler_weights, "cuda")
+            enlarged = upscaler.upscale(model, image.crop((0, 0, 64, 64)), "cuda")
+            if enlarged.size != (256, 256) or max(ImageStat.Stat(enlarged).stddev) < 1:
+                raise RuntimeError("The upscaler produced an invalid image; the installation is not verified.")
+            del model
         result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda,
             precision="float32", seconds=round(time.monotonic() - started, 2), width=width, height=height, sampler=sampler,
             peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2),
             python=sys.version.split()[0], isolated=bool(sys.flags.isolated), userSiteDisabled=bool(sys.flags.no_user_site))
         if args.operation == "generate":
-            job_id = payload["jobId"]
-            if len(job_id) != 32 or any(c not in "0123456789abcdef" for c in job_id):
-                raise ValueError("Invalid artifact identifier")
-            directory = args.data_root / "artifacts" / job_id
-            directory.mkdir(parents=True, exist_ok=True)  # The coordinator may already hold the starting picture here.
-            temporary = directory / "image.partial"
-            image.save(temporary, format="PNG")
-            target = directory / "image.png"
-            os.replace(temporary, target)
-            # Stored relative to artifacts/ so the data folder can move; the coordinator resolves it.
-            result.update(imagePath=f"{job_id}/image.png", imageSha256=hashlib.sha256(target.read_bytes()).hexdigest())
+            save_artifact(args.data_root, payload["jobId"], image, result)
         emit("result", result)
 
 

@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "workers/python"))
 import inference_setup as setup
 
 MODEL_FILES = [("model_index.json", b"{}"), ("unet/weights.bin", b"weights")]
+UPSCALER_BYTES = b"esrgan weights"
 
 
 def fake_app(folder):
@@ -32,6 +33,9 @@ def fake_app(folder):
     manifest["files"] = [{"path": path, "size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
                          for path, body in MODEL_FILES]
     (app / "profiles/sd15-files.json").write_text(json.dumps(manifest))
+    upscaler = json.loads((app / "profiles/upscaler-files.json").read_text())
+    upscaler["files"] = [dict(upscaler["files"][0], size=len(UPSCALER_BYTES), sha256=hashlib.sha256(UPSCALER_BYTES).hexdigest())]
+    (app / "profiles/upscaler-files.json").write_text(json.dumps(upscaler))
     return app
 
 
@@ -40,6 +44,9 @@ def ready_install(app, root):
         target = root / "models" / setup.RECIPE / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(body)
+    weights = root / "models" / setup.UPSCALER / "RealESRGAN_x4plus.pth"
+    weights.parent.mkdir(parents=True, exist_ok=True)
+    weights.write_bytes(UPSCALER_BYTES)
     stamps = setup.verify_files(app, root, threading.Event(), lambda _: None)
     runtime = root / "runtimes" / setup.PROFILE / "python" / "python.exe"
     runtime.parent.mkdir(parents=True, exist_ok=True)
@@ -285,6 +292,46 @@ class ReadinessTests(unittest.TestCase):
             original.unlink()
             listed = setup.library({"dataRoot": str(root)})["artifacts"][0]["settings"]
             self.assertEqual(Path(listed["sourceImage"]), (root / "artifacts" / job / "source.jpg").resolve())
+
+    def test_upscale_is_a_library_job_with_its_own_log(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            picture = Path(folder) / "small.png"
+            picture.write_bytes(b"png bytes")
+            calls = []
+            def child(app_, data, operation, payload, cancel, progress, log_id=None):
+                calls.append((operation, payload["scale"], Path(payload["sourceImage"]).read_bytes(), log_id))
+                (data / "logs").mkdir(exist_ok=True)
+                (data / "logs" / f"upscale-{log_id}.log").write_text("tiles")
+                result = fake_generation(app_, data, operation, payload, cancel, progress)
+                return dict(result, width=2048, height=2048, scale=payload["scale"])
+            with patch.object(setup, "inference", side_effect=child):
+                record = setup.upscale(app, {"dataRoot": str(root), "sourceImage": str(picture), "scale": 4}, threading.Event(), lambda _: None)
+            self.assertEqual(calls, [("upscale", 4, b"png bytes", record["id"])])
+            listed = setup.library({"dataRoot": str(root)})["artifacts"][0]
+            self.assertEqual((listed["kind"], listed["settings"]["scale"], listed["width"]), ("upscale", 4, 2048))
+            self.assertEqual(Path(listed["settings"]["sourceImage"]).read_bytes(), b"png bytes")
+            self.assertEqual(setup.job_log(root, json.loads((root / "jobs" / f"{record['id']}.json").read_text())).name, f"upscale-{record['id']}.log")
+
+    def test_upscale_requests_are_validated_before_any_record(self):
+        with tempfile.TemporaryDirectory() as folder:
+            picture = Path(folder) / "photo.webp"
+            picture.write_bytes(b"webp")
+            for bad in [{"scale": 3}, {"scale": True}, {"scale": "4"}, {"sourceImage": None}, {"sourceImage": str(Path(folder) / "gone.png")}]:
+                with self.subTest(bad=bad), self.assertRaises(ValueError):
+                    setup.upscale(ROOT, dict({"sourceImage": str(picture), "scale": 2}, dataRoot=str(Path(folder) / "data"), **bad),
+                                  threading.Event(), lambda _: None)
+            self.assertFalse((Path(folder) / "data").exists())
+
+    def test_upscaler_weights_are_verified_and_watched(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            ready = json.loads(setup.state_path(root).read_text())
+            self.assertIn(f"{setup.UPSCALER}/RealESRGAN_x4plus.pth", ready["files"])
+            (root / "models" / setup.UPSCALER / "RealESRGAN_x4plus.pth").write_bytes(b"swapped weights!")
+            self.assertFalse(setup.files_unchanged(app, root, ready))
 
     def test_starting_picture_is_validated_before_any_record(self):
         with tempfile.TemporaryDirectory() as folder:

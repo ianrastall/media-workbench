@@ -119,6 +119,16 @@ vm.ClearStartingPictureCommand.Execute(null);
 await vm.GenerateCommand.ExecuteAsync(null);
 Check(!vm.HasSourceImage && workbench.LastGeneration!.SourceImage is null, "Removing the picture returns to description-only generation");
 
+// Upscaling from Tools.
+Check(vm.UseForUpscale(picture) && vm.SelectedPage == "tools" && vm.UpscaleSourcePath == picture, "Choosing a picture to enlarge opens Tools with it");
+vm.ModelReady = false;  // Opening Tools refreshed the (fake) status; force the not-installed case.
+Check(!vm.UpscaleCommand.CanExecute(null), "Upscaling waits for a verified installation");
+vm.ModelReady = true;
+vm.UpscaleIndex = 0;
+await vm.UpscaleCommand.ExecuteAsync(null);
+Check(workbench.LastUpscale == (picture, 2) && vm.Images[0].Kind == "upscale" && vm.UpscaleDescription.StartsWith("Upscaled 2× to 2048 × 2048"),
+    "Make it bigger sends the picture and scale and adds the result to Library");
+
 // Updates: check, then ask. Nothing is downloaded or run until the user chooses Update now.
 await vm.CheckForUpdatesQuietlyAsync();
 Check(vm.HasUpdate && vm.UpdateText.Contains("0.3.0-alpha.1") && vm.UpdateNotes == "New things", "A newer release is offered with its notes");

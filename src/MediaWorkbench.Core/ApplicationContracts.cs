@@ -17,8 +17,11 @@ public sealed record OperationProgress(string Stage, long Completed = 0, long To
 /// <summary>Defaults match records written before guidance, size, and sampler were selectable.</summary>
 public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps,
     double GuidanceScale = 7.5, int Width = 512, int Height = 512, string Sampler = "pndm",
-    string? SourceImage = null, double Strength = 0.6)
+    string? SourceImage = null, double Strength = 0.6, int Scale = 0)
 {
+    /// <summary>Upscale jobs carry a scale and a source picture instead of a prompt.</summary>
+    public bool IsUpscale => Scale > 0;
+    public static readonly (int Scale, string Label)[] UpscaleChoices = [(2, "2× larger"), (4, "4× larger")];
     /// <summary>How far image-to-image moves from the starting picture, in plain words.</summary>
     public static readonly (double Strength, string Label)[] ChangeLevels = [(0.35, "A little"), (0.6, "Moderately"), (0.8, "A lot")];
     public static readonly string[] PictureExtensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp"];
@@ -31,16 +34,19 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
     };
 }
 public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha256, GenerationSettings Settings,
-    string CompletedUtc, double Seconds, string Gpu)
+    string CompletedUtc, double Seconds, string Gpu, string Kind = "generate", int Width = 0, int Height = 0)
 {
-    public string Description => $"{Settings.Prompt}\n{Settings.Summary} · {Seconds:N1}s · {Gpu}";
+    public string Description => Kind == "upscale"
+        ? $"Upscaled {Settings.Scale}× to {Width} × {Height} · {Seconds:N1}s · {Gpu}"
+        : $"{Settings.Prompt}\n{Settings.Summary} · {Seconds:N1}s · {Gpu}";
 }
 /// <summary>A generation that failed, was cancelled, or was interrupted, with its reason and its own child log.</summary>
 public sealed record JobSummary(string Id, string Status, string Message, string StartedUtc, GenerationSettings? Settings, string? LogPath)
 {
     public string Title => Status.Length > 0 && DateTimeOffset.TryParse(StartedUtc, out var started)
         ? $"{char.ToUpperInvariant(Status[0])}{Status[1..]} · {started.ToLocalTime():g}" : Status;
-    public string Description => Settings is null ? Message : $"{Settings.Prompt}\n{Settings.Summary}\n{Message}";
+    public string Description => Settings is null ? Message
+        : Settings.IsUpscale ? $"Upscale {Settings.Scale}×\n{Message}" : $"{Settings.Prompt}\n{Settings.Summary}\n{Message}";
     public bool CanRetry => Settings is not null && !string.IsNullOrWhiteSpace(Settings.Prompt);
     public bool HasLog => LogPath is not null;
 }
@@ -82,6 +88,8 @@ public interface IWorkbenchService
     Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>Enlarges a picture 2× or 4× with the verified upscaler; the result is a Library image.</summary>
+    Task<GeneratedImage> UpscaleAsync(string dataRoot, string sourceImage, int scale, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Removes "caches", "logs", or the whole "installation"; images and job records are never removed.</summary>
     Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken);

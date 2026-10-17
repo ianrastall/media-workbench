@@ -36,13 +36,21 @@ public sealed partial class ShellView : UserControl
     private void RetryJob(object sender, RoutedEventArgs args) => ViewModel.RetryJobCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void OpenJobLog(object sender, RoutedEventArgs args) => ViewModel.OpenJobLogCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void UseLibraryPicture(object sender, RoutedEventArgs args) => ViewModel.UseAsStartingPicture((sender as FrameworkElement)?.Tag as string);
+    private void UpscaleLibraryPicture(object sender, RoutedEventArgs args) => ViewModel.UseForUpscale((sender as FrameworkElement)?.Tag as string);
     private async void ChoosePicture(object sender, RoutedEventArgs args)
+    {
+        if (await PickPicture() is { } path) ViewModel.UseAsStartingPicture(path);
+    }
+    private async void ChooseUpscalePicture(object sender, RoutedEventArgs args)
+    {
+        if (await PickPicture() is { } path) ViewModel.UseForUpscale(path);
+    }
+    private async Task<string?> PickPicture()
     {
         var picker = new Windows.Storage.Pickers.FileOpenPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.PicturesLibrary };
         foreach (string extension in GenerationSettings.PictureExtensions) picker.FileTypeFilter.Add(extension);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowHandle);
-        var file = await picker.PickSingleFileAsync();
-        if (file is not null) ViewModel.UseAsStartingPicture(file.Path);
+        return (await picker.PickSingleFileAsync())?.Path;
     }
     private void AcceptPictureDrag(object sender, DragEventArgs args)
     {
@@ -54,9 +62,17 @@ public sealed partial class ShellView : UserControl
     }
     private async void DropPicture(object sender, DragEventArgs args)
     {
-        if (!args.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+        if (await DroppedPath(args) is { } path) ViewModel.UseAsStartingPicture(path);
+    }
+    private async void DropUpscalePicture(object sender, DragEventArgs args)
+    {
+        if (await DroppedPath(args) is { } path) ViewModel.UseForUpscale(path);
+    }
+    private static async Task<string?> DroppedPath(DragEventArgs args)
+    {
+        if (!args.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return null;
         var items = await args.DataView.GetStorageItemsAsync();
-        ViewModel.UseAsStartingPicture(items.OfType<Windows.Storage.StorageFile>().FirstOrDefault()?.Path);
+        return items.OfType<Windows.Storage.StorageFile>().FirstOrDefault()?.Path;
     }
     // Confirm buttons live in flyouts; close them before the long-running removal starts.
     private void ClearStorage(object sender, RoutedEventArgs args)

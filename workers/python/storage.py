@@ -5,20 +5,20 @@ Standard library only. Removal holds the data-folder lock, so it never races set
 import os
 import shutil
 
-from inference_setup import (PROFILE, RECIPE, check_cancel, data_root, exclusive, owned,
+from inference_setup import (PROFILE, RECIPE, UPSCALER, check_cancel, data_root, exclusive, owned,
                              recover_interrupted, state_path)
 
 # id, label, folders under the data root, what removing it means (None: not removable from the app).
 AREAS = [
     ("runtime", "Inference runtime", [f"runtimes/{PROFILE}"], None),
-    ("model", "Stable Diffusion 1.5 model", [f"models/{RECIPE}"], None),
+    ("model", "Image models (Stable Diffusion 1.5 and upscaler)", [f"models/{RECIPE}", f"models/{UPSCALER}"], None),
     ("caches", "Download caches", ["cache", "bootstrap"],
      "Packages and archives kept so a repair need not download them again. Install / verify downloads them again if needed."),
     ("images", "Images", ["artifacts"], None),
     ("logs", "Logs", ["logs"], "Inference logs. Library's Open log buttons stop working for the removed logs."),
     ("jobs", "Job records", ["jobs"], None),
 ]
-INSTALLATION = [f"runtimes/{PROFILE}", f"models/{RECIPE}", "cache", "bootstrap"]
+INSTALLATION = [f"runtimes/{PROFILE}", f"models/{RECIPE}", f"models/{UPSCALER}", "cache", "bootstrap"]
 
 
 def tree_size(path):

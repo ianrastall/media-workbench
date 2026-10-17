@@ -20,6 +20,7 @@ import zipfile
 
 PROFILE = "sd15-cu126-v1"
 RECIPE = "sd15-baseline"
+UPSCALER = "realesrgan-x4plus"
 SETUP_ACTIVE = ["preparing", "runtime", "downloading", "verifying"]
 # Output sizes and samplers offered for SD 1.5; verification itself always runs the 512 x 512 default.
 SIZES = [(512, 512), (512, 768), (768, 512)]
@@ -31,9 +32,10 @@ LIBRARY_PROBLEMS = 50
 PROBLEM_STATUSES = {"failed", "cancelled", "interrupted"}
 # Bump when this module or inference_worker.py changes what a verified installation means
 # (pipeline loading, precision, checks). Source edits alone no longer revoke readiness.
-ADAPTER_VERSION = 1
+ADAPTER_VERSION = 2  # 2: verification also tests the Real-ESRGAN upscaler.
 STAMPED_FILES = ["profiles/sd15-cu126.json", "profiles/sd15-cu126.lock", "profiles/sd15-files.json",
-                 "recipes/sd15-baseline.json"]
+                 "profiles/upscaler-files.json", "recipes/sd15-baseline.json"]
+UPSCALE_MAX_SIDE = 2048
 FRESH_SETUP_BYTES = 20 * 1024**3  # Runtime, wheel cache, model, and download temporaries.
 SETUP_HEADROOM_BYTES = 2 * 1024**3
 # Drivers report slightly less than nominal capacity (a 6 GB GTX 1660 Ti reports 6143.7 MiB to CUDA).
@@ -172,17 +174,24 @@ def runtime_marker(root):
     return owned(root, f"runtimes/{PROFILE}/.synced-lock-sha256")
 
 
+def model_files(app, root):
+    """(stamp key, path, manifest entry) for every verified model file: SD 1.5, then the upscaler."""
+    manifest = json.loads((app / "profiles/sd15-files.json").read_text())
+    model = owned(root, f"models/{RECIPE}")
+    files = [(entry["path"], owned(model, entry["path"]), entry) for entry in manifest["files"]]
+    upscaler = json.loads((app / "profiles/upscaler-files.json").read_text())
+    folder = owned(root, f"models/{UPSCALER}")
+    return files + [(f"{UPSCALER}/{entry['name']}", owned(folder, entry["name"]), entry) for entry in upscaler["files"]]
+
+
 def required_free_bytes(app, root):
     """A fresh setup needs room for everything; re-verifying a synced runtime needs only the missing model bytes."""
     marker = runtime_marker(root)
     python = owned(root, f"runtimes/{PROFILE}/python/python.exe")
     if not python.is_file() or not marker.is_file() or marker.read_text(encoding="utf-8").strip() != lock_digest(app):
         return FRESH_SETUP_BYTES
-    manifest = json.loads((app / "profiles/sd15-files.json").read_text())
-    model = owned(root, f"models/{RECIPE}")
     missing = 0
-    for entry in manifest["files"]:
-        path = owned(model, entry["path"])
+    for _, path, entry in model_files(app, root):
         if not path.is_file() or path.stat().st_size != entry["size"]:
             missing += entry["size"]
     return missing + SETUP_HEADROOM_BYTES
@@ -258,12 +267,9 @@ def files_unchanged(app, root, record):
     stamps = record.get("files")
     if not isinstance(stamps, dict):
         return False
-    manifest = json.loads((app / "profiles/sd15-files.json").read_text())
-    model = owned(root, f"models/{RECIPE}")
-    for entry in manifest["files"]:
-        path = owned(model, entry["path"])
+    for key, path, _ in model_files(app, root):
         try:
-            if file_stamp(path) != stamps.get(entry["path"]):
+            if file_stamp(path) != stamps.get(key):
                 return False
         except OSError:
             return False
@@ -448,18 +454,15 @@ def inference(app, root, operation, payload, cancel, progress, log_id=None):
 
 def verify_files(app, root, cancel, progress):
     """Full SHA-256 verification; returns the size/mtime stamps that later runs compare against."""
-    manifest = json.loads((app / "profiles/sd15-files.json").read_text())
-    model = owned(root, f"models/{RECIPE}")
+    files = model_files(app, root)
     stamps = {}
-    for i, entry in enumerate(manifest["files"]):
+    for i, (key, path, entry) in enumerate(files):
         check_cancel(cancel)
-        path = owned(model, entry["path"])
-        progress({"stage": "Verifying " + entry["path"], "completed": i,
-                  "total": len(manifest["files"]), "unit": "files"})
+        progress({"stage": "Verifying " + key, "completed": i, "total": len(files), "unit": "files"})
         before = file_stamp(path) if path.is_file() else None
         if not before or before["size"] != entry["size"] or digest(path) != entry["sha256"] or file_stamp(path) != before:
-            raise SetupError("Model verification failed: " + entry["path"] + ". Install / verify again.")
-        stamps[entry["path"]] = before
+            raise SetupError("Model verification failed: " + key + ". Install / verify again.")
+        stamps[key] = before
     return stamps
 
 
@@ -504,9 +507,13 @@ def install(app, payload, cancel, progress):
             runtime_marker(root).write_text(lock_digest(app), encoding="utf-8")
             stage("downloading", "Fetching pinned Hugging Face model files")
             inference(app, root, "download", {}, cancel, progress)
+            stage("downloading", "Fetching the picture upscaler")
+            upscaler = json.loads((app / "profiles/upscaler-files.json").read_text())
+            for entry in upscaler["files"]:
+                download(entry, owned(root, f"models/{UPSCALER}/{entry['name']}"), cancel, progress)
             stage("verifying", "Verifying all model checksums")
             stamps = verify_files(app, root, cancel, progress)
-            stage("verifying", "Testing 512 × 512 inference on your GPU")
+            stage("verifying", "Testing 512 × 512 inference and upscaling on your GPU")
             evidence = inference(app, root, "verify", {}, cancel, progress)
             check_cancel(cancel)
             record.update(status="ready", message="Stable Diffusion 1.5 is ready on " + evidence["gpu"],
@@ -547,19 +554,31 @@ def validate_generation(payload):
     settings = {"prompt": prompt.strip(), "negativePrompt": negative, "seed": seed, "steps": steps,
                 "width": size[0], "height": size[1], "guidanceScale": round(float(guidance), 2), "sampler": sampler}
     if source is not None:
-        if not isinstance(source, str) or not Path(source).is_absolute():
-            raise ValueError("Choose the starting picture by its full path")
-        path = Path(source)
-        if path.suffix.lower() not in SOURCE_SUFFIXES:
-            raise ValueError("The starting picture must be a PNG, JPEG, WebP, or BMP file")
-        if not path.is_file():
-            raise ValueError("The starting picture could not be found")
-        if path.stat().st_size > SOURCE_MAX_BYTES:
-            raise ValueError("The starting picture is larger than 50 MB")
+        path = validate_picture(source, "starting picture")
         if type(strength) not in (int, float) or not 0.05 <= strength <= 1:
             raise ValueError("How much to change must be from 0.05 to 1")
         settings.update(sourceImage=str(path), strength=round(float(strength), 2))
     return settings
+
+
+def validate_picture(source, role="picture"):
+    if not isinstance(source, str) or not Path(source).is_absolute():
+        raise ValueError(f"Choose the {role} by its full path")
+    path = Path(source)
+    if path.suffix.lower() not in SOURCE_SUFFIXES:
+        raise ValueError(f"The {role} must be a PNG, JPEG, WebP, or BMP file")
+    if not path.is_file():
+        raise ValueError(f"The {role} could not be found")
+    if path.stat().st_size > SOURCE_MAX_BYTES:
+        raise ValueError(f"The {role} is larger than 50 MB")
+    return path
+
+
+def validate_upscale(payload):
+    scale = payload.get("scale", 4)
+    if type(scale) is not int or scale not in (2, 4):
+        raise ValueError("Upscale by 2 or 4 times")
+    return {"sourceImage": str(validate_picture(payload.get("sourceImage"))), "scale": scale}
 
 
 def shape_for(width, height):
@@ -583,8 +602,17 @@ def resolve_settings(root, record):
 
 
 def generate(app, payload, cancel, progress):
-    settings = validate_generation(payload)
-    root = data_root(payload)
+    settings = validate_generation(payload)  # Before data_root, which creates the folder.
+    return run_job(app, data_root(payload), "generate", settings, cancel, progress)
+
+
+def upscale(app, payload, cancel, progress):
+    settings = validate_upscale(payload)
+    return run_job(app, data_root(payload), "upscale", settings, cancel, progress)
+
+
+def run_job(app, root, kind, settings, cancel, progress):
+    """One generation or upscale: readiness gate, durable record, private copy of any input picture, owned child."""
     with exclusive(root):
         recover_interrupted(root)
         ready = json.loads(state_path(root).read_text()) if state_path(root).exists() else {}
@@ -594,11 +622,11 @@ def generate(app, payload, cancel, progress):
             raise SetupError("Model files changed since they were verified. Install / verify again.")
         job_id = uuid.uuid4().hex
         manifest = json.loads((app / "profiles/sd15-files.json").read_text())
-        record = dict(schemaVersion=1, id=job_id, status="running", settings=settings,
+        record = dict(schemaVersion=1, id=job_id, kind=kind, status="running", settings=settings,
                       startedUtc=datetime.now(timezone.utc).isoformat(), recipeId=RECIPE,
                       profileStamp=ready["profileStamp"], runtimeProfileId=PROFILE,
                       source=dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"]),
-                      log=f"generate-{job_id}.log")
+                      log=f"{kind}-{job_id}.log")
         job = owned(root, f"jobs/{job_id}.json")
         child = dict(settings, jobId=job_id)
         if "sourceImage" in settings:
@@ -611,10 +639,10 @@ def generate(app, payload, cancel, progress):
             child["sourceImage"] = str(copy)
         atomic_json(job, record)
         try:
-            result = inference(app, root, "generate", child, cancel, progress, log_id=job_id)
+            result = inference(app, root, kind, child, cancel, progress, log_id=job_id)
             check_cancel(cancel)
             record.update(status="succeeded", completedUtc=datetime.now(timezone.utc).isoformat(), **result)
-            settings.update(width=result.get("width", settings["width"]), height=result.get("height", settings["height"]))
+            settings.update(width=result.get("width", settings.get("width")), height=result.get("height", settings.get("height")))
             image = artifact_image(root, record)
             if image is None:
                 raise SetupError("The inference child reported an image outside this job's artifact folder.")
@@ -650,7 +678,7 @@ def artifact_image(root, record):
 
 def job_log(root, record):
     """The generation's own child log, if it exists; the name is fixed by the job ID, never taken from the record."""
-    if not job_id_valid(record.get("id")) or record.get("log") != f"generate-{record['id']}.log":
+    if not job_id_valid(record.get("id")) or record.get("log") not in (f"generate-{record['id']}.log", f"upscale-{record['id']}.log"):
         return None
     path = owned(root, "logs") / record["log"]
     return path if path.is_file() else None

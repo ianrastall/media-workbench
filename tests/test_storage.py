@@ -16,6 +16,7 @@ import storage
 FILES = {
     f"runtimes/{setup.PROFILE}/python/python.exe": 10,
     f"models/{setup.RECIPE}/unet/weights.bin": 100,
+    f"models/{setup.UPSCALER}/RealESRGAN_x4plus.pth": 6,
     "cache/uv/wheel.whl": 40,
     "cache/huggingface/token-free.json": 2,
     "bootstrap/python.zip": 8,
@@ -44,8 +45,8 @@ class StorageTests(unittest.TestCase):
             result = storage.summary({"dataRoot": folder})
             measured = sizes(result)
             self.assertEqual({k: measured[k] for k in ["runtime", "model", "caches", "images", "logs"]},
-                             {"runtime": 10, "model": 100, "caches": 50, "images": 5, "logs": 3})
-            self.assertEqual(result["installationBytes"], 160)
+                             {"runtime": 10, "model": 106, "caches": 50, "images": 5, "logs": 3})
+            self.assertEqual(result["installationBytes"], 166)
             self.assertGreater(result["freeBytes"], 0)
             clearable = {item["id"] for item in result["items"] if item["clearable"]}
             self.assertEqual(clearable, {"caches", "logs"})

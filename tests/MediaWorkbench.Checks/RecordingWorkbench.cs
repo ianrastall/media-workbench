@@ -25,6 +25,12 @@ sealed class RecordingWorkbench : IWorkbenchService
             [new JobSummary(new string('a', 32), "failed", "CUDA out of memory", "2026-10-17T00:00:00+00:00", new("retry me", "blurry", 42, 7, 4.5, 768, 512, "euler-a"), null)]));
 
     public List<string> Cleared { get; } = [];
+    public (string Source, int Scale)? LastUpscale { get; private set; }
+    public Task<GeneratedImage> UpscaleAsync(string dataRoot, string sourceImage, int scale, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        LastUpscale = (sourceImage, scale);
+        return Record(dataRoot, Image(dataRoot) with { Kind = "upscale", Width = 2048, Height = 2048, Settings = new("", "", 0, 0, Scale: scale, SourceImage: sourceImage) });
+    }
     public Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken) => Record(dataRoot, Storage(5L << 30));
     public Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {

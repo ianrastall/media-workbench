@@ -85,6 +85,9 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
         elif operation == "generate.image":
             result = inference_setup.generate(root, payload, cancellation,
                 lambda value: emit(request_id, "progress", value))
+        elif operation == "upscale.image":
+            result = inference_setup.upscale(root, payload, cancellation,
+                lambda value: emit(request_id, "progress", value))
         elif operation == "library.list":
             result = inference_setup.library(payload)
         elif operation == "storage.summary":

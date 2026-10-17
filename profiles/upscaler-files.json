@@ -1,0 +1,13 @@
+{
+  "name": "Real-ESRGAN x4plus",
+  "source": "https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.1.0",
+  "license": "BSD-3-Clause",
+  "files": [
+    {
+      "name": "RealESRGAN_x4plus.pth",
+      "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+      "size": 67040989,
+      "sha256": "4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1"
+    }
+  ]
+}

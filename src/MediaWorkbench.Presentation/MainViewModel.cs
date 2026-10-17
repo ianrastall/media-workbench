@@ -40,6 +40,9 @@ public partial class MainViewModel : ObservableObject
         OpenJobLogCommand = new RelayCommand<JobSummary?>(OpenJobLog, job => job?.HasLog == true);
         RefreshStorageCommand = new AsyncRelayCommand(RefreshStorageAsync, () => !IsBusy);
         UseAsStartingPictureCommand = new RelayCommand<string?>(path => UseAsStartingPicture(path));
+        UseForUpscaleCommand = new RelayCommand<string?>(path => UseForUpscale(path));
+        UpscaleCommand = new AsyncRelayCommand(UpscaleAsync, () => !IsBusy && ModelReady && HasUpscaleSource);
+        GoToCreateCommand = new RelayCommand(() => SelectedPage = "create");
         ClearStartingPictureCommand = new RelayCommand(() => SourceImagePath = "");
         ClearStorageCommand = new AsyncRelayCommand<string?>(ClearStorageAsync, area => !IsBusy && !string.IsNullOrEmpty(area));
         DataRootDraft = DataRoot;
@@ -73,7 +76,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string Status { get; set; } = "Ready";
     [ObservableProperty] public partial string Notice { get; set; } = "Start in Create to install and verify Stable Diffusion 1.5. Requires an NVIDIA GPU with 6 GB VRAM and 20 GiB free space.";
     [ObservableProperty] public partial string InstallationText { get; set; } = "Check model status, or install / verify to prepare image generation.";
-    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand)), NotifyPropertyChangedFor(nameof(NeedsSetup))] public partial bool ModelReady { get; set; }
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand)), NotifyPropertyChangedFor(nameof(NeedsSetup))] public partial bool ModelReady { get; set; }
     public bool NeedsSetup => !ModelReady;
     [ObservableProperty] public partial string Prompt { get; set; } = "A small red ceramic house beside a green tree, watercolor illustration, daylight";
     [ObservableProperty] public partial string NegativePrompt { get; set; } = "";
@@ -94,6 +97,16 @@ public partial class MainViewModel : ObservableObject
     public string SourceImageName => HasSourceImage ? Path.GetFileName(SourceImagePath) : "";
     /// <summary>Index into <see cref="GenerationSettings.ChangeLevels"/>.</summary>
     [ObservableProperty] public partial int ChangeIndex { get; set; } = 1;
+    /// <summary>The picture Tools will enlarge.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasUpscaleSource), nameof(UpscaleSourceName)), NotifyCanExecuteChangedFor(nameof(UpscaleCommand))]
+    public partial string UpscaleSourcePath { get; set; } = "";
+    public bool HasUpscaleSource => UpscaleSourcePath.Length > 0;
+    public string UpscaleSourceName => HasUpscaleSource ? Path.GetFileName(UpscaleSourcePath) : "No picture chosen yet.";
+    /// <summary>Index into <see cref="GenerationSettings.UpscaleChoices"/>; 4× by default.</summary>
+    [ObservableProperty] public partial int UpscaleIndex { get; set; } = 1;
+    public IReadOnlyList<string> UpscaleLabels { get; } = [.. GenerationSettings.UpscaleChoices.Select(choice => choice.Label)];
+    [ObservableProperty] public partial string UpscalePreviewPath { get; set; } = "";
+    [ObservableProperty] public partial string UpscaleDescription { get; set; } = "";
     public IReadOnlyList<string> ChangeLabels { get; } = [.. GenerationSettings.ChangeLevels.Select(level => level.Label)];
     [ObservableProperty] public partial string PreviewPath { get; set; } = "";
     [ObservableProperty] public partial string ImageDescription { get; set; } = "Your generated image will appear here.";
@@ -104,7 +117,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -133,6 +146,9 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand RefreshStorageCommand { get; }
     public IAsyncRelayCommand CheckForUpdatesCommand { get; }
     public IRelayCommand<string?> UseAsStartingPictureCommand { get; }
+    public IRelayCommand<string?> UseForUpscaleCommand { get; }
+    public IAsyncRelayCommand UpscaleCommand { get; }
+    public IRelayCommand GoToCreateCommand { get; }
     public IRelayCommand ClearStartingPictureCommand { get; }
     public IAsyncRelayCommand InstallUpdateCommand { get; }
     /// <summary>Raised with a checksum-verified installer path once the user chose to update; the shell runs it and exits.</summary>
@@ -165,7 +181,7 @@ public partial class MainViewModel : ObservableObject
         "discover" => "Search public Hugging Face models and inspect their metadata before choosing a local pipeline.",
         "create" => "Generate images locally with Stable Diffusion 1.5. The first setup downloads a private runtime and model, then tests your GPU.",
         "library" => "Images and their prompts, seeds, and runtime evidence are saved in your data folder.",
-        "tools" => "Focused native tools will add upscaling, frame processing, and export capabilities.",
+        "tools" => "Make a picture bigger and sharper, offline. Works on your own pictures and on images from Library.",
         "settings" => "Choose where models, private environments, and media are stored.",
         "diagnostics" => "Check the components that power Media Workbench.",
         _ => "Discover local generation models, understand their requirements, and prepare a dependable creative setup."
@@ -296,6 +312,33 @@ public partial class MainViewModel : ObservableObject
         Notice = $"Loaded the settings of a {job.Status} generation. Select Generate image to try again.";
     }
 
+    /// <summary>Chooses the picture to enlarge in Tools: one of the user's files, a Library image, or the latest result.</summary>
+    public bool UseForUpscale(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !Path.IsPathFullyQualified(path) || !File.Exists(path)
+            || !GenerationSettings.PictureExtensions.Contains(Path.GetExtension(path).ToLowerInvariant()))
+        {
+            Notice = "Choose a PNG, JPEG, WebP, or BMP picture.";
+            return false;
+        }
+        UpscaleSourcePath = path;
+        SelectedPage = "tools";
+        Notice = "Choose how much larger, then select Make it bigger.";
+        return true;
+    }
+
+    private Task UpscaleAsync() => RunAsync("Preparing the upscaler…", async token =>
+    {
+        if (!File.Exists(UpscaleSourcePath)) throw new InvalidDataException("That picture is no longer there. Choose it again.");
+        int scale = GenerationSettings.UpscaleChoices[Math.Clamp(UpscaleIndex, 0, GenerationSettings.UpscaleChoices.Length - 1)].Scale;
+        var image = await _service.UpscaleAsync(DataRoot, UpscaleSourcePath, scale, ObserveProgress(), token);
+        UpscalePreviewPath = image.ImagePath;
+        UpscaleDescription = image.Description;
+        Images.Insert(0, image);
+        Notice = $"Saved a {image.Width} × {image.Height} picture to Library.";
+        Record("Upscaled " + Path.GetFileName(UpscaleSourcePath));
+    }, longRunning: true);
+
     private static int NearestChange(double strength) => Array.IndexOf(GenerationSettings.ChangeLevels,
         GenerationSettings.ChangeLevels.MinBy(level => Math.Abs(level.Strength - strength)));
 
@@ -325,7 +368,7 @@ public partial class MainViewModel : ObservableObject
     }
     partial void OnSelectedPageChanged(string value)
     {
-        if (value == "create" && !IsBusy) RefreshInstallationCommand.Execute(null);
+        if ((value == "create" || value == "tools") && !IsBusy) RefreshInstallationCommand.Execute(null);
         if (value == "library" && !IsBusy) RefreshLibraryCommand.Execute(null);
         if (value == "settings" && !IsBusy) RefreshStorageCommand.Execute(null);
     }

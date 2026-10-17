@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Upscaling: **Tools** makes a picture 2× or 4× bigger and sharper, offline, with Real-ESRGAN x4plus (pictures up to 2048 pixels on the longest side; a 768 × 512 picture becomes 3072 × 2048 in about 4 seconds on a GTX 1660 Ti). Choose or drag a picture, or select **Make it bigger** on a Library image or the latest result; the result is saved to Library.
+- Install / verify now also downloads the 64 MiB upscaler weights (pinned by SHA-256 from the original Real-ESRGAN release) and tests them on the GPU. Existing installations ask for Install / verify once, which fetches only what is new.
+- Storage counts the upscaler with the image models, and removing Stable Diffusion 1.5 removes it too.
+
 ## 0.2.0-alpha.3 — 2026-10-17
 
 - Settings has a Storage section: free space, and the size of the runtime, model, download caches, images, logs, and job records in the saved data folder.
