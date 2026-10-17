@@ -50,3 +50,18 @@ Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
 | Library after that generation | Listed the new image and an older absolute-path record |
 
 The generation's 33.3 s inference time on this run is a single sample, not a performance comparison with the earlier 14.0 s run.
+
+## 0.2.0-alpha.2 pre-release checks
+
+Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
+
+| Check | Result |
+|---|---|
+| Rust tests/format/Clippy, 50 Python tests, 28 C# checks | Passed |
+| Debug solution build; built app `--ui-self-test` | Passed, zero warnings/errors |
+| Install / verify through the coordinator's native plan gate | Ready in 32 s (4-step test 15.8 s); runtime marker recorded |
+| 10-step generation | Succeeded, 14.1 s inference, 22 s end to end; log written as `logs/generate-<id>.log` |
+| Library page with a throwaway data folder (one image, one failed and one interrupted job) | Grid and Unfinished generations rendered; Open log enabled only for the job with a log |
+| Second launch with the first window minimized | Exited and restored the first instance's window |
+
+Focus changes could not be observed from a background shell, so bringing the window to the foreground on a second launch was not separately confirmed.
