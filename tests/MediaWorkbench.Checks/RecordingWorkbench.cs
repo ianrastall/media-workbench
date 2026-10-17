@@ -15,14 +15,22 @@ sealed class RecordingWorkbench : IWorkbenchService
     public Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         Record(dataRoot, new InstallationState("ready", "Ready"));
     public GenerationSettings? LastGeneration { get; private set; }
-    public Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    public Task? GenerationGate { get; set; }
+    public async Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {
         LastGeneration = settings;
-        return Record(dataRoot, Image(dataRoot));
+        if (GenerationGate is { } gate) await gate.WaitAsync(cancellationToken);
+        return await Record(dataRoot, Image(dataRoot));
     }
-    public Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken) =>
-        Record(dataRoot, new LibrarySnapshot([Image(dataRoot)], 0,
-            [new JobSummary(new string('a', 32), "failed", "CUDA out of memory", "2026-10-17T00:00:00+00:00", new("retry me", "blurry", 42, 7, 4.5, 768, 512, "euler-a"), null)]));
+    public List<LibraryQuery> LibraryQueries { get; } = [];
+    public Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null)
+    {
+        query ??= new();
+        LibraryQueries.Add(query);
+        return Record(dataRoot, new LibrarySnapshot([Image(dataRoot)], 0,
+            [new JobSummary(new string('a', 32), "failed", "CUDA out of memory", "2026-10-17T00:00:00+00:00", new("retry me", "blurry", 42, 7, 4.5, 768, 512, "euler-a"), null)],
+            100, query.Offset, query.Offset + query.Limit < 100));
+    }
 
     public List<string> Cleared { get; } = [];
     public (string Source, int Scale)? LastUpscale { get; private set; }

@@ -34,6 +34,15 @@ public sealed partial class ShellView : UserControl
         if (target is not null && !ReferenceEquals(Navigation.SelectedItem, target)) Navigation.SelectedItem = target;
     }
     private void RetryJob(object sender, RoutedEventArgs args) => ViewModel.RetryJobCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
+    private void UseImageSettings(object sender, RoutedEventArgs args) => ViewModel.UseImageSettingsCommand.Execute((sender as FrameworkElement)?.Tag as GeneratedImage);
+    private void SearchLibraryOnEnter(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
+    {
+        if (args.Key == Windows.System.VirtualKey.Enter && ViewModel.RefreshLibraryCommand.CanExecute(null))
+        {
+            ViewModel.RefreshLibraryCommand.Execute(null);
+            args.Handled = true;
+        }
+    }
     private void OpenJobLog(object sender, RoutedEventArgs args) => ViewModel.OpenJobLogCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void UseLibraryPicture(object sender, RoutedEventArgs args) => ViewModel.UseAsStartingPicture((sender as FrameworkElement)?.Tag as string);
     private void UpscaleLibraryPicture(object sender, RoutedEventArgs args) => ViewModel.UseForUpscale((sender as FrameworkElement)?.Tag as string);

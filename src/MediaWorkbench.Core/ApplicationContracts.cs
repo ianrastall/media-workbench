@@ -36,6 +36,7 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
 public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha256, GenerationSettings Settings,
     string CompletedUtc, double Seconds, string Gpu, string Kind = "generate", int Width = 0, int Height = 0)
 {
+    public bool CanReuseSettings => Settings.IsUpscale ? !string.IsNullOrEmpty(Settings.SourceImage) : !string.IsNullOrWhiteSpace(Settings.Prompt);
     public string Description => Kind == "upscale"
         ? $"Upscaled {Settings.Scale}× to {Width} × {Height} · {Seconds:N1}s · {Gpu}"
         : $"{Settings.Prompt}\n{Settings.Summary} · {Seconds:N1}s · {Gpu}";
@@ -47,11 +48,13 @@ public sealed record JobSummary(string Id, string Status, string Message, string
         ? $"{char.ToUpperInvariant(Status[0])}{Status[1..]} · {started.ToLocalTime():g}" : Status;
     public string Description => Settings is null ? Message
         : Settings.IsUpscale ? $"Upscale {Settings.Scale}×\n{Message}" : $"{Settings.Prompt}\n{Settings.Summary}\n{Message}";
-    public bool CanRetry => Settings is not null && !string.IsNullOrWhiteSpace(Settings.Prompt);
+    public bool CanRetry => Settings is not null && (Settings.IsUpscale ? !string.IsNullOrEmpty(Settings.SourceImage) : !string.IsNullOrWhiteSpace(Settings.Prompt));
     public bool HasLog => LogPath is not null;
 }
-/// <summary>Recent successful images and unfinished generations, plus how many jobs this listing marked interrupted.</summary>
-public sealed record LibrarySnapshot(IReadOnlyList<GeneratedImage> Images, int Recovered, IReadOnlyList<JobSummary> Problems);
+/// <summary>A page of matching images and recent unfinished generations; the index is rebuilt from job records.</summary>
+public sealed record LibrarySnapshot(IReadOnlyList<GeneratedImage> Images, int Recovered, IReadOnlyList<JobSummary> Problems,
+    int Total = 0, int Offset = 0, bool HasMore = false);
+public sealed record LibraryQuery(string Query = "", string Kind = "all", int Offset = 0, int Limit = 48);
 /// <summary>One part of the data folder; clearable parts are reproducible and can be removed from the app.</summary>
 public sealed record StorageItem(string Id, string Label, long Bytes, long Files, bool Clearable, string Note)
 {
@@ -87,7 +90,7 @@ public interface IWorkbenchService
     Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken);
     Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
-    Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken);
+    Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null);
     /// <summary>Enlarges a picture 2× or 4× with the verified upscaler; the result is a Library image.</summary>
     Task<GeneratedImage> UpscaleAsync(string dataRoot, string sourceImage, int scale, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken);

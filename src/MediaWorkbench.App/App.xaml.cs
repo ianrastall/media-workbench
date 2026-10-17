@@ -52,7 +52,14 @@ public partial class App : Application
                 string hash = MediaWorkbench.Infrastructure.NativeCore.Sha256File(Path.Combine(root, "workers", "python", "media_worker.py"));
                 string report = arguments[checkIndex + 1];
                 Directory.CreateDirectory(Path.GetDirectoryName(report)!);
-                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash }));
+                string libraryCheck = Path.Combine(Path.GetDirectoryName(report)!, "library-smoke-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    var library = await service.GetLibraryAsync(libraryCheck, deadline.Token);
+                    if (library.Total != 0 || library.Images.Count != 0) throw new InvalidDataException("The bundled Library index check failed.");
+                }
+                finally { if (Directory.Exists(libraryCheck)) Directory.Delete(libraryCheck, recursive: true); }
+                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash, libraryIndex = true }));
                 Environment.ExitCode = 0;
             }
             catch (Exception ex)

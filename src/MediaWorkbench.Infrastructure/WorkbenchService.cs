@@ -55,12 +55,14 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
             settings.GuidanceScale, settings.Width, settings.Height, settings.Sampler, sourceImage = settings.SourceImage ?? "", settings.Strength }, cancellationToken, progress), Wire.Json)!;
     public async Task<GeneratedImage> UpscaleAsync(string dataRoot, string sourceImage, int scale, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<GeneratedImage>(await Execute("upscale.image", new { dataRoot, sourceImage, scale }, cancellationToken, progress), Wire.Json)!;
-    public async Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken)
+    public async Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null)
     {
-        var result = await Execute("library.list", new { dataRoot }, cancellationToken);
+        query ??= new();
+        var result = await Execute("library.list", new { dataRoot, query.Query, query.Kind, query.Offset, query.Limit }, cancellationToken);
         var images = JsonSerializer.Deserialize<GeneratedImage[]>(result.GetProperty("artifacts"), Wire.Json) ?? [];
         var problems = result.TryGetProperty("problems", out var listed) ? JsonSerializer.Deserialize<JobSummary[]>(listed, Wire.Json) ?? [] : [];
-        return new(images, result.TryGetProperty("recovered", out var recovered) ? recovered.GetInt32() : 0, problems);
+        return new(images, result.TryGetProperty("recovered", out var recovered) ? recovered.GetInt32() : 0, problems,
+            result.GetProperty("total").GetInt32(), result.GetProperty("offset").GetInt32(), result.GetProperty("hasMore").GetBoolean());
     }
     public async Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<StorageSnapshot>(await Execute("storage.summary", new { dataRoot }, cancellationToken), Wire.Json)!;

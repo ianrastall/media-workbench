@@ -89,6 +89,21 @@ await vm.RefreshLibraryCommand.ExecuteAsync(null);
 Check(workbench.DataRoots[^1] == nextRoot, "Operations after saving use the newly saved folder");
 var problem = vm.Problems.SingleOrDefault();
 Check(vm.HasProblems && problem is { Status: "failed" } && vm.Images.Count == 1, "Library lists unfinished generations beside saved images");
+vm.LibrarySearch = "forest 42";
+vm.LibraryKindIndex = 2;
+await vm.RefreshLibraryCommand.ExecuteAsync(null);
+Check(workbench.LibraryQueries[^1] == new LibraryQuery("forest 42", "upscale", 0, 48) && !vm.PreviousLibraryPageCommand.CanExecute(null)
+    && vm.NextLibraryPageCommand.CanExecute(null) && vm.LibraryText.Contains("of 100"), "Library applies search and image type on its first page");
+vm.LibrarySearch = "a draft search";
+await vm.NextLibraryPageCommand.ExecuteAsync(null);
+Check(workbench.LibraryQueries[^1] == new LibraryQuery("forest 42", "upscale", 48, 48) && vm.PreviousLibraryPageCommand.CanExecute(null),
+    "Paging keeps the applied search until Search / refresh applies a new draft");
+await vm.NextLibraryPageCommand.ExecuteAsync(null);
+Check(workbench.LibraryQueries[^1].Offset == 96 && !vm.NextLibraryPageCommand.CanExecute(null), "The last Library page disables Older images");
+await vm.PreviousLibraryPageCommand.ExecuteAsync(null);
+Check(workbench.LibraryQueries[^1].Offset == 48, "Newer images returns to the previous Library page");
+await vm.RefreshLibraryCommand.ExecuteAsync(null);
+Check(workbench.LibraryQueries[^1] == new LibraryQuery("a draft search", "upscale", 0, 48), "Applying another search resets Library to the first page");
 Check(!vm.OpenJobLogCommand.CanExecute(problem), "A job without a log offers no log to open");
 vm.RetryJobCommand.Execute(problem);
 Check(vm.Prompt == "retry me" && vm.NegativePrompt == "blurry" && vm.Seed == 42 && vm.Steps == 7 && vm.SelectedPage == "create"
@@ -118,6 +133,11 @@ Check(workbench.LastGeneration!.Summary.StartsWith("From your picture, changed a
 vm.ClearStartingPictureCommand.Execute(null);
 await vm.GenerateCommand.ExecuteAsync(null);
 Check(!vm.HasSourceImage && workbench.LastGeneration!.SourceImage is null, "Removing the picture returns to description-only generation");
+var reusable = RecordingWorkbench.Image(nextRoot) with { Settings = new("repeat this", "text", 123, 12, 6, 512, 768, "dpmpp-2m", picture, 0.8) };
+vm.UseImageSettingsCommand.Execute(reusable);
+Check(vm.Prompt == "repeat this" && vm.Seed == 123 && vm.Steps == 12 && vm.GuidanceScale == 6 && vm.SizeIndex == 1
+    && vm.SamplerIndex == 1 && vm.SourceImagePath == picture && vm.ChangeIndex == 2 && vm.SelectedPage == "create",
+    "A successful Library image's settings, including its private starting picture, can be reused");
 
 // Upscaling from Tools.
 Check(vm.UseForUpscale(picture) && vm.SelectedPage == "tools" && vm.UpscaleSourcePath == picture, "Choosing a picture to enlarge opens Tools with it");
@@ -128,6 +148,45 @@ vm.UpscaleIndex = 0;
 await vm.UpscaleCommand.ExecuteAsync(null);
 Check(workbench.LastUpscale == (picture, 2) && vm.Images[0].Kind == "upscale" && vm.UpscaleDescription.StartsWith("Upscaled 2× to 2048 × 2048"),
     "Make it bigger sends the picture and scale and adds the result to Library");
+var upscaled = vm.Images[0];
+vm.UpscaleIndex = 1;
+vm.SelectedPage = "home";
+vm.UseImageSettingsCommand.Execute(upscaled);
+Check(vm.SelectedPage == "tools" && vm.UpscaleIndex == 0 && vm.UpscaleSourcePath == picture, "Reusing an upscaled image restores Tools and its original scale");
+vm.RetryJobCommand.Execute(new JobSummary("a", "failed", "GPU busy", "", upscaled.Settings, null));
+Check(vm.SelectedPage == "tools" && vm.Notice.Contains("Make it bigger"), "An unfinished upscale can restore its settings too");
+vm.LibrarySearch = "matching only";
+vm.LibraryKindIndex = 2;
+await vm.RefreshLibraryCommand.ExecuteAsync(null);
+await vm.NextLibraryPageCommand.ExecuteAsync(null);
+vm.SelectedPage = "create";
+var generationGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+workbench.GenerationGate = generationGate.Task;
+var inFlight = vm.GenerateCommand.ExecuteAsync(null);
+vm.SelectedPage = "library";
+int requestsBeforeCompletion = workbench.LibraryQueries.Count;
+generationGate.SetResult();
+await inFlight;
+workbench.GenerationGate = null;
+Check(workbench.LibraryQueries.Count == requestsBeforeCompletion + 1 && workbench.LibraryQueries[^1] == new LibraryQuery("matching only", "upscale", 0, 48),
+    "Opening Library during inference refreshes the applied filters on completion, instead of mixing in another image type");
+
+// Real coordinator + SQLite + typed C# transport, independent of the view-model fake.
+string libraryRoot = Path.Combine(output, "indexed-library"), jobId = new string('b', 32);
+Directory.CreateDirectory(Path.Combine(libraryRoot, "jobs"));
+Directory.CreateDirectory(Path.Combine(libraryRoot, "artifacts", jobId));
+await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "artifacts", jobId, "image.png"), [1]);
+await File.WriteAllTextAsync(Path.Combine(libraryRoot, "jobs", jobId + ".json"), System.Text.Json.JsonSerializer.Serialize(new
+{
+    id = jobId, status = "succeeded", kind = "generate", imagePath = jobId + "/image.png", imageSha256 = "",
+    settings = new GenerationSettings("Café forest", "", 987, 5), completedUtc = "2026-10-17T12:00:00Z", seconds = 1, gpu = "Test GPU"
+}, Wire.Json));
+var realService = new WorkbenchService(root, python);
+var indexed = await realService.GetLibraryAsync(libraryRoot, deadline.Token, new("CAFÉ", Limit: 1));
+Check(indexed.Total == 1 && indexed.Images.Single().Settings.Seed == 987 && indexed.Offset == 0 && !indexed.HasMore,
+    "Library search and page metadata survive the real C#/Python/SQLite boundary");
+Check((await realService.GetLibraryAsync(libraryRoot, deadline.Token, new("CAFÉ", "upscale"))).Total == 0,
+    "The real Library filters upscaled and generated images independently");
 
 // Updates: check, then ask. Nothing is downloaded or run until the user chooses Update now.
 await vm.CheckForUpdatesQuietlyAsync();

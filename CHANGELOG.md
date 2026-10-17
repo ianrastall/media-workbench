@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0-alpha.4 — 2026-10-17
+
+- Library searches prompts, things to avoid, seeds, and job IDs, with filters for generated or upscaled images. **Search / refresh** (or Enter in the search box) applies the filters; **Older images** and **Newer images** browse 48 images at a time, with a matching-image count. Images beyond the previous 200-image limit are now accessible.
+- Library keeps a local SQLite index derived from the existing job JSON. Refresh reads changed records, checks image paths, and reflects removed or restored files. A missing, corrupt, or incompatible index rebuilds automatically; your images and records stay in place. Storage reports its size separately.
+- **Use settings** on a successful Library image restores the prompt, seed, size, sampler, and private starting picture in Create. Upscaled images and unfinished upscales restore their original picture and scale in Tools. Unfinished jobs remain visible independently of the image search.
+
 - Upscaling: **Tools** makes a picture 2× or 4× bigger and sharper, offline, with Real-ESRGAN x4plus (pictures up to 2048 pixels on the longest side; a 768 × 512 picture becomes 3072 × 2048 in about 4 seconds on a GTX 1660 Ti). Choose or drag a picture, or select **Make it bigger** on a Library image or the latest result; the result is saved to Library.
 - Install / verify now also downloads the 64 MiB upscaler weights (pinned by SHA-256 from the original Real-ESRGAN release) and tests them on the GPU. Existing installations ask for Install / verify once, which fetches only what is new.
 - Storage counts the upscaler with the image models, and removing Stable Diffusion 1.5 removes it too.

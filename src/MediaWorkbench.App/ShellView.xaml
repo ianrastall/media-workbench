@@ -179,7 +179,16 @@
                     </StackPanel>
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsLibrary, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                        <Button Content="Refresh images" Command="{x:Bind ViewModel.RefreshLibraryCommand}" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBox Header="Find an image" PlaceholderText="Prompt, seed, or job ID" Text="{x:Bind ViewModel.LibrarySearch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="2000" Width="320" KeyDown="SearchLibraryOnEnter" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                            <ComboBox Header="Image type" ItemsSource="{x:Bind ViewModel.LibraryKindLabels}" SelectedIndex="{x:Bind ViewModel.LibraryKindIndex, Mode=TwoWay}" Width="200" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                            <Button Content="Search / refresh" Command="{x:Bind ViewModel.RefreshLibraryCommand}" VerticalAlignment="Bottom" />
+                        </StackPanel>
+                        <TextBlock Text="{x:Bind ViewModel.LibraryText, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Newer images" Command="{x:Bind ViewModel.PreviousLibraryPageCommand}" />
+                            <Button Content="Older images" Command="{x:Bind ViewModel.NextLibraryPageCommand}" />
+                        </StackPanel>
                         <!-- ItemsRepeater virtualizes against the page's ScrollViewer; thumbnails decode at display size. -->
                         <ItemsRepeater ItemsSource="{x:Bind ViewModel.Images}">
                             <ItemsRepeater.Layout>
@@ -196,11 +205,16 @@
                                                 <Button Content="Use as starting picture" Tag="{x:Bind ImagePath}" Click="UseLibraryPicture" />
                                                 <Button Content="Make it bigger" Tag="{x:Bind ImagePath}" Click="UpscaleLibraryPicture" />
                                             </StackPanel>
+                                            <Button Content="Use settings" Tag="{x:Bind}" Click="UseImageSettings" IsEnabled="{x:Bind CanReuseSettings}" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
                             </ItemsRepeater.ItemTemplate>
                         </ItemsRepeater>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Newer images" Command="{x:Bind ViewModel.PreviousLibraryPageCommand}" />
+                            <Button Content="Older images" Command="{x:Bind ViewModel.NextLibraryPageCommand}" />
+                        </StackPanel>
                         <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.HasProblems, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                             <TextBlock Text="Unfinished generations" Style="{ThemeResource SubtitleTextBlockStyle}" />
                             <TextBlock Text="Recent generations that failed, were cancelled, or stopped when the app closed. No image was saved for these." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

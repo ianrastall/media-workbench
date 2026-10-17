@@ -17,6 +17,7 @@ AREAS = [
     ("images", "Images", ["artifacts"], None),
     ("logs", "Logs", ["logs"], "Inference logs. Library's Open log buttons stop working for the removed logs."),
     ("jobs", "Job records", ["jobs"], None),
+    ("library", "Library index", ["library"], None),
 ]
 INSTALLATION = [f"runtimes/{PROFILE}", f"models/{RECIPE}", f"models/{UPSCALER}", "cache", "bootstrap"]
 

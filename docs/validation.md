@@ -98,3 +98,19 @@ Validated on the same Windows 11 machine (GTX 1660 Ti 6 GB), 17 October 2026.
 | 4× upscale of a 768 × 512 image | 3072 × 2048 in 4.1 s, peak 754 MiB; tiles show no visible seams; sharper than a Lanczos resize |
 
 Running the downloaded installer silently and reopening the app was not exercised, because it would install over this machine's environment; it needs a clean-machine or sandbox run.
+
+## Searchable Library (0.2.0-alpha.4)
+
+Validated on the Windows 11 development machine, 17 October 2026. This change does not alter inference or the readiness stamp.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1 -Online`: Rust tests/format/Clippy, Python, C#, live Hub search/details | Passed: 5 Rust tests, 72 Python tests, 63 C# checks |
+| `scripts/build.ps1 -Configuration Release -Publish` | Passed, zero warnings/errors; bundled Python/SQLite self-test passed |
+| `scripts/test-publish.ps1` | Native/worker/SQLite and real window/resource/binding smoke checks passed |
+| Library pagination fixture | All 253 images reachable with 48-image pages; equal modification times did not duplicate or skip records |
+| Real C# → Python → SQLite search | Unicode search, image-type filter, typed settings and page metadata passed |
+| Index recovery and incremental refresh | Missing/corrupt/future-version index rebuilt; moved folders, removed/restored images, changed records, cancellation rollback passed |
+| View-model navigation during inference | Completing generation while Library is open refreshes its applied filters from page one |
+
+The new controls have behavioral and window-load coverage; their full interactive workflow and clean-machine installer behavior remain to be checked. No additional GPU/driver coverage is claimed.

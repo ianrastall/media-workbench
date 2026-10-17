@@ -292,7 +292,7 @@ def job_id_valid(value):
     return isinstance(value, str) and len(value) == 32 and all(c in "0123456789abcdef" for c in value)
 
 
-def recover_interrupted(root):
+def recover_interrupted(root, job_paths=None):
     """Record work whose owner died. Call only while holding the data-folder lock: no other owner exists."""
     recovered = 0
     now = datetime.now(timezone.utc).isoformat()
@@ -305,7 +305,7 @@ def recover_interrupted(root):
         record.update(status="interrupted", message="Setup was interrupted. Install / verify to resume.", interruptedUtc=now)
         atomic_json(state, record)
         recovered += 1
-    for path in jobs.glob("*.json"):
+    for path in jobs.glob("*.json") if job_paths is None else job_paths:
         if path.name == state.name:
             continue
         record = read_record(path)
@@ -320,10 +320,10 @@ def recover_interrupted(root):
     return recovered
 
 
-def recover_if_idle(root):
+def recover_if_idle(root, job_paths=None):
     try:
         with exclusive(root):
-            return recover_interrupted(root)
+            return recover_interrupted(root, job_paths)
     except SetupError:
         return 0  # A live owner holds the lock; its records are not stale.
 
@@ -684,26 +684,7 @@ def job_log(root, record):
     return path if path.is_file() else None
 
 
-def library(payload):
-    """Recent successful images, plus recent failed, cancelled, and interrupted generations with their reasons."""
-    root = data_root(payload)
-    recovered = recover_if_idle(root)
-    jobs = owned(root, "jobs")
-    results, problems = [], []
-    paths = sorted(jobs.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for path in paths:
-        if len(results) >= LIBRARY_IMAGES and len(problems) >= LIBRARY_PROBLEMS:
-            break
-        record = read_record(path)
-        if not record or not job_id_valid(record.get("id")):
-            continue  # Damaged records and the setup attempt are not generation jobs.
-        if record.get("status") == "succeeded" and len(results) < LIBRARY_IMAGES:
-            image = artifact_image(root, record)
-            if image is not None:
-                results.append(dict(record, imagePath=str(image), settings=resolve_settings(root, record)))
-        elif record.get("status") in PROBLEM_STATUSES and len(problems) < LIBRARY_PROBLEMS:
-            log = job_log(root, record)
-            problems.append({"id": record["id"], "status": record["status"], "message": str(record.get("message", ""))[:2000],
-                             "startedUtc": record.get("startedUtc", ""), "settings": resolve_settings(root, record) or None,
-                             "logPath": str(log) if log else None})
-    return {"artifacts": results, "problems": problems, "recovered": recovered}
+def library(payload, cancel=None):
+    """Paged, searchable successful images plus recent unfinished jobs. JSON remains authoritative."""
+    from library_index import listing
+    return listing(payload, cancel)

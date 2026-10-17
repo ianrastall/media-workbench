@@ -36,6 +36,9 @@ public partial class MainViewModel : ObservableObject
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
         GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
+        PreviousLibraryPageCommand = new AsyncRelayCommand(() => LoadLibraryPageAsync(Math.Max(0, _libraryOffset - LibraryPageSize)), () => !IsBusy && _libraryOffset > 0);
+        NextLibraryPageCommand = new AsyncRelayCommand(() => LoadLibraryPageAsync(_libraryOffset + LibraryPageSize), () => !IsBusy && LibraryHasMore);
+        UseImageSettingsCommand = new RelayCommand<GeneratedImage?>(UseImageSettings, image => !IsBusy && image?.CanReuseSettings == true);
         RetryJobCommand = new RelayCommand<JobSummary?>(RetryJob, job => !IsBusy && job?.CanRetry == true);
         OpenJobLogCommand = new RelayCommand<JobSummary?>(OpenJobLog, job => job?.HasLog == true);
         RefreshStorageCommand = new AsyncRelayCommand(RefreshStorageAsync, () => !IsBusy);
@@ -117,7 +120,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -141,6 +144,17 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand RefreshInstallationCommand { get; }
     public IAsyncRelayCommand GenerateCommand { get; }
     public IAsyncRelayCommand RefreshLibraryCommand { get; }
+    public IAsyncRelayCommand PreviousLibraryPageCommand { get; }
+    public IAsyncRelayCommand NextLibraryPageCommand { get; }
+    public IRelayCommand<GeneratedImage?> UseImageSettingsCommand { get; }
+    private const int LibraryPageSize = 48;
+    private int _libraryOffset;
+    private LibraryQuery _libraryQuery = new();
+    [ObservableProperty] public partial string LibrarySearch { get; set; } = "";
+    [ObservableProperty] public partial int LibraryKindIndex { get; set; }
+    public IReadOnlyList<string> LibraryKindLabels { get; } = ["All images", "Generated images", "Upscaled images"];
+    [ObservableProperty] public partial string LibraryText { get; set; } = "Open Library to browse your saved images.";
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(NextLibraryPageCommand))] public partial bool LibraryHasMore { get; set; }
     public IRelayCommand<JobSummary?> RetryJobCommand { get; }
     public IRelayCommand<JobSummary?> OpenJobLogCommand { get; }
     public IAsyncRelayCommand RefreshStorageCommand { get; }
@@ -251,29 +265,61 @@ public partial class MainViewModel : ObservableObject
             Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source, change.Strength), ObserveProgress(), token);
         PreviewPath = image.ImagePath;
         ImageDescription = image.Description;
-        Images.Insert(0, image);
+        await ShowNewImageAsync(image, token);
         Notice = $"Image saved in {image.Seconds:N1} seconds of inference.";
         Record("Saved " + image.ImagePath);
     }, longRunning: true);
-    private Task RefreshLibraryAsync() => RunAsync("Loading saved images…", async token =>
+    private Task RefreshLibraryAsync() => LoadLibraryPageAsync(0, new(LibrarySearch,
+        LibraryKindIndex switch { 1 => "generate", 2 => "upscale", _ => "all" }, Limit: LibraryPageSize));
+
+    private Task LoadLibraryPageAsync(int offset, LibraryQuery? query = null) => RunAsync("Loading saved images…",
+        token => LoadLibraryAsync((query ?? _libraryQuery) with { Offset = offset }, token));
+
+    private async Task LoadLibraryAsync(LibraryQuery requested, CancellationToken token)
     {
-        var library = await _service.GetLibraryAsync(DataRoot, token);
+        var library = await _service.GetLibraryAsync(DataRoot, token, requested);
+        _libraryQuery = requested;
+        _libraryOffset = library.Offset;
+        LibraryHasMore = library.HasMore;
+        PreviousLibraryPageCommand.NotifyCanExecuteChanged();
         Images.Clear();
         foreach (var image in library.Images) Images.Add(image);
         Problems.Clear();
         foreach (var job in library.Problems) Problems.Add(job);
         HasProblems = Problems.Count > 0;
-        Notice = $"Loaded {library.Images.Count} saved images (up to 200 most recent).";
+        LibraryText = library.Total == 0 ? "No saved images match. Try another search or image type."
+            : $"{library.Offset + 1:N0}–{library.Offset + library.Images.Count:N0} of {library.Total:N0} matching images · newest first";
+        Notice = LibraryText;
         if (library.Problems.Count > 0) Notice += $" {library.Problems.Count} recent generation(s) did not finish; see below the images.";
         if (library.Recovered > 0)
         {
             Notice += $" {library.Recovered} unfinished job(s) from an earlier session were marked interrupted.";
             Record($"Recorded {library.Recovered} interrupted job(s)");
         }
-    });
+    }
+
+    private async Task ShowNewImageAsync(GeneratedImage image, CancellationToken token)
+    {
+        // Navigation stays available during inference. If Library is open when it finishes,
+        // refresh its applied filters instead of inserting an unrelated image into a filtered page.
+        if (IsLibrary)
+        {
+            try { await LoadLibraryAsync(_libraryQuery with { Offset = 0 }, token); }
+            catch (Exception ex) { LibraryText = $"Image saved. Refresh Library to load it: {ex.Message}"; }
+        }
+        else
+        {
+            Images.Insert(0, image);
+            if (Images.Count > LibraryPageSize) Images.RemoveAt(Images.Count - 1);
+        }
+    }
     partial void OnDataRootChanged(string value)
     {
         ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = "";
+        UpscalePreviewPath = ""; SourceImagePath = ""; UpscaleSourcePath = "";
+        _libraryOffset = 0; LibraryHasMore = false; LibrarySearch = ""; LibraryKindIndex = 0; _libraryQuery = new();
+        PreviousLibraryPageCommand.NotifyCanExecuteChanged();
+        LibraryText = "Open Library to browse images in the new data folder.";
         StorageItems.Clear(); StorageText = "Select Measure storage to see what the new data folder uses.";
     }
 
@@ -299,6 +345,29 @@ public partial class MainViewModel : ObservableObject
     private void RetryJob(JobSummary? job)
     {
         if (job?.Settings is not { } settings || !job.CanRetry) return;
+        if (ApplySettings(settings)) Notice = $"Loaded the settings of a {job.Status} job. Select {(settings.IsUpscale ? "Make it bigger" : "Generate image")} to try again.";
+    }
+
+    private void UseImageSettings(GeneratedImage? image)
+    {
+        if (image?.Settings is not { } settings || !image.CanReuseSettings) return;
+        if (ApplySettings(settings)) Notice = "Loaded this image's settings. You can repeat it or change them for a variation.";
+    }
+
+    private bool ApplySettings(GenerationSettings settings)
+    {
+        if (settings.IsUpscale)
+        {
+            if (settings.SourceImage is not { } picture || !File.Exists(picture))
+            {
+                Notice = "The original picture for this upscale is no longer available. Choose a picture in Tools.";
+                return false;
+            }
+            UpscaleSourcePath = picture;
+            UpscaleIndex = settings.Scale == 2 ? 0 : 1;
+            SelectedPage = "tools";
+            return true;
+        }
         Prompt = settings.Prompt;
         NegativePrompt = settings.NegativePrompt ?? "";
         Seed = settings.Seed;
@@ -309,7 +378,7 @@ public partial class MainViewModel : ObservableObject
         SourceImagePath = settings.SourceImage is { } source && File.Exists(source) ? source : "";
         ChangeIndex = NearestChange(settings.Strength);
         SelectedPage = "create";
-        Notice = $"Loaded the settings of a {job.Status} generation. Select Generate image to try again.";
+        return true;
     }
 
     /// <summary>Chooses the picture to enlarge in Tools: one of the user's files, a Library image, or the latest result.</summary>
@@ -334,7 +403,7 @@ public partial class MainViewModel : ObservableObject
         var image = await _service.UpscaleAsync(DataRoot, UpscaleSourcePath, scale, ObserveProgress(), token);
         UpscalePreviewPath = image.ImagePath;
         UpscaleDescription = image.Description;
-        Images.Insert(0, image);
+        await ShowNewImageAsync(image, token);
         Notice = $"Saved a {image.Width} × {image.Height} picture to Library.";
         Record("Upscaled " + Path.GetFileName(UpscaleSourcePath));
     }, longRunning: true);

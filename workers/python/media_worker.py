@@ -89,7 +89,7 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
             result = inference_setup.upscale(root, payload, cancellation,
                 lambda value: emit(request_id, "progress", value))
         elif operation == "library.list":
-            result = inference_setup.library(payload)
+            result = inference_setup.library(payload, cancellation)
         elif operation == "storage.summary":
             result = storage.summary(payload)
         elif operation == "storage.clear":
@@ -152,7 +152,7 @@ def main() -> int:
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
                          "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "demo.run",
-                                        "installation.status", "installation.run", "generate.image", "library.list"],
+                                        "installation.status", "installation.run", "generate.image", "upscale.image", "library.list", "storage.summary", "storage.clear"],
                          "generationAvailable": False, "installationAvailable": True})
     while True:
         raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
