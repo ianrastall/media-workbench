@@ -21,7 +21,8 @@ try {
         if ($Installer) {
             $taskDist = Join-Path $taskRoot 'dist'
             New-Item -ItemType Directory -Path $taskDist -Force | Out-Null
-            & (Join-Path $taskRoot '.tools/inno/ISCC.exe') ('/DSourceDir=' + $taskPublishRoot) ('/DOutputDir=' + $taskDist) (Join-Path $taskRoot 'packaging/media-workbench.iss')
+            $taskVersion = & (Join-Path $PSScriptRoot 'get-version.ps1')
+            & (Join-Path $taskRoot '.tools/inno/ISCC.exe') ('/DAppVersion=' + $taskVersion) ('/DSourceDir=' + $taskPublishRoot) ('/DOutputDir=' + $taskDist) (Join-Path $taskRoot 'packaging/media-workbench.iss')
             if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
             Get-ChildItem -LiteralPath $taskDist -Filter '*setup.exe' | ForEach-Object {
                 $taskHash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -8,3 +8,10 @@
 - Run `scripts/check.ps1` for relevant Rust, Python, and C# checks; `scripts/build.ps1` builds the desktop application.
 - Update README and docs/current-status.md to describe actual implemented behavior.
 - No application license has been selected yet; preserve upstream notices.
+
+## Git and releases
+
+- Commit and push directly to `main` without asking. Do not create feature branches or pull requests unless explicitly requested.
+- Commit and push automatically when a coherent piece of work passes `scripts/check.ps1` and builds; never push failing checks.
+- Releases are produced by GitHub Actions, never from a developer machine. To release, change `<Version>` in `Directory.Build.props` and add a matching `## <version> — <date>` section to `CHANGELOG.md` in the same push. On `main`, `.github/workflows/build.yml` builds, checks, packages the installer, and publishes `v<version>` with that changelog section when the tag does not yet exist. Versions containing `-` are published as pre-releases.
+- Keep the repository machine-independent: no personal paths, local hardware assumptions, credentials, or locally built binaries in commits. Validation notes may record the hardware a result was observed on.

@@ -65,7 +65,7 @@ Prerequisites: Windows x64, PowerShell 7, .NET SDK 10, Rust/rustup with the MSVC
 
 The Rust version is pinned in `rust-toolchain.toml`, dependencies in `native/Cargo.lock`, and downloaded runtime/compiler artifacts in `packaging/dependencies.json`. Initial builds fetch the official Python embeddable runtime and verify its SHA-256. The application never depends on a developer's global Python installation.
 
-Create the self-contained application and installer:
+Official releases are built and published by GitHub Actions when the version changes on `main` (see [development](docs/development.md#release-discipline)). To create the self-contained application and installer locally:
 
 ```powershell
 ./scripts/build.ps1 -Configuration Release -Installer

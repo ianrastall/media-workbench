@@ -4,7 +4,9 @@
 #ifndef OutputDir
   #define OutputDir "..\dist"
 #endif
-#define AppVersion "0.2.0-alpha.1"
+#ifndef AppVersion
+  #error AppVersion must be passed from Directory.Build.props
+#endif
 
 [Setup]
 AppId={{BEE45A8B-343B-42B8-A09C-EA6F2CFF1421}
