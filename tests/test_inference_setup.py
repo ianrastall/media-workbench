@@ -392,7 +392,7 @@ class LibraryTests(unittest.TestCase):
             problems = {p["id"]: p for p in listing["problems"]}
             self.assertEqual(set(problems), {failed, interrupted})  # The setup attempt is not a generation job.
             self.assertEqual(problems[failed]["message"], "CUDA out of memory")
-            self.assertEqual(Path(problems[failed]["logPath"]), root / "logs" / f"generate-{failed}.log")
+            self.assertEqual(Path(problems[failed]["logPath"]), (root / "logs" / f"generate-{failed}.log").resolve())
             self.assertEqual((problems[interrupted]["status"], problems[interrupted]["logPath"]), ("interrupted", None))
 
     def test_failures_do_not_push_images_out_of_the_library(self):
