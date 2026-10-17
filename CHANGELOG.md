@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Settings has a Storage section: free space, and the size of the runtime, model, download caches, images, logs, and job records in the saved data folder.
+- **Clear…** removes the download caches (about 4 GiB after setup) or logs; **Remove Stable Diffusion 1.5…** removes the runtime, model, and caches while keeping images and their records. Each asks for confirmation and waits for any running operation.
+- The developer CLI gains a read-only `storage` command.
+
 ## 0.2.0-alpha.2 — 2026-10-17
 
 - Settings edits a draft data folder; install, generation, model status, Library, and Open folder keep using the saved folder until **Save settings** succeeds, and typing no longer clears readiness or loaded images.

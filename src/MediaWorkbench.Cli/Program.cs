@@ -4,7 +4,7 @@ using MediaWorkbench.Infrastructure;
 
 if (args.Length < 3)
 {
-    Console.WriteLine("Usage: MediaWorkbench.Cli <absolute-python.exe> <application-root> health|catalog|demo|plan|install|status|generate|library [absolute-data-directory] [prompt] [steps]");
+    Console.WriteLine("Usage: MediaWorkbench.Cli <absolute-python.exe> <application-root> health|catalog|demo|plan|install|status|generate|library|storage [absolute-data-directory] [prompt] [steps]");
     return 2;
 }
 try
@@ -22,7 +22,7 @@ try
         if (!plan.CanExecute) throw new InvalidOperationException(string.Join("\n", plan.Blockers));
     }
     var operation = args[2] switch { "health" => "health", "catalog" => "catalog.list", "demo" => "demo.run",
-        "install" => "installation.run", "status" => "installation.status", "generate" => "generate.image", "library" => "library.list",
+        "install" => "installation.run", "status" => "installation.status", "generate" => "generate.image", "library" => "library.list", "storage" => "storage.summary",
         _ => throw new ArgumentException("Unknown command") };
     if (operation == "demo.run" && (args.Length < 4 || !Path.IsPathFullyQualified(args[3])))
         throw new ArgumentException("Demo requires an explicit absolute output directory.");

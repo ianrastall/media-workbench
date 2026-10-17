@@ -20,6 +20,16 @@ sealed class RecordingWorkbench : IWorkbenchService
         Record(dataRoot, new LibrarySnapshot([Image(dataRoot)], 0,
             [new JobSummary(new string('a', 32), "failed", "CUDA out of memory", "2026-10-17T00:00:00+00:00", new("retry me", "blurry", 42, 7), null)]));
 
+    public List<string> Cleared { get; } = [];
+    public Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken) => Record(dataRoot, Storage(5L << 30));
+    public Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        Cleared.Add(area);
+        return Record(dataRoot, Storage(0));
+    }
+    private static StorageSnapshot Storage(long caches) => new(100L << 30, 500L << 30, caches,
+        [new("caches", "Download caches", caches, 3, true, "Kept for repairs."), new("images", "Images", 1L << 20, 1, false, "")]);
+
     public static GeneratedImage Image(string dataRoot) => new(Guid.NewGuid().ToString("N"),
         Path.Combine(dataRoot, "artifacts", "image.png"), "", new("house", "", 1, 1), "", 1, "Test GPU");
     private Task<T> Record<T>(string dataRoot, T value)

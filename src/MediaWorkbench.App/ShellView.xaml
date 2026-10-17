@@ -173,6 +173,45 @@
                             <Button Content="Save settings" Command="{x:Bind ViewModel.SaveSettingsCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             <Button Content="Open folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
                         </StackPanel>
+                        <TextBlock Text="Storage" Style="{ThemeResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
+                        <TextBlock Text="{x:Bind ViewModel.StorageText, Mode=OneWay}" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.StorageItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="core:StorageItem">
+                                    <Grid Padding="16,12" Margin="0,0,0,8" CornerRadius="10" ColumnSpacing="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{x:Bind Label}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{x:Bind SizeText}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Text="{x:Bind Note}" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Visibility="{x:Bind HasNote, Converter={StaticResource VisibleWhenTrue}}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="Clear…" VerticalAlignment="Center" Visibility="{x:Bind Clearable, Converter={StaticResource VisibleWhenTrue}}">
+                                            <Button.Flyout>
+                                                <Flyout>
+                                                    <StackPanel Spacing="12" MaxWidth="320">
+                                                        <TextBlock Text="{x:Bind Note}" TextWrapping="Wrap" />
+                                                        <Button Content="Clear now" Tag="{x:Bind Id}" Click="ClearStorage" Style="{ThemeResource AccentButtonStyle}" />
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Measure storage" Command="{x:Bind ViewModel.RefreshStorageCommand}" />
+                            <Button Content="Remove Stable Diffusion 1.5…" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                                <Button.Flyout>
+                                    <Flyout>
+                                        <StackPanel Spacing="12" MaxWidth="360">
+                                            <TextBlock TextWrapping="Wrap" Text="Removes the private runtime, the model files, and download caches from the saved data folder. Your images and their records are kept. Setting it up again downloads about 5 GiB." />
+                                            <Button Content="Remove" Tag="installation" Click="ClearStorage" Style="{ThemeResource AccentButtonStyle}" />
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
                         <TextBlock Text="Dark mode" Style="{ThemeResource SubtitleTextBlockStyle}" />
                         <TextBlock Text="Media Workbench currently uses the dark Windows theme. No account credentials are stored in this alpha." TextWrapping="Wrap" />
                     </StackPanel>

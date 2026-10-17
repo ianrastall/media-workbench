@@ -31,6 +31,8 @@ public partial class MainViewModel : ObservableObject
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
         RetryJobCommand = new RelayCommand<JobSummary?>(RetryJob, job => !IsBusy && job?.CanRetry == true);
         OpenJobLogCommand = new RelayCommand<JobSummary?>(OpenJobLog, job => job?.HasLog == true);
+        RefreshStorageCommand = new AsyncRelayCommand(RefreshStorageAsync, () => !IsBusy);
+        ClearStorageCommand = new AsyncRelayCommand<string?>(ClearStorageAsync, area => !IsBusy && !string.IsNullOrEmpty(area));
         DataRootDraft = DataRoot;
         try
         {
@@ -74,7 +76,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -100,6 +102,10 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand RefreshLibraryCommand { get; }
     public IRelayCommand<JobSummary?> RetryJobCommand { get; }
     public IRelayCommand<JobSummary?> OpenJobLogCommand { get; }
+    public IAsyncRelayCommand RefreshStorageCommand { get; }
+    public IAsyncRelayCommand<string?> ClearStorageCommand { get; }
+    public ObservableCollection<StorageItem> StorageItems { get; } = [];
+    [ObservableProperty] public partial string StorageText { get; set; } = "Open Settings to measure what the data folder uses.";
 
     public bool IsHome => SelectedPage == "home";
     public bool CanEdit => !IsBusy;
@@ -201,7 +207,30 @@ public partial class MainViewModel : ObservableObject
             Record($"Recorded {library.Recovered} interrupted job(s)");
         }
     });
-    partial void OnDataRootChanged(string value) { ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = ""; }
+    partial void OnDataRootChanged(string value)
+    {
+        ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = "";
+        StorageItems.Clear(); StorageText = "Select Measure storage to see what the new data folder uses.";
+    }
+
+    private void ShowStorage(StorageSnapshot storage)
+    {
+        StorageItems.Clear();
+        foreach (var item in storage.Items) StorageItems.Add(item);
+        StorageText = $"{StorageSnapshot.Format(storage.FreeBytes)} free of {StorageSnapshot.Format(storage.TotalBytes)} on this drive. " +
+            $"The Stable Diffusion 1.5 installation and its caches use {StorageSnapshot.Format(storage.InstallationBytes)}.";
+    }
+    private Task RefreshStorageAsync() => RunAsync("Measuring the data folder…", async token =>
+        ShowStorage(await _service.GetStorageAsync(DataRoot, token)));
+    private Task ClearStorageAsync(string? area) => RunAsync(area == "installation" ? "Removing Stable Diffusion 1.5…" : "Clearing storage…", async token =>
+    {
+        if (area == "installation") ModelReady = false;
+        ShowStorage(await _service.ClearStorageAsync(DataRoot, area!, ObserveProgress(), token));
+        Notice = area == "installation"
+            ? "Stable Diffusion 1.5 was removed. Your images and their records were kept; Install / verify sets it up again."
+            : "Storage cleared.";
+        Record(Notice);
+    }, longRunning: true);
 
     private void RetryJob(JobSummary? job)
     {
@@ -227,6 +256,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (value == "create" && !IsBusy) RefreshInstallationCommand.Execute(null);
         if (value == "library" && !IsBusy) RefreshLibraryCommand.Execute(null);
+        if (value == "settings" && !IsBusy) RefreshStorageCommand.Execute(null);
     }
 
     private Task SearchAsync() => RunAsync("Searching Hugging Face…", async token =>

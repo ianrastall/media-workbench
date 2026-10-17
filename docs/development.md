@@ -29,7 +29,7 @@ The default GUI worker executable is `runtime/python/python.exe` under the app d
 
 The ML child is launched with `-I -u`: the Python user site and inherited Python configuration cannot contaminate the profile. Do not remove `-I` when adding worker operations. See [inference lifecycle](inference.md) for package/model pins, download provenance, and readiness gates.
 
-The CLI exposes `install`, `status`, `generate`, and `library` for opt-in hardware checks. These require an explicit absolute data folder; `install` can download several GiB and performs real GPU work. After building, for example:
+The CLI exposes `install`, `status`, `generate`, `library`, and the read-only `storage` summary for opt-in hardware checks. These require an explicit absolute data folder; `install` can download several GiB and performs real GPU work. After building, for example:
 
 ```powershell
 $taskCli = './artifacts/dotnet/bin/MediaWorkbench.Cli/debug/MediaWorkbench.Cli.exe'

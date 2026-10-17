@@ -59,4 +59,8 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         var problems = result.TryGetProperty("problems", out var listed) ? JsonSerializer.Deserialize<JobSummary[]>(listed, Wire.Json) ?? [] : [];
         return new(images, result.TryGetProperty("recovered", out var recovered) ? recovered.GetInt32() : 0, problems);
     }
+    public async Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<StorageSnapshot>(await Execute("storage.summary", new { dataRoot }, cancellationToken), Wire.Json)!;
+    public async Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<StorageSnapshot>(await Execute("storage.clear", new { dataRoot, area }, cancellationToken, progress), Wire.Json)!;
 }

@@ -33,4 +33,10 @@ public sealed partial class ShellView : UserControl
     }
     private void RetryJob(object sender, RoutedEventArgs args) => ViewModel.RetryJobCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void OpenJobLog(object sender, RoutedEventArgs args) => ViewModel.OpenJobLogCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
+    // Confirm buttons live in flyouts; close them before the long-running removal starts.
+    private void ClearStorage(object sender, RoutedEventArgs args)
+    {
+        foreach (var popup in Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot)) popup.IsOpen = false;
+        ViewModel.ClearStorageCommand.Execute((sender as FrameworkElement)?.Tag as string);
+    }
 }

@@ -91,6 +91,12 @@ Check(!vm.OpenJobLogCommand.CanExecute(problem), "A job without a log offers no 
 vm.RetryJobCommand.Execute(problem);
 Check(vm.Prompt == "retry me" && vm.NegativePrompt == "blurry" && vm.Seed == 42 && vm.Steps == 7 && vm.SelectedPage == "create",
     "Using an unfinished job's settings loads them into Create");
+await vm.RefreshStorageCommand.ExecuteAsync(null);
+Check(vm.StorageItems.Count == 2 && vm.StorageText.Contains("5.00 GiB") && workbench.DataRoots[^1] == nextRoot, "Storage is measured in the saved data folder");
+vm.ModelReady = true;
+await vm.ClearStorageCommand.ExecuteAsync("installation");
+Check(workbench.Cleared.SequenceEqual(["installation"]) && !vm.ModelReady && vm.StorageText.Contains("use 0 KiB"), "Removing the installation clears readiness and shows the new sizes");
+Check(!vm.ClearStorageCommand.CanExecute(null), "Clearing storage requires a named area");
 
 
 async Task<string> Fixture(string name, string body)

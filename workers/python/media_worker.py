@@ -18,6 +18,7 @@ sys.stderr.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hub_catalog
 import inference_setup
+import storage
 
 PROTOCOL = 1
 MAX_REQUEST_BYTES = 1_048_576
@@ -86,6 +87,10 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
                 lambda value: emit(request_id, "progress", value))
         elif operation == "library.list":
             result = inference_setup.library(payload)
+        elif operation == "storage.summary":
+            result = storage.summary(payload)
+        elif operation == "storage.clear":
+            result = storage.clear(payload, cancellation, lambda value: emit(request_id, "progress", value))
         elif operation == "demo.run":
             steps = payload.get("steps", 5)
             delay_ms = payload.get("delayMs", 50)
