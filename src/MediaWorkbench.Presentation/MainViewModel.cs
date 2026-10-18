@@ -31,6 +31,8 @@ public partial class MainViewModel : ObservableObject
         DiagnosticsCommand = new AsyncRelayCommand(DiagnoseAsync, () => !IsBusy);
         PlanCommand = new RelayCommand(ShowPlan, () => !IsBusy);
         SaveSettingsCommand = new RelayCommand(SaveSettings, () => !IsBusy);
+        CheckMoveCommand = new AsyncRelayCommand(CheckMoveAsync, () => !IsBusy && IsDraftDifferent);
+        MoveDataCommand = new AsyncRelayCommand(MoveDataAsync, () => !IsBusy && _movePlan is { CanMove: true } && _moveTarget == DraftFolder() && _moveSource == DataRoot);
         OpenDataFolderCommand = new RelayCommand(OpenDataFolder);
         CancelCommand = new RelayCommand(() => _operation?.Cancel(), () => IsBusy);
         OpenModelCommand = new RelayCommand(OpenModel, () => SelectedModel is not null);
@@ -73,6 +75,7 @@ public partial class MainViewModel : ObservableObject
             SearchQuery = saved.LastSearch;
             CheckForUpdates = saved.CheckForUpdates;
             KeepDownloadCaches = saved.KeepDownloadCaches;
+            _pendingMove = saved.PendingMove;
         }
         catch (Exception ex) { Notice = $"Could not load settings: {ex.Message}"; }
         _loading = false;
@@ -235,7 +238,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CheckMoveCommand), nameof(MoveDataCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -281,6 +284,15 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand DiagnosticsCommand { get; }
     public IRelayCommand PlanCommand { get; }
     public IRelayCommand SaveSettingsCommand { get; }
+    public IAsyncRelayCommand CheckMoveCommand { get; }
+    public IAsyncRelayCommand MoveDataCommand { get; }
+    private DataMovePlan? _movePlan;
+    private string? _moveTarget, _moveSource, _pendingMove;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasMovePlan))] public partial string MovePlanText { get; private set; } = "";
+    public bool HasMovePlan => MovePlanText.Length > 0;
+    /// <summary>A different folder is typed in Settings, so the current data can be moved there.</summary>
+    public bool IsDraftDifferent => DraftFolder() is { } draft && !string.Equals(draft, DataRoot, StringComparison.OrdinalIgnoreCase);
+    private string? DraftFolder() => Path.IsPathFullyQualified(DataRootDraft) ? Path.GetFullPath(DataRootDraft) : null;
     public IRelayCommand OpenDataFolderCommand { get; }
     public IRelayCommand CancelCommand { get; }
     public IRelayCommand OpenModelCommand { get; }
@@ -1063,7 +1075,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             if (!Path.IsPathFullyQualified(DataRootDraft)) throw new InvalidDataException("Choose an absolute data folder.");
-            var value = new AppSettings(1, Path.GetFullPath(DataRootDraft), SearchQuery, CheckForUpdates, KeepDownloadCaches);
+            var value = CurrentSettings(Path.GetFullPath(DataRootDraft));
             _settings.Save(value);
             DataRoot = DataRootDraft = value.DataRoot;
             Notice = "Settings saved. Models, generation, and Library now use this data folder.";
@@ -1072,17 +1084,68 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex) { Notice = $"Settings were not saved; still using {DataRoot}. {ex.Message}"; }
     }
 
+    private AppSettings CurrentSettings(string? dataRoot = null) =>
+        new(1, dataRoot ?? DataRoot, SearchQuery, CheckForUpdates, KeepDownloadCaches, _pendingMove);
+
+    partial void OnDataRootDraftChanged(string value) => ClearMovePlan();
+
+    private void ClearMovePlan()
+    {
+        _movePlan = null; _moveTarget = _moveSource = null; MovePlanText = "";
+        OnPropertyChanged(nameof(IsDraftDifferent));
+        CheckMoveCommand.NotifyCanExecuteChanged(); MoveDataCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Checks what moving the current data to the typed folder would copy, and whether it can start.</summary>
+    private Task CheckMoveAsync() => RunAsync("Checking the new location…", async token =>
+    {
+        string source = DataRoot, target = DraftFolder() ?? throw new InvalidDataException("Choose an absolute data folder.");
+        var plan = await _service.PlanDataMoveAsync(source, target, token);
+        if (source != DataRoot || target != DraftFolder()) return; // The choice changed meanwhile.
+        _movePlan = plan; _moveTarget = target; _moveSource = source;
+        MovePlanText = plan.Summary;
+        MoveDataCommand.NotifyCanExecuteChanged();
+    });
+
+    /// <summary>
+    /// Copies the data folder to the checked new folder and verifies every file, then switches to it. The current folder is
+    /// kept unchanged. A crash part-way leaves only a marked half-made copy, removed at the next start.
+    /// </summary>
+    private Task MoveDataAsync() => RunAsync("Moving your data…", async token =>
+    {
+        if (_movePlan is not { CanMove: true } plan || _moveTarget is not { } target || _moveSource != DataRoot) return;
+        string source = DataRoot;
+        _pendingMove = target;
+        _settings.Save(CurrentSettings());
+        try { await _service.MoveDataAsync(source, target, ObserveProgress(), token); }
+        catch
+        {
+            _pendingMove = null;
+            try { _settings.Save(CurrentSettings()); } catch (Exception) { } // The next start removes the leftover either way.
+            throw;
+        }
+        _pendingMove = null;
+        _settings.Save(CurrentSettings(target));
+        DataRoot = DataRootDraft = target;
+        ClearMovePlan();
+        Notice = $"Moved {StorageSnapshot.Format(plan.Bytes)} to {target} and checked every file. Media Workbench now uses the new folder. " +
+            $"The old folder ({source}) was not changed: once you have checked the new one, you can delete the old folder in File Explorer. " +
+            "If you use the local MCP host, update its --data-root.";
+        Record("Data folder moved to " + target);
+        await UpdateInstallation(token);
+    }, longRunning: true);
+
     partial void OnCheckForUpdatesChanged(bool value)
     {
         if (_loading) return;
-        try { _settings.Save(new AppSettings(1, DataRoot, SearchQuery, value, KeepDownloadCaches)); }
+        try { _settings.Save(CurrentSettings() with { CheckForUpdates = value }); }
         catch (Exception ex) { Notice = $"Could not save the update preference: {ex.Message}"; }
     }
 
     partial void OnKeepDownloadCachesChanged(bool value)
     {
         if (_loading) return;
-        try { _settings.Save(new AppSettings(1, DataRoot, SearchQuery, CheckForUpdates, value)); }
+        try { _settings.Save(CurrentSettings() with { KeepDownloadCaches = value }); }
         catch (Exception ex) { Notice = $"Could not save the download cache preference: {ex.Message}"; }
     }
 
@@ -1108,6 +1171,18 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public async Task StartupMaintenanceAsync()
     {
+        if (_pendingMove is { } interrupted)
+        {
+            // A move stopped by a crash or power loss: the data folder was never switched; remove the half-made copy.
+            try
+            {
+                await _service.AbandonDataMoveAsync(DataRoot, interrupted, CancellationToken.None);
+                _pendingMove = null;
+                _settings.Save(CurrentSettings());
+                Notice = "Moving the data folder did not finish last time, so Media Workbench kept using the current folder and removed the partial copy.";
+            }
+            catch (Exception ex) { Record("Could not remove an interrupted move's partial copy: " + ex.Message); }
+        }
         await Task.Run(() =>
         {
             // Earlier versions kept these in Windows' temporary folder; only this app's own file names are touched.

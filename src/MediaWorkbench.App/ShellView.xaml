@@ -370,8 +370,16 @@
                         <TextBlock Text="Models, private inference environments, media, caches and temporary work use this folder, so choose a drive with plenty of room. A new path takes effect when you save settings; it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Button Content="Save settings" Command="{x:Bind ViewModel.SaveSettingsCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                            <Button Content="Move my data there…" Command="{x:Bind ViewModel.CheckMoveCommand}" />
                             <Button Content="Open folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
                         </StackPanel>
+                        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Text="Save settings starts using the new folder as it is. Move my data there copies your pictures, videos, models and setup into it first and checks every file, so nothing has to download again." />
+                        <InfoBar Title="Move your data" Severity="Informational" IsClosable="False" IsOpen="{x:Bind ViewModel.HasMovePlan, Mode=OneWay}" Message="{x:Bind ViewModel.MovePlanText, Mode=OneWay}">
+                            <InfoBar.ActionButton>
+                                <Button Content="Move now" Command="{x:Bind ViewModel.MoveDataCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                            </InfoBar.ActionButton>
+                        </InfoBar>
                         <TextBlock Text="Where Media Workbench keeps things" Style="{ThemeResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
                         <TextBlock Text="{x:Bind ViewModel.LocationsText, Mode=OneWay}" TextWrapping="Wrap" />
                         <ItemsControl ItemsSource="{x:Bind ViewModel.Locations}">

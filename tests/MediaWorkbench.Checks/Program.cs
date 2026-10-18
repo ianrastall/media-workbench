@@ -426,6 +426,7 @@ Check(await TryDownload($"{goodHash}  {installerName}", UpdateService.DownloadRe
     && !File.Exists(downloaded) && !File.Exists(downloaded + ".partial"), "An update that would leave the data folder's drive too full is refused before writing");
 await HousekeepingChecks.RunAsync(Check, root, output, deadline.Token);
 await WorkFolderChecks.RunAsync(Check, python, output, deadline.Token);
+await MoveChecks.RunAsync(Check, root, python, output, deadline.Token);
 
 
 async Task<string> Fixture(string name, string body)

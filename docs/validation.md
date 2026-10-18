@@ -1,5 +1,18 @@
 # Initial alpha validation
 
+## Move existing data (0.3.0-alpha.3)
+
+18 October 2026, Windows 11, development machine.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check.ps1` | Passed: 37 Rust tests, formatting/Clippy, 202 Python tests, 244 C# checks |
+| New Rust tests | A move copies and verifies everything except the lock, `temp/` and `library/`, keeps modification times, leaves the source byte-identical and leaves no staging folder; plans create nothing; nested, containing, same and non-empty destinations are refused; cancellation part-way leaves neither destination nor staging folder; an interrupted staging folder is reported and removed by `abandon` only when marked; a held data-folder lock returns busy |
+| New C# checks | View-model: moving is offered only for a different folder, checking changes nothing, editing the folder invalidates the plan, a failed move keeps the folder and clears `PendingMove`, a successful move switches and says the old folder is kept, a blocked plan cannot start, and a saved `PendingMove` is abandoned at the next start without switching. Real ABI and worker: a Unicode data folder with a Library image is planned and moved, progress reaches twice the bytes, the source keeps its image, temp and index are not copied, the real Python Library rebuilds its index and lists the image from the new folder, and Rust export verifies the moved image's recorded checksum |
+| `scripts/build.ps1`, `-Configuration Release -Publish` | Passed; headless published checks passed |
+
+Not checked: a move of a real multi-gigabyte installation followed by GPU generation, a move to a USB or network drive, a disconnected destination during a move, or the interactive Settings flow.
+
 ## Drive containment slices 1–2 (0.3.0-alpha.2)
 
 18 October 2026, Windows 11, development machine. Released as 0.3.0-alpha.2; the slice-2 run of `scripts/check.ps1` passed 35 Rust tests, 202 Python tests and 231 C# checks.

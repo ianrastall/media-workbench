@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-alpha.3 — 2026-10-18
+
+- **Move your data to another folder or drive.** Type a new folder in Settings and select **Move my data there…**. Media Workbench first says how much it will copy, how much room the new drive has, and anything that prevents the move (the folder is not empty, there is not enough space, or the new folder is inside the current one). **Move now** copies your pictures, videos, models and setup, checks every copied file against the original, and only then switches to the new folder, so nothing has to download or set up again.
+- Your current folder is never changed by a move. Once you have looked at the new one, you can delete the old folder yourself in File Explorer.
+- If the move fails, is cancelled, or the computer stops part-way, Media Workbench keeps using the current folder and removes the partial copy (at the next start, after a crash). Temporary work and the Library's search index are not copied; Library rebuilds its index in the new folder.
+- Files keep their dates when moved, so Stable Diffusion 1.5, SDXL, videos and models you added stay verified. If you use the local MCP host, update its `--data-root` after moving.
+
 ## 0.3.0-alpha.2 — 2026-10-18
 
 - **Temporary work stays in your data folder.** Setup, pictures, videos and upscaling keep their temporary files in the data folder's `temp` folder instead of Windows' temporary folder on the system drive, and remove them when each job ends. Package unpacking during setup and the graphics card's compiled-kernel cache go there too. This is the first part of the drive-containment work planned for 0.4.0-alpha.1.

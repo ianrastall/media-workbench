@@ -191,6 +191,21 @@ sealed class RecordingWorkbench : IWorkbenchService
     /// <summary>Optional per-folder answer, for checks of which drive each location is on.</summary>
     public Func<string, DriveStatus>? DriveFor { get; set; }
     public Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken) => Task.FromResult(DriveFor?.Invoke(dataRoot) ?? Drive);
+    public DataMovePlan MovePlan { get; set; } = new(3, 3L << 30, 100L << 30, 4L << 30, false, false, "");
+    public Exception? MoveFailure { get; set; }
+    public List<(string Source, string Destination)> Moves { get; } = [];
+    public List<(string Source, string Destination)> Abandoned { get; } = [];
+    public Task<DataMovePlan> PlanDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken) => Task.FromResult(MovePlan);
+    public Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        Moves.Add((dataRoot, destination));
+        return MoveFailure is { } failure ? Task.FromException(failure) : Task.CompletedTask;
+    }
+    public Task AbandonDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken)
+    {
+        Abandoned.Add((dataRoot, destination));
+        return Task.CompletedTask;
+    }
     public List<(bool Verified, bool RemoveCaches)> Tidies { get; } = [];
     public TidyReport TidyResult { get; set; } = new(0, 0, 0, 0, 0, false, 0);
     public Exception? TidyFailure { get; set; }

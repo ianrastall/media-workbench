@@ -2,7 +2,9 @@ namespace MediaWorkbench.Core;
 
 /// <summary>CheckForUpdates defaults to on for settings saved before it existed. Setup's download caches are
 /// removed once it passes its test unless KeepDownloadCaches is set.</summary>
-public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true, bool KeepDownloadCaches = false)
+/// <summary>PendingMove names the destination of a data-folder move in progress, so a crash's half-made copy is removed at the next start.</summary>
+public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true, bool KeepDownloadCaches = false,
+    string? PendingMove = null)
 {
     public static AppSettings Default(string stateRoot) => new(1, Path.Combine(stateRoot, "Data"), "stable-diffusion");
 }
@@ -152,6 +154,17 @@ public sealed record DriveStatus(long FreeBytes, long TotalBytes, string DriveKi
     public string SpeedNote => IsSlow ? $"The data folder is on {KindText}. Models load faster from a solid-state drive; you can move the data folder in Settings." : "";
 }
 
+/// <summary>What moving the data folder would copy, and the plain reason it cannot start (empty when it can).</summary>
+public sealed record DataMovePlan(long Files, long Bytes, long FreeBytes, long NeededBytes, bool SameVolume, bool Leftover, string Blocker)
+{
+    public bool CanMove => Blocker.Length == 0;
+    public string Summary => CanMove
+        ? $"Moving copies {StorageSnapshot.Format(Bytes)} in {Files:N0} {(Files == 1 ? "file" : "files")} to the new folder and checks every file. " +
+          $"{StorageSnapshot.Format(FreeBytes)} is free there. Your current folder is not changed; you can delete it yourself afterwards." +
+          (SameVolume ? " Both folders are on the same drive, so it needs room for a second copy until you delete the old one." : "")
+        : Blocker;
+}
+
 /// <summary>One place Media Workbench keeps files, and the drive it is really on, for Settings.</summary>
 public sealed record StorageLocation(string Label, string Path, string Detail);
 
@@ -296,6 +309,12 @@ public interface IWorkbenchService
     Task<IReadOnlyList<ModelChoice>> RemoveModelAsync(string dataRoot, string modelId, CancellationToken cancellationToken);
     /// <summary>Removes "caches", "logs", or the whole "installation"; images and job records are never removed.</summary>
     Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>What moving the data folder to <paramref name="destination"/> would copy, and whether it can start; reads only.</summary>
+    Task<DataMovePlan> PlanDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken);
+    /// <summary>Copies the data folder to an empty or new folder and verifies every file; the current folder is never changed.</summary>
+    Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Removes the half-made copy an interrupted move left beside <paramref name="destination"/>; never touches anything else.</summary>
+    Task AbandonDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken);
     /// <summary>Free space and drive type for the data folder; quick, and creates nothing.</summary>
     Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Removes old logs, old unfinished-job records beyond the ones Library lists, stale downloads, and,

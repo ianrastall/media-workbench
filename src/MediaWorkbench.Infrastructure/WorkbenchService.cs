@@ -117,6 +117,12 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         Task.Run(() => NativeCore.ExportArtifact(dataRoot, request, progress, cancellationToken), cancellationToken);
     public async Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<StorageSnapshot>(await Execute(dataRoot, "storage.clear", new { dataRoot, area }, cancellationToken, progress), Wire.Json)!;
+    public Task<DataMovePlan> PlanDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken) =>
+        Task.Run(() => NativeCore.PlanDataMove(dataRoot, destination), cancellationToken);
+    public Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+        Task.Run(() => NativeCore.MoveDataFolder(dataRoot, destination, progress, cancellationToken), cancellationToken);
+    public Task AbandonDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken) =>
+        Task.Run(() => NativeCore.MoveDataFolder(dataRoot, destination, new Progress<OperationProgress>(), cancellationToken, abandon: true), cancellationToken);
     public Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.GetDriveStatus(dataRoot), cancellationToken);
     public Task<TidyReport> TidyAsync(string dataRoot, bool installationVerified, bool removeDownloadCaches, CancellationToken cancellationToken) =>

@@ -37,6 +37,12 @@ public static unsafe partial class NativeCore
         delegate* unmanaged[Cdecl]<ulong, ulong, nint, int> progress, nint context,
         byte* output, nuint capacity, out nuint required);
 
+    [LibraryImport(Library, EntryPoint = "mw_plan_data_move")]
+    private static partial int PlanMove(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
+    [LibraryImport(Library, EntryPoint = "mw_move_data_folder")]
+    private static partial int MoveFolder(byte* input, nuint length,
+        delegate* unmanaged[Cdecl]<ulong, ulong, nint, int> progress, nint context,
+        byte* output, nuint capacity, out nuint required);
     [LibraryImport(Library, EntryPoint = "mw_drive_info")]
     private static partial int Drive(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
     [LibraryImport(Library, EntryPoint = "mw_plan_hub_model")]
@@ -219,6 +225,56 @@ public static unsafe partial class NativeCore
                 if (code != 0 || written != 64) throw new IOException($"The native export service could not save the copy ({code}). Check the original and destination folder access. The destination was kept.");
             }
             return Path.GetFullPath(request.Destination);
+        }
+        finally { handle.Free(); }
+    }
+
+    /// <summary>What moving the data folder would copy and whether it can start; reads only.</summary>
+    public static DataMovePlan PlanDataMove(string source, string destination)
+    {
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { source, destination }, Wire.Json);
+        var output = new byte[4096];
+        fixed (byte* pointer = input)
+        fixed (byte* result = output)
+        {
+            int code = PlanMove(pointer, (nuint)input.Length, result, (nuint)output.Length, out nuint written);
+            if (code == 1) throw new InvalidDataException("Choose an absolute folder inside a drive, and a data folder without links or junctions.");
+            if (code != 0 || written > (nuint)output.Length)
+                throw new IOException($"The current data folder or the new location could not be read ({code}). If either is on a removable or network drive, reconnect it.");
+            return JsonSerializer.Deserialize<DataMovePlan>(output.AsSpan(0, (int)written), Wire.Json)
+                ?? throw new InvalidDataException("The native move plan was empty.");
+        }
+    }
+
+    /// <summary>
+    /// Rust copies the data folder under its lock and verifies every file; the source is never changed. With
+    /// <paramref name="abandon"/>, only the marked half-made copy of an interrupted move is removed.
+    /// </summary>
+    public static void MoveDataFolder(string source, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool abandon = false)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { source, destination, abandon }, Wire.Json);
+        var output = new byte[4096];
+        var state = new FileProgressState(progress, cancellationToken, "Moving and checking your data");
+        var handle = GCHandle.Alloc(state);
+        try
+        {
+            fixed (byte* pointer = input)
+            fixed (byte* result = output)
+            {
+                int code = MoveFolder(pointer, (nuint)input.Length, &OnFileProgress, GCHandle.ToIntPtr(handle), result, (nuint)output.Length, out nuint written);
+                if (state.Failure is { } failure) throw new IOException("Could not report move progress.", failure);
+                if (code == 5) throw new OperationCanceledException("The move was cancelled. The data folder was not changed, and the partial copy was removed.", cancellationToken);
+                if (code == 6) throw new InvalidDataException("A copied file did not match the original, so nothing was switched. The data folder was not changed; check the new drive and try again.");
+                if (code == 7) throw new IOException("Another operation is using the data folder. Wait for it to finish, then move the data again.");
+                if (code == 1) throw new InvalidDataException(abandon ? "The leftover folder was not made by Media Workbench, so it was kept."
+                    : "The move cannot start; check the new location again in Settings.");
+                if (code != 0 || written > (nuint)output.Length)
+                    throw new IOException($"The move could not finish ({code}): the new drive may be full, disconnected, or read-only, or a file is open in another program. " +
+                        "The data folder was not changed, and the partial copy was removed.");
+            }
         }
         finally { handle.Free(); }
     }

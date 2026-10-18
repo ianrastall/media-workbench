@@ -133,7 +133,7 @@ fn delete_file(path: &Path) -> std::io::Result<()> {
 }
 
 /// The data-folder lock: byte 0 of `.operation.lock`, the same range the Python worker locks.
-struct Lock {
+pub(crate) struct Lock {
     #[cfg_attr(not(windows), allow(dead_code))]
     file: File,
 }
@@ -182,7 +182,7 @@ fn region() -> Overlapped {
 }
 
 impl Lock {
-    fn acquire(root: &Path) -> Result<Self, i32> {
+    pub(crate) fn acquire(root: &Path) -> Result<Self, i32> {
         let path = root.join(".operation.lock");
         no_links(&path)?;
         let file = OpenOptions::new()

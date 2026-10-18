@@ -102,6 +102,28 @@ MW_API int32_t mw_import_file(const uint8_t *input, size_t length,
    report a seek penalty, such as some RAID or Storage Spaces volumes) and volume the mount point
    ("D:\", a mounted folder, or a share root; "" if unknown). Free space includes quotas.
    output=NULL or capacity<8192 returns 2, required=8192, without filesystem work. */
+/* Additive ABI 1 data-folder move planning. JSON: {source, destination} (absolute, not drive roots;
+   destination may not exist). Reads only. Returns JSON {files,bytes,freeBytes,neededBytes,sameVolume,
+   leftover,blocker}: what would be copied (everything except .operation.lock, temp/, library/ and
+   .removing/ at the top level), the destination drive's free space, bytes plus a 1 GiB reserve,
+   whether both are on one volume, whether an interrupted move left a staging folder, and a plain
+   reason the move cannot start ("" when it can: destination inside/containing the source, not
+   empty, a link inside the data folder, or not enough space).
+   output=NULL or capacity<4096 returns 2, required=4096, without filesystem work. */
+MW_API int32_t mw_plan_data_move(const uint8_t *input, size_t length,
+    uint8_t *output, size_t capacity, size_t *required);
+/* Additive ABI 1 data-folder move. JSON: {source, destination, abandon?}. Holds the source's
+   data-folder lock (status 7 while another owner holds it), refuses with 1 when planning reports a
+   blocker, copies into the marked staging folder "<parent>/.<name>.moving", hashes every file while
+   reading it, re-reads and compares the copy (status 6 on mismatch), keeps modification times, and
+   renames the staging folder to the destination last. The source is never changed. Failure or
+   cancellation (status 5) removes the staging folder. abandon=true only removes a marked staging
+   folder an interrupted move left. Progress counts copy and verification bytes (total = 2 x bytes).
+   Returns JSON {files,bytes,destination}.
+   output=NULL or capacity<4096 returns 2, required=4096, without filesystem work or callbacks. */
+MW_API int32_t mw_move_data_folder(const uint8_t *input, size_t length,
+    mw_export_progress progress, void *context,
+    uint8_t *output, size_t capacity, size_t *required);
 MW_API int32_t mw_drive_info(const uint8_t *input, size_t length,
     uint8_t *output, size_t capacity, size_t *required);
 /* Additive ABI 1 automatic clean-up. JSON: {dataRoot, runtimeProfileId, modelIds,
