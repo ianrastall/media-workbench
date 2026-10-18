@@ -4,6 +4,10 @@ Updated 18 October 2026 for **0.3.0-alpha.1**. Repository: <https://github.com/i
 
 ## Where development stopped and resumed
 
+**Pause checkpoint, 18 October 2026:** the user is pausing development at the 0.3.0-alpha.1 plateau. The next update must address drive containment as a milestone release, ahead of more model features or queue/warm-worker work. The existing saved data folder does not redirect all writes: painted hand-overs/update downloads use Windows temp, workers inherit temp settings, installation defaults to Local AppData, and preferences/startup logs also live there. [Storage milestone](docs/storage-locations.md) records the source audit, intended 0.4.0-alpha.1 scope, migration/installer requirements, acceptance gates and exact first implementation slice. This checkpoint changes documentation only; no containment fix, data move, GPU check or new release is claimed. Do not resume interactive/GPU work during the pause.
+
+Checkpoint validation: `scripts/check.ps1` passed (34 Rust tests plus formatting/Clippy, 199 Python tests, 216 C# checks including MCP); `scripts/build.ps1` passed with zero warnings/errors using a separate managed-output folder. Process-local temp was redirected under ignored repository artifacts for both commands. See [reproduction and limits](docs/validation.md#storage-milestone-planning-checkpoint).
+
 The historical starting point was `b0b0a2b` (alpha.12). The working tree already contained alpha.13 hardware-aware inference, UI/contracts, tests, a version bump, and draft documentation, plus untracked hardware modules. Its generated README release summary was still alpha.12 and alpha.13 had no validation entry.
 
 The resumed work completes that slice, removes duplicate Python drive detection in favor of Rust, fixes Diagnostics readiness for missing/changed runtime/model files and incompatible cards, and tightens stack/build requirements. Central NuGet versions and committed locks retain the existing package versions. CI requires locked restore; native executable hosts are explicitly x64, conflicting settings are rejected, native loading is app-local, and published checks inspect executable architectures. See [stack alignment](docs/stack-alignment.md) for exceptions and outstanding acceptance work.
@@ -47,6 +51,8 @@ Routine restore updates locks only when inputs change. To deliberately change a 
 - `runtime/`, `artifacts/`, `.cache/`, `.tools/`, `.local/` and `dist/` are ignored. Never commit models, machine settings, binaries, generated images, private paths or credentials. Preserve MIT and third-party/model notices.
 
 ## Immediate next work
+
+**Priority override:** resume with [the storage milestone](docs/storage-locations.md#resume-here). The numbered hardware/release/queue backlog below remains valid after drive containment; it is not the immediate next feature. Keep the version at 0.3.0-alpha.1 until the milestone is implemented and verified.
 
 Headless validation can build into a separate managed-output folder with `./scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts (Join-Path (Get-Location) 'artifacts/dotnet-validation')` when the user's existing app holds its normal output files open. Do not close or replace a running app to make a build succeed. `test-publish.ps1` without `-SkipUI` opens a window; use it only for an announced interactive check when the user is available.
 

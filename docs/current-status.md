@@ -2,6 +2,10 @@
 
 Version: **0.3.0-alpha.1**. Development started 17 October 2026.
 
+**Development pause, 18 October 2026.** The next planned release milestone is [drive containment](storage-locations.md), intended as 0.4.0-alpha.1 after implementation and validation. The current data-folder choice covers models, runtimes and generated work but not every write: Windows temp still holds update downloads and painted hand-overs, workers inherit temp settings, and Local AppData holds preferences/startup diagnostics and the default installation. No complete outside-volume write trace has been collected. The milestone must cover process/dependency temporary files and caches, explicit drive choices with no silent fallback, safe data migration, and installer/update behavior. This is a documented plan, not a fix in 0.3.0-alpha.1.
+
+The documentation checkpoint passed the existing headless check suite and a separate-output Debug build; [validation](validation.md#storage-milestone-planning-checkpoint) records the commands and limits. Those checks do not establish drive containment.
+
 ## Technology decisions
 
 0.3.0-alpha.1 adds two optional verified setups beside Stable Diffusion 1.5, sharing one helper (`workers/python/addon.py`): short AnimateDiff videos (`video.py`) and Stable Diffusion XL base 1.0 (`sdxl.py`). Each has pinned files, native verification, its own hardware-chosen runtime table with a conservative streaming fallback for 6 GB cards, a real GPU test, and a readiness record that also requires the base installation. Rust gains `mw_encode_video` (H.264 MP4 through Media Foundation, loaded at call time) and MP4 export. See [inference](inference.md#stable-diffusion-xl) and [short videos](inference.md#short-videos).
@@ -87,6 +91,8 @@ Authenticated remote/cloud MCP access, protected Hugging Face account access, di
 Windows 11 is the current test host. The installer targets Windows 10 22H2 and Windows 11 x64; a clean Windows 10 test is pending. The first inference profile has passed real 512 × 512 generation on a GTX 1660 Ti (6 GB) with the conservative `fp32-offload` runtime; this does not certify other GPUs, drivers, or runtime choices. See [validation](validation.md) and release notes for the tested build.
 
 ## Next areas
+
+The user's pause checkpoint makes [drive containment](storage-locations.md) the next release milestone. The list below is the retained backlog after that milestone; it does not override the storage priority.
 
 Product direction (see [What to do next](next-steps.md#what-to-do-next) for the ordered list): adding models the user already downloaded works for SD 1.5-family models, clean-up and drive-space checks are automatic, and inference settings follow the hardware. Next:
 

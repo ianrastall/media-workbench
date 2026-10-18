@@ -4,9 +4,11 @@ This is a plan, not a list of supported features. The implemented path is SD 1.5
 
 ## Purpose and next feature priority
 
+**Pause checkpoint, 18 October 2026:** development is paused at the current plateau. The next update is the [drive-containment milestone](storage-locations.md), intended as **0.4.0-alpha.1** only after its acceptance gates pass. Choosing a work drive must cover large temporary files and caches as well as models and results, respect excluded drives, and stop rather than silently spill onto another volume. It also needs safe migration and installer/update coverage. Existing data-folder settings do not provide that guarantee today. This milestone takes priority over the remaining feature and queue work below; no version bump or release is made for this planning checkpoint.
+
 Media Workbench aims to move image and eventually video generation onto the user's own computer, with offline use after setup and less reliance on online generation services. Short videos (2–3 seconds) are implemented; longer and image-to-video clips are not. Energy, water, chip-demand, and cost benefits have not been measured; local generation still uses electricity and hardware. It stays free, MIT-licensed, and unlocked on the public repository. It must serve beginners as well as power users, so runtime, precision, and pipeline details stay under the hood behind plain choices.
 
-The next user-facing priorities are:
+The previous feature priorities, now implemented within the limits described, are:
 
 1. **Add your own downloaded models.** Done for SD 1.5-family single files and Diffusers folders in 0.2.0-alpha.11; other architectures follow with their own verified profiles.
 2. **Download models from Hugging Face.** Implemented for public root-level single-file SD 1.5 checkpoints in alpha.14: license/file hints, pinned metadata and bounded header checks, hardware/space/readiness limits, and download through native checks and real inference verification. Direct Diffusers-folder downloads, protected access and other model architectures remain separate verified slices.
@@ -31,6 +33,8 @@ Alpha.15 centralizes tensor-layout compatibility in Rust for Discover and local 
 The alpha.14 Discover download slice is implemented, and the alpha.13 handoff is completed: hardware-aware inference is checked, drive detection is shared through Rust, and NuGet versions/locks, x64 enforcement, and native loading have been tightened. See [stack alignment](stack-alignment.md) and [handoff](../HANDOFF.md). The reference is an acceptance target; the older architecture proposals remain historical.
 
 In order, as of 18 October 2026:
+
+0. **Complete the drive-containment milestone first.** Start with [the shared location policy and worker/update paths](storage-locations.md#resume-here), then migration, installer/update behavior, and real process-write evidence. Keep the remaining items below as the backlog after that milestone. Development is paused; do not start interactive or GPU validation without the user being available.
 
 1. **Validate the faster runtime choices on real hardware.** `fp16-gpu`, `fp16-offload`, and `fp32-gpu` are chosen automatically on suitable cards but lack representative end-to-end hardware evidence. The completed GTX 1660 Ti check selects `fp32-offload`; draft notes about forced alternate settings on that card do not establish compatibility of the faster profiles. Run `tests/gpu_hardware_profile_check.py` on an RTX card with 8 GB or more (expects `fp16-gpu`), a 6 GB RTX card (`fp16-offload`), and if possible a Pascal card with 10 GB or more (`fp32-gpu`), record the results in `docs/validation.md`, and adjust the thresholds in `workers/python/hardware.py` if the measurements say so (precision/offloading changes require fresh verification; bump the adapter version for other inference changes).
 2. **Close release and stack evidence gaps.** Run clean-machine validation below, check accessibility/high contrast/text scaling/mixed DPI, measure startup/idle behavior, preserve useful release symbols and build metadata, and verify a mixed managed/Rust breakpoint. Review the pinned Rust version against supported releases before another toolchain upgrade. These checks can proceed independently of access to more GPUs.

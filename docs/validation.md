@@ -1,5 +1,31 @@
 # Initial alpha validation
 
+## Storage milestone planning checkpoint
+
+18 October 2026, Windows 11. Documentation-only checkpoint at 0.3.0-alpha.1, based on inspection of `e493113`; no application behavior or version changed. [Storage locations](storage-locations.md) distinguishes confirmed paths from dependency-write hypotheses and defines the next milestone's acceptance gates.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check.ps1` | Passed: 34 Rust tests, formatting/Clippy, 199 Python tests, 216 C# checks including MCP |
+| `scripts/build.ps1 -ManagedArtifacts artifacts/dotnet-storage-plan` | Debug solution and self-contained development console host passed, zero warnings/errors; separate output left any existing application untouched |
+| Repository hygiene and `git diff --check` | Passed |
+
+For both check/build commands, the process-local `TEMP` and `TMP` pointed to ignored repository artifacts. Reproduce from the repository root in PowerShell (use a checkout on a suitable drive):
+
+```powershell
+$taskScratch = Join-Path (Get-Location) 'artifacts/storage-plan-check-temp'
+New-Item -ItemType Directory -Path $taskScratch -Force | Out-Null
+$env:TEMP = $taskScratch
+$env:TMP = $taskScratch
+./scripts/check.ps1
+./scripts/build.ps1 -ManagedArtifacts (Join-Path (Get-Location) 'artifacts/dotnet-storage-plan')
+git diff --check
+```
+
+Use a dedicated PowerShell process so the temporary environment ends with it. These are existing behavioral/build checks, not a real inference or installer/update write trace. No interactive check, new GPU inference, data migration, containment implementation, publish or release was performed. The separate build output and session scratch are disposable; no generated evidence belongs in Git.
+
+## Original alpha results
+
 Validated on the Windows 11 development machine, 17 October 2026.
 
 | Check | Result |

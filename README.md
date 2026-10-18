@@ -18,6 +18,8 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 - The Rust core encodes video through Media Foundation loaded at run time, so the app still starts on Windows editions without it; those are told to add the Media Feature Pack. Existing Stable Diffusion 1.5 installations and added models stay verified.
 <!-- release-summary:end -->
 
+**Development is paused at this plateau.** The next planned milestone is [control over where Media Workbench works](docs/storage-locations.md): keep large files, caches and temporary work on the chosen drive, with no silent fallback to another drive. Today the saved data folder does **not** contain every app write: update downloads and painted-area hand-overs use Windows temp, workers inherit its temp settings, and preferences/startup logs use Local AppData. Changing data folders does not move existing data. The drive-containment milestone is planned, not part of this release.
+
 ## Install
 
 Download the Windows x64 installer from [Releases](https://github.com/ianrastall/media-workbench/releases). The installer adds Media Workbench to your Start menu and installed applications. The app has a stable Windows application identity and can be pinned to the taskbar normally. It does not change your existing taskbar pins.
