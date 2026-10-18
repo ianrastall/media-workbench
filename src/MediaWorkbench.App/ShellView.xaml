@@ -266,13 +266,16 @@
                             <StackPanel Spacing="16">
                                 <TextBlock Text="The defaults work well. Change these only if you want to fine-tune a result." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <StackPanel Orientation="Horizontal" Spacing="16">
-                                    <NumberBox Header="Seed" Value="{x:Bind ViewModel.Seed, Mode=TwoWay}" Minimum="0" Maximum="4294967295" Width="200" SpinButtonPlacementMode="Compact" />
+                                    <StackPanel Spacing="4">
+                                        <NumberBox Header="Seed" Value="{x:Bind ViewModel.Seed, Mode=TwoWay}" Minimum="0" Maximum="4294967295" Width="200" SpinButtonPlacementMode="Compact" />
+                                        <CheckBox Content="A new variation each time" IsChecked="{x:Bind ViewModel.NewSeedEachTime, Mode=TwoWay}" />
+                                    </StackPanel>
                                     <NumberBox Header="Refinement steps" Value="{x:Bind ViewModel.Steps, Mode=TwoWay}" Minimum="1" Maximum="50" Width="160" SpinButtonPlacementMode="Compact" />
                                     <NumberBox Header="Prompt strength" Value="{x:Bind ViewModel.GuidanceScale, Mode=TwoWay}" Minimum="1" Maximum="20" SmallChange="0.5" LargeChange="2" Width="160" SpinButtonPlacementMode="Compact" />
                                 </StackPanel>
                                 <ComboBox Header="Sampling method" ItemsSource="{x:Bind ViewModel.SamplerLabels}" SelectedIndex="{x:Bind ViewModel.SamplerIndex, Mode=TwoWay}" Width="360" Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                                 <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Text="The same seed with the same settings repeats an image; change it for a new variation. More steps add detail but take longer. Higher prompt strength follows your words more literally; lower is looser and more natural." />
+                                    Text="The same seed with the same settings repeats an image. With A new variation each time, every Generate picks a new seed (shown above); turn it off to repeat or fine-tune one picture. More steps add detail but take longer. Higher prompt strength follows your words more literally; lower is looser and more natural." />
                             </StackPanel>
                         </Expander>
                         <InfoBar Title="The data folder's drive is nearly full" Severity="Warning" IsClosable="False"

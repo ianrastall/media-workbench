@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-alpha.9 — 2026-10-18
+
+- **A new picture every time you select Generate.** Before, the seed stayed the same, so selecting **Generate** again with the same description made exactly the same picture. Now each **Generate** and **Add to queue** picks a new seed and shows it under **Advanced options**, where **A new variation each time** can be turned off. **Use settings** and **Retry** turn it off for you, so they repeat a picture exactly.
+- **Add to the queue while pictures are being made.** **Add to queue** now works while a picture or the queue is being made, and a running queue also makes the pictures added meanwhile. It stays unavailable during setup, moving your data and similar work.
+
 ## 0.3.0-alpha.8 — 2026-10-18
 
 - **A queue of pictures to make later.** Create's **Add to queue** saves the picture you described (or each version, with **How many**) without making it yet. Change the description and add more, then select **Run queue** and Media Workbench makes them one after another, reusing the loaded model. Waiting pictures keep their own copies of any starting picture or painted area, stay waiting after you close the app, and only run when you choose **Run queue**. **Cancel** stops the picture being made and leaves it and the rest waiting; a picture that fails is listed in Library with **Retry**, and the others are still made. **Remove** takes one out of the queue.

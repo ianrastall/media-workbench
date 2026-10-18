@@ -11,7 +11,16 @@ static class BatchChecks
         var store = new SettingsStore(Path.Combine(output, "batch-settings"));
         store.Save(new AppSettings(1, Path.Combine(output, "batch-data"), "query"));
         var workbench = new RecordingWorkbench();
-        var vm = new MainViewModel(workbench, store, new FakeUpdates(null)) { ModelReady = true, Prompt = "a lighthouse", Seed = 10 };
+        var vm = new MainViewModel(workbench, store, new FakeUpdates(null)) { ModelReady = true, Prompt = "a lighthouse", Seed = 10, NewSeedEachTime = false };
+        var fresh = new MainViewModel(workbench, store, new FakeUpdates(null)) { ModelReady = true, Prompt = "a lighthouse" };
+        await fresh.GenerateCommand.ExecuteAsync(null);
+        await fresh.GenerateCommand.ExecuteAsync(null);
+        check(fresh.NewSeedEachTime && workbench.Generations.Count == 2 && workbench.Generations[0].Seed != workbench.Generations[1].Seed
+            && (long)fresh.Seed == workbench.Generations[1].Seed, "By default each Generate makes a new variation and shows its seed");
+        fresh.UseImageSettingsCommand.Execute(RecordingWorkbench.Image(Path.Combine(output, "batch-data")) with { Settings = new("a lighthouse", "", 1234, 20) });
+        await fresh.GenerateCommand.ExecuteAsync(null);
+        check(!fresh.NewSeedEachTime && workbench.Generations[^1].Seed == 1234, "Use settings turns new variations off so Generate repeats the picture");
+        workbench.Generations.Clear();
         await vm.GenerateCommand.ExecuteAsync(null);
         check(workbench.Generations.Count == 1 && vm.Notice == vm.LatestImage!.SavedNotice, "One picture is still the default");
         workbench.Generations.Clear();
@@ -41,7 +50,7 @@ static class BatchChecks
         var store = new SettingsStore(Path.Combine(output, "queue-settings"));
         store.Save(new AppSettings(1, Path.Combine(output, "queue-data"), "query"));
         var workbench = new RecordingWorkbench();
-        var vm = new MainViewModel(workbench, store, new FakeUpdates(null)) { ModelReady = true, Prompt = "a harbour at dawn", Seed = 30, PictureCountIndex = 1 };
+        var vm = new MainViewModel(workbench, store, new FakeUpdates(null)) { ModelReady = true, Prompt = "a harbour at dawn", Seed = 30, PictureCountIndex = 1, NewSeedEachTime = false };
         await vm.AddToQueueCommand.ExecuteAsync(null);
         check(workbench.Waiting.Select(item => item.Settings.Seed).SequenceEqual([30L, 31]) && workbench.Generations.Count == 0 && vm.Queue.Count == 2
             && vm.QueueText == "2 pictures waiting" && vm.RunQueueCommand.CanExecute(null), "Add to queue saves each version without generating");

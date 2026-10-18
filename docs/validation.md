@@ -4,9 +4,9 @@
 
 18 October 2026: the published 0.3.0-alpha.8 installer (SHA-256 `e3eb0752…`, verified against its `.sha256`) run with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS` over an installed 0.3.0-alpha.7 left no Media Workbench process running afterwards, and the installed app's `--self-test` passed. Earlier the same day an in-app update from 0.3.0-alpha.3 (which uses `/SILENT`) closed and reopened the app as 0.3.0-alpha.7, as intended.
 
-## Adding to the queue while pictures are made (unreleased)
+## Adding to the queue while pictures are made, and new variations (0.3.0-alpha.9)
 
-`scripts/check.ps1` passed with 280 C# checks; two new view-model checks: a picture added while the queue runs is made by the same run, and nothing can be added while the data folder is being moved.
+`scripts/check.ps1` passed with 39 Rust tests plus formatting/Clippy, 219 Python tests and 282 C# checks including MCP, and `scripts/build.ps1` passed with zero warnings or errors (re-run for the alpha.9 release commit; headless only, no GPU or desktop run). The C# checks include two more: by default two Generates use different seeds and show the latest, and Use settings turns that off so Generate repeats the seed); two new view-model checks: a picture added while the queue runs is made by the same run, and nothing can be added while the data folder is being moved.
 
 ## Waiting pictures (0.3.0-alpha.8)
 

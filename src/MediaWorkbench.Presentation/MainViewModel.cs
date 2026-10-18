@@ -144,6 +144,15 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string Prompt { get; set; } = "A small red ceramic house beside a green tree, watercolor illustration, daylight";
     [ObservableProperty] public partial string NegativePrompt { get; set; } = "";
     [ObservableProperty] public partial double Seed { get; set; } = 20261017;
+    /// <summary>Each Generate or Add to queue picks a new seed first, so pressing Generate again makes a new variation.
+    /// Use settings and Retry turn it off, so they repeat a picture exactly.</summary>
+    [ObservableProperty] public partial bool NewSeedEachTime { get; set; } = true;
+
+    /// <summary>A new seed when the user wants a new variation; shown in the Seed box so the picture can be repeated.</summary>
+    private void ChooseSeed()
+    {
+        if (NewSeedEachTime) Seed = Random.Shared.NextInt64(0, 1L + uint.MaxValue);
+    }
     [ObservableProperty] public partial double Steps { get; set; } = 20;
     [ObservableProperty] public partial double GuidanceScale { get; set; } = 7.5;
     /// <summary>Index into <see cref="GenerationSettings.Sizes"/>.</summary>
@@ -760,6 +769,7 @@ public partial class MainViewModel : ObservableObject
 
     private Task GenerateAsync() => RunAsync("Preparing image generation…", async token =>
     {
+        ChooseSeed();
         var (picture, painted) = CurrentPicture();
         int count = PictureCounts[Math.Clamp(PictureCountIndex, 0, PictureCounts.Length - 1)];
         // The worker copies the painted area into each job; this temporary file is only the hand-over.
@@ -823,6 +833,7 @@ public partial class MainViewModel : ObservableObject
 
     private async Task AddToQueueCore(CancellationToken token)
     {
+        ChooseSeed();
         var (picture, painted) = CurrentPicture();
         int count = PictureCounts[Math.Clamp(PictureCountIndex, 0, PictureCounts.Length - 1)];
         string? mask = painted ? await WorkFolders.WritePaintedAsync(DataRoot, Mask!.EncodePng(), token) : null;
@@ -1115,6 +1126,7 @@ public partial class MainViewModel : ObservableObject
     private bool ApplySettings(GenerationSettings settings)
     {
         _restoreNote = "";
+        NewSeedEachTime = false; // Repeating a picture needs its own seed.
         if (settings.IsUpscale)
         {
             if (settings.SourceImage is not { } picture || !File.Exists(picture))
