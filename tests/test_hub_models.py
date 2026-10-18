@@ -20,7 +20,7 @@ import inference_setup as setup
 import model_library as models
 from test_hardware import machine
 from test_inference_setup import fake_app, ready_install, fake_generation
-from test_model_library import checkpoint, CHECKPOINT
+from test_model_library import checkpoint, CHECKPOINT, XL_CHECKPOINT, write_safetensors
 
 
 class Response:
@@ -145,6 +145,21 @@ class HubTests(unittest.TestCase):
         self.assertFalse(result["canInstall"])
         self.assertIn("XL", result["message"])
         self.assertTrue(all(item[3] is not None for item in self.requests if isinstance(item, tuple)))
+
+    def test_sdxl_files_need_the_sdxl_setup_and_are_recorded_as_sdxl(self):
+        self.file = write_safetensors(self.folder / "xl.safetensors", XL_CHECKPOINT)
+        self.sha = setup.digest(self.file)
+        self.data["siblings"][0].update(size=self.file.stat().st_size, lfs=dict(sha256=self.sha))
+        self.payload.update(sha256=self.sha, bytes=self.file.stat().st_size)
+        planned = hub.plan(self.app, self.payload, self.cancel)
+        self.assertEqual((planned["canInstall"], planned["architecture"]), (False, "sdxl"))
+        self.assertIn("Set up Stable Diffusion XL", planned["message"])
+        with patch.object(models, "xl_ready", return_value=dict(runtime="xl-fp32-sequential")):
+            planned = hub.plan(self.app, self.payload, self.cancel)
+            self.assertTrue(planned["canInstall"])
+            self.assertIn("1024 × 1024", planned["message"])
+            added = self.install()
+        self.assertEqual((added["architecture"], self.tests[-1][0], self.tests[-1][1]["family"]), ("sdxl", "verify-xl", "sdxl"))
 
     def test_reviewed_plan_must_match_exact_revision_file_size_and_hash(self):
         for name, value in [("licenseReviewed", False), ("licenseReviewed", "true"), ("revision", "main"),

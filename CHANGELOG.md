@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-alpha.7 — 2026-10-18
+
+- **Add Stable Diffusion XL fine-tunes.** Once Stable Diffusion XL is set up, **Add a model you already downloaded** and Discover's **Download and test** accept single-file SDXL checkpoints (`.safetensors`), such as fine-tuned SDXL models. Media Workbench reads only the file's header to recognize it, copies it into your data folder, and makes a real 1024 × 1024 test picture on your graphics card; only a model that passes appears under **Model**, with SDXL's picture shapes. SDXL refiners, SDXL inpainting models and SDXL model folders are explained and refused.
+- **Make several versions at once.** Create's **How many** makes 2 or 4 versions of a picture in one go, each with the next seed, so every version can be made again with **Use settings**. After the first, each version reuses the loaded model. If one version is rejected (for example by the safety checker), the others are still made and the app says which seed was skipped.
+
 ## 0.3.0-alpha.6 — 2026-10-18
 
 - **Changing a picture is about four times faster on 6 GB graphics cards.** Starting from a picture and painted changes left part of the model on the graphics card while the rest worked, so Windows had to borrow system memory and every step slowed down. That part now steps aside first. On a GTX 1660 Ti, a 12-step change of a 512 × 512 picture went from 48 to 11 seconds and a painted change from 77 to 16 seconds. The pictures are exactly the same as before, byte for byte.

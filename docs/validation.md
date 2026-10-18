@@ -1,6 +1,23 @@
 # Initial alpha validation
 
-## Several versions per Generate (unreleased)
+## Added SDXL models and several versions per Generate (0.3.0-alpha.7)
+
+18 October 2026, Windows 11, GTX 1660 Ti (6 GB), development data folder with Stable Diffusion 1.5 (`fp32-offload`) and Stable Diffusion XL (`xl-fp32-sequential`) verified. `runtime/python/python.exe tests/gpu_model_import_check.py <data> hf:stabilityai/stable-diffusion-xl-base-1.0 --file sd_xl_base_1.0.safetensors --license-reviewed`, through the same coordinator the app uses (one-shot):
+
+| Step | Result |
+| --- | --- |
+| Discover plan at revision `462165984030d82259a11f4367a4eed129e94a7b` | Bounded header read; recognized as SDXL with its own VAE; 6.46 GiB; license `openrail++`. The repository's offset LoRA file is listed but refused if chosen |
+| Pinned download | 6,938,078,334 bytes, SHA-256 verified natively; README and LICENSE retained |
+| Per-model GPU test | SDXL's 1024 × 1024 four-step test with the SDXL setup's `xl-fp32-sequential`; ready; listed with architecture `sdxl` |
+| Text to image, 1024 × 1024, 8 steps | 49.7 s inference after a 6.6 s load, peak 3084 MiB; a coherent oil-painting lighthouse at sunset |
+| Image to image (strength 0.6) / painted change / 2× upscale | 28.6 s / 52.8 s / 2048 × 2048 |
+| Removal | The added model's folder removed; the four pictures and their records kept |
+
+Headless: `scripts/check.ps1` passed 39 Rust tests (SDXL recognition and refusals from the official base and refiner header shapes), Python tests including SDXL identification, refiner refusal, the SDXL-setup prerequisite before any copy, a full SDXL import with SDXL's runtime and 1024 test, size enforcement, and Discover planning/download of an SDXL file; and 271 C# checks (SDXL shapes for an added SDXL model).
+
+Not checked: a third-party SDXL fine-tune (the official base single file has the same layout), SDXL fine-tunes without their own VAE on real hardware, or the kept-loaded path with an SDXL model.
+
+## Several versions per Generate (0.3.0-alpha.7)
 
 `scripts/check.ps1` passed 38 Rust tests, 210 Python tests and 270 C# checks; the five new view-model checks cover the single-picture default, four consecutive seeds and the summary, one refused version among four, all versions failing, and seed wrap-around. Not run interactively or on the GPU as a batch; each version uses the same verified generation path, and the kept model is covered by `tests/gpu_kept_model_check.py`.
 
