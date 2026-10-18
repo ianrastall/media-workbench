@@ -1,5 +1,18 @@
 # Initial alpha validation
 
+## Real GPU generation with the contained environment
+
+18 October 2026, Windows 11, GTX 1660 Ti (6 GB), development data folder already verified with `fp32-offload`. Debug CLI from `d730511`: `MediaWorkbench.Cli <python> <repo> generate <data> "A red ceramic house beside a green tree, watercolor illustration, daylight" 12`.
+
+| Observation | Result |
+| --- | --- |
+| Generation through the C# worker client (own `temp/work/<id>`) and the ML child (own folder, `CUDA_CACHE_PATH`, `TORCH_HOME`) | Succeeded in 48 s end to end; readiness unchanged |
+| Files new or changed in the user's `%TEMP%` (recursive before/after listing) | None from Media Workbench (the only change was the development assistant's own tool log) |
+| Files new or changed in `%APPDATA%\NVIDIA\ComputeCache` | None |
+| Data folder afterwards | `temp/` removed; `cache/cuda` created by the CUDA runtime |
+
+Limits: a before/after listing misses files created and deleted during the run, and covers only `%TEMP%` and the NVIDIA cache, not every location; it is not the process-tree write trace the milestone requires. Setup (package extraction), SDXL, video, upscaling and updates were not run.
+
 ## Drive choice, never-use drives and removing the old copy (0.3.0-alpha.4)
 
 18 October 2026, Windows 11, development machine. `scripts/check.ps1` passed: 38 Rust tests, 202 Python tests, 258 C# checks (the last five cover never-use drives: marking, no suggestion before setup, refused save, refused move check, remembered and allowed again); `scripts/build.ps1` passed with zero warnings.
