@@ -7,15 +7,15 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.2.0-alpha.11](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.11)** · 2026-10-17 · Pre-release · Windows x64
+**[0.2.0-alpha.12](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.12)** · 2026-10-17 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.11/MediaWorkbench-0.2.0-alpha.11-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.11/MediaWorkbench-0.2.0-alpha.11-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.11/MediaWorkbench-0.2.0-alpha.11-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.12/MediaWorkbench-0.2.0-alpha.12-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.12/MediaWorkbench-0.2.0-alpha.12-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.12/MediaWorkbench-0.2.0-alpha.12-README.md)
 
-- Add a model you already downloaded: once Stable Diffusion 1.5 is ready, open **Add a model you already downloaded** in Create and choose a Stable Diffusion 1.5-family `.safetensors` file or a Diffusers model folder. Media Workbench checks it from its file headers alone, without running any model code, and explains plainly when it cannot be used (SDXL, SD 2, LoRAs, embeddings, inpainting-only models, damaged or incomplete files, and `.ckpt` files, which can run hidden code).
-- The model is copied into your data folder, hashed while copying, verified, and tested with a small picture on your GPU, the same check the bundled model passes. Your original is never changed, and nothing is kept if a step fails. It reuses the installed runtime, so nothing downloads.
-- Create shows a **Model** choice once an added model passes its test. Image-to-image, painted changes, and upscaling keep working. Library notes which model made each image, and **Use settings** chooses that model again.
-- Settings → Storage measures models you added separately and lists each one, with **Test again** and **Remove…** (your images and original files are kept). Removing Stable Diffusion 1.5 keeps added models for when it is set up again.
-- MCP: `workbench_models` lists models and their tested state; `workbench_generate_image` can name a ready added model. Adding and removing models stays in the app.
+- Media Workbench now cleans up after itself, at startup and after setup, without asking: unfinished-job records beyond the 50 that Library lists (with their private input copies and logs), logs older than 30 days or beyond the newest 300, setup downloads left unfinished for three days, painted-area hand-over files a crash left behind, and update installers once the new version runs. Images, finished job records, anything Library lists for a retry or **Use settings**, and your own files are never removed.
+- Once setup is verified, its download caches (about 4 GB) are removed automatically. Settings → Storage explains this and has **Keep setup's download files for repairs** for anyone who would rather keep them.
+- Generation and upscaling check free space before writing anything and stop with a plain message when the drive is too full. Create, Tools, and Settings warn when less than 5 GiB is free on the data folder's drive.
+- When the data folder is on a hard disk, USB drive, or network drive, Create and Settings say that models load faster from a solid-state drive and that the folder can be moved in Settings.
+- Rust owns the clean-up rules and drive detection (`mw_tidy_data_folder`, `mw_drive_info`, and a new busy status code). Clean-up runs under the same data-folder lock as setup and generation, finishes an interrupted removal on the next start, and never follows links.
 <!-- release-summary:end -->
 
 ## Install
@@ -43,9 +43,13 @@ During **Install / verify**, Rust checks every pinned model file's size and SHA-
 
 **Updates:** when you're online, Media Workbench checks for a new version at startup and shows what changed on **Home**. Select **Update now** to download it, verify it against its published checksum, and reopen the updated app; nothing installs until you click. After setup, generating images needs no internet.
 
-**Settings → Storage** shows what the data folder uses. Rust measures logical file sizes and available space directly, without starting Python, and checks cancellation while traversing folders. You can clear the download caches (about 4 GiB that only speed up repairs) and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept. Models you added are listed with their size and state; **Test again** re-checks one, and **Remove…** deletes its copy (never your original file or your images).
+**Settings → Storage** shows what the data folder uses. Rust measures logical file sizes and available space directly, without starting Python, and checks cancellation while traversing folders. You can clear the download caches and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept. Models you added are listed with their size and state; **Test again** re-checks one, and **Remove…** deletes its copy (never your original file or your images).
 
-Cancel stops the owned worker operation. Retrying setup reuses completed downloads and the Hub cache; an incomplete bootstrap archive restarts. A data folder typed in Settings takes effect only after **Save settings**. Changing data folders does not move existing models or images.
+**Media Workbench cleans up after itself.** Once setup passes its GPU test, it removes the packages and archives it downloaded (about 4 GiB; a repair downloads them again), unless you tick **Keep setup's download files for repairs** in Settings. At each start it removes unfinished downloads older than three days, logs beyond the newest 300 or older than 30 days, failed or stopped jobs beyond the 50 Library lists (with their private picture copies), painted-area hand-over files a crash left in the temporary folder, and installers of an update that has finished. It never removes images, the records Library lists, the pictures **Use settings** needs, the log of a job still listed as unfinished, or your own files, and it waits rather than run while setup or generation is using the data folder.
+
+**Drive space and speed:** generating and upscaling check free space before writing anything and say plainly when there is not enough (a 4× upscale can need a few hundred MB). Create, Tools, and Settings warn when the data folder's drive has less than 5 GiB free. When the data folder is on a hard disk, USB drive, or network drive, Create and Settings say that models load faster from a solid-state drive and that the data folder can be moved in Settings.
+
+Cancel stops the owned worker operation. Retrying setup reuses completed downloads and the Hub cache (unfinished downloads are kept for three days); an incomplete bootstrap archive restarts. A data folder typed in Settings takes effect only after **Save settings**. Changing data folders does not move existing models or images.
 
 ## What works now
 
@@ -55,6 +59,7 @@ Cancel stops the owned worker operation. Retrying setup reuses completed downloa
 - Rust installation-plan validation, relative-path policy, and streaming SHA-256 through C ABI 1.
 - Rust-owned completed-job validation and cancellable, checksum-verified PNG export with atomic replacement.
 - Rust-owned cancellable storage inventory, shared by desktop, MCP, CLI, and worker clients.
+- Rust-owned automatic clean-up of logs, old unfinished jobs, stale downloads, and verified setups' download caches, under the data-folder lock; free-space checks before generation and upscaling; low-space and hard-disk notices.
 - Rust-owned pinned model-file verification with byte progress, cancellation, and protection against concurrent writes while hashing.
 - Bundled Python worker diagnostics and read-only NVIDIA GPU detection.
 - Persistent storage settings, cancellation, and session activity.

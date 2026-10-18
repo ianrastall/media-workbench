@@ -19,8 +19,13 @@ sealed class RecordingWorkbench : IWorkbenchService
     public InstallationPlan GetBaselinePlan() => throw new NotSupportedException();
     public Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken) =>
         Record(dataRoot, new InstallationState("ready", "Ready"));
-    public Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
-        Record(dataRoot, new InstallationState("ready", "Ready"));
+    public bool? LastKeepDownloadCaches { get; private set; }
+    public long InstallCleanedBytes { get; set; }
+    public Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false)
+    {
+        LastKeepDownloadCaches = keepDownloadCaches;
+        return Record(dataRoot, new InstallationState("ready", "Ready", InstallCleanedBytes));
+    }
     public GenerationSettings? LastGeneration { get; private set; }
     public byte[]? LastMaskBytes { get; private set; }
     public Task? GenerationGate { get; set; }
@@ -98,6 +103,18 @@ sealed class RecordingWorkbench : IWorkbenchService
     {
         Models.RemoveAll(model => model.Id == modelId);
         return Record<IReadOnlyList<ModelChoice>>(dataRoot, [BuiltIn, .. Models]);
+    }
+
+    /// <summary>Drive reads and clean-ups are not data-folder operations the other checks count.</summary>
+    public DriveStatus Drive { get; set; } = new(100L << 30, 500L << 30, "ssd");
+    public Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken) => Task.FromResult(Drive);
+    public List<(bool Verified, bool RemoveCaches)> Tidies { get; } = [];
+    public TidyReport TidyResult { get; set; } = new(0, 0, 0, 0, 0, false, 0);
+    public Exception? TidyFailure { get; set; }
+    public Task<TidyReport> TidyAsync(string dataRoot, bool installationVerified, bool removeDownloadCaches, CancellationToken cancellationToken)
+    {
+        Tidies.Add((installationVerified, removeDownloadCaches));
+        return TidyFailure is { } failure ? Task.FromException<TidyReport>(failure) : Task.FromResult(TidyResult);
     }
 
     public static GeneratedImage Image(string dataRoot) => new(Guid.NewGuid().ToString("N"),

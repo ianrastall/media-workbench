@@ -42,9 +42,10 @@ struct Snapshot {
     total_bytes: u64,
     installation_bytes: u64,
     items: Vec<Item>,
+    drive_kind: &'static str,
 }
 
-fn cancelled(cancel: Cancel, context: *mut c_void) -> Result<(), i32> {
+pub(crate) fn cancelled(cancel: Cancel, context: *mut c_void) -> Result<(), i32> {
     if let Some(callback) = cancel {
         // SAFETY: caller supplies a live, non-unwinding callback/context for this synchronous call.
         if unsafe { callback(context) } != 0 {
@@ -107,41 +108,24 @@ fn measure(path: &Path, cancel: Cancel, context: *mut c_void) -> Result<(u64, u6
     Ok((bytes, files))
 }
 
-#[cfg(windows)]
-fn disk_space(root: &Path) -> Result<(u64, u64), i32> {
-    use std::os::windows::ffi::OsStrExt;
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        #[link_name = "GetDiskFreeSpaceExW"]
-        fn get_disk_free_space_ex(
-            path: *const u16,
-            available: *mut u64,
-            total: *mut u64,
-            free: *mut u64,
-        ) -> i32;
-    }
-    // A trailing separator also handles UNC share directories.
-    let mut path: Vec<u16> = root.as_os_str().encode_wide().collect();
-    path.extend([b'\\' as u16, 0]);
-    let (mut available, mut total) = (0, 0);
-    // SAFETY: path is terminated UTF-16; both u64 outputs are live and writable.
-    if unsafe {
-        get_disk_free_space_ex(
-            path.as_ptr(),
-            &mut available,
-            &mut total,
-            std::ptr::null_mut(),
-        )
-    } == 0
+/// Absolute, not a drive root, no `..`, no NUL, and not a `\\.\` device path. Lexical only.
+pub(crate) fn lexically_valid_root(root: &Path) -> bool {
+    if !root.is_absolute()
+        || !root
+            .components()
+            .any(|part| matches!(part, Component::Normal(_)))
+        || root
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+        || root.as_os_str().to_string_lossy().contains('\0')
     {
-        return Err(IO_ERROR);
+        return false;
     }
-    Ok((available, total))
-}
-
-#[cfg(not(windows))]
-fn disk_space(_root: &Path) -> Result<(u64, u64), i32> {
-    Err(IO_ERROR) // This application/service targets Windows x64.
+    #[cfg(windows)]
+    if root.components().any(|part| matches!(part, Component::Prefix(prefix) if matches!(prefix.kind(), std::path::Prefix::DeviceNS(_)))) {
+        return false;
+    }
+    true
 }
 
 pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Result<Vec<u8>, i32> {
@@ -152,25 +136,8 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
         || request.model_ids.len() > 32
         || request.model_ids.iter().any(|id| !valid_id(id))
         || request.model_ids.iter().collect::<HashSet<_>>().len() != request.model_ids.len()
-        || !request.data_root.is_absolute()
-        || !request
-            .data_root
-            .components()
-            .any(|part| matches!(part, Component::Normal(_)))
-        || request
-            .data_root
-            .components()
-            .any(|part| matches!(part, Component::ParentDir))
-        || request
-            .data_root
-            .as_os_str()
-            .to_string_lossy()
-            .contains('\0')
+        || !lexically_valid_root(&request.data_root)
     {
-        return Err(INVALID);
-    }
-    #[cfg(windows)]
-    if request.data_root.components().any(|part| matches!(part, Component::Prefix(prefix) if matches!(prefix.kind(), std::path::Prefix::DeviceNS(_)))) {
         return Err(INVALID);
     }
     cancelled(cancel, context)?;
@@ -202,7 +169,7 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
             "caches",
             "Download caches",
             vec!["cache".into(), "bootstrap".into()],
-            "Packages and archives kept so a repair need not download them again. Install / verify downloads them again if needed.",
+            "Packages and archives used during setup. They are removed automatically once setup passes its test, unless Settings keeps them for repairs. Install / verify downloads them again if needed.",
         ),
         (
             "imported",
@@ -215,7 +182,7 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
             "logs",
             "Logs",
             vec!["logs".into()],
-            "Inference logs. Library's Open log buttons stop working for the removed logs.",
+            "Inference logs. The newest 300 from the last 30 days are kept automatically, and logs of unfinished jobs listed in Library are never removed automatically. Clearing removes them all; Library's Open log buttons stop working for removed logs.",
         ),
         ("jobs", "Job records", vec!["jobs".into()], ""),
         ("library", "Library index", vec!["library".into()], ""),
@@ -245,12 +212,13 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
         });
     }
     cancelled(cancel, context)?;
-    let (free_bytes, total_bytes) = disk_space(&root)?;
+    let (free_bytes, total_bytes) = crate::drive::space(&root)?;
     serde_json::to_vec(&Snapshot {
         free_bytes,
         total_bytes,
         installation_bytes,
         items,
+        drive_kind: crate::drive::kind(&root),
     })
     .map_err(|_| crate::INTERNAL)
 }

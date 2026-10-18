@@ -343,6 +343,7 @@ Check(await TryDownload($"{goodHash}  {installerName}") is null && File.ReadAllB
 File.Delete(downloaded);
 Check(await TryDownload($"{new string('0', 64)}  {installerName}") is InvalidDataException && !File.Exists(downloaded) && !File.Exists(downloaded + ".partial"),
     "A download that fails its checksum is discarded");
+await HousekeepingChecks.RunAsync(Check, root, output, deadline.Token);
 
 
 async Task<string> Fixture(string name, string body)

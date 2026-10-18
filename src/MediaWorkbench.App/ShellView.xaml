@@ -223,6 +223,11 @@
                                     Text="The same seed with the same settings repeats an image; change it for a new variation. More steps add detail but take longer. Higher prompt strength follows your words more literally; lower is looser and more natural." />
                             </StackPanel>
                         </Expander>
+                        <InfoBar Title="The data folder's drive is nearly full" Severity="Warning" IsClosable="False"
+                            IsOpen="{x:Bind ViewModel.HasDriveWarning, Mode=OneWay}" Message="{x:Bind ViewModel.DriveWarning, Mode=OneWay}" />
+                        <!-- Before setup, the setup card already gives this advice with the hardware summary. -->
+                        <InfoBar Severity="Informational" IsClosable="True" IsOpen="{x:Bind ViewModel.HasDriveSpeedNote, Mode=OneWay}" Message="{x:Bind ViewModel.DriveSpeedNote, Mode=OneWay}"
+                            Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                         <Button Content="Generate image" Command="{x:Bind ViewModel.GenerateCommand}" Style="{ThemeResource AccentButtonStyle}" />
                         <Image Source="{x:Bind ViewModel.PreviewPath, Mode=OneWay, Converter={StaticResource LocalImage}}" MaxWidth="512" MaxHeight="512" HorizontalAlignment="Left" Stretch="Uniform" AutomationProperties.Name="Generated image preview" />
                         <TextBlock Text="{x:Bind ViewModel.ImageDescription, Mode=OneWay}" TextWrapping="Wrap" />
@@ -311,6 +316,12 @@
                         </StackPanel>
                         <TextBlock Text="Storage" Style="{ThemeResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
                         <TextBlock Text="{x:Bind ViewModel.StorageText, Mode=OneWay}" TextWrapping="Wrap" />
+                        <InfoBar Title="The data folder's drive is nearly full" Severity="Warning" IsClosable="False"
+                            IsOpen="{x:Bind ViewModel.HasDriveWarning, Mode=OneWay}" Message="{x:Bind ViewModel.DriveWarning, Mode=OneWay}" />
+                        <InfoBar Severity="Informational" IsClosable="False" IsOpen="{x:Bind ViewModel.HasDriveSpeedNote, Mode=OneWay}" Message="{x:Bind ViewModel.DriveSpeedNote, Mode=OneWay}" />
+                        <CheckBox Content="Keep setup's download files for repairs (about 4 GB)" IsChecked="{x:Bind ViewModel.KeepDownloadCaches, Mode=TwoWay}" />
+                        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Text="Media Workbench tidies up after itself. Once setup passes its test, it removes the packages and archives it downloaded (a repair downloads them again if needed). At each start it removes unfinished downloads older than three days, logs beyond the newest 300 or older than 30 days, and failed or stopped jobs beyond the 50 that Library lists. Images, their records, the pictures Use settings needs, and your own files are never removed." />
                         <ItemsControl ItemsSource="{x:Bind ViewModel.StorageItems}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="core:StorageItem">
@@ -418,6 +429,8 @@
                                 </StackPanel>
                             </Grid>
                             <ComboBox Header="How much bigger" ItemsSource="{x:Bind ViewModel.UpscaleLabels}" SelectedIndex="{x:Bind ViewModel.UpscaleIndex, Mode=TwoWay}" Width="200" />
+                            <InfoBar Title="The data folder's drive is nearly full" Severity="Warning" IsClosable="False"
+                                IsOpen="{x:Bind ViewModel.HasDriveWarning, Mode=OneWay}" Message="{x:Bind ViewModel.DriveWarning, Mode=OneWay}" />
                             <Button Content="Make it bigger" Command="{x:Bind ViewModel.UpscaleCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             <Image Source="{x:Bind ViewModel.UpscalePreviewPath, Mode=OneWay, Converter={StaticResource LocalImage}, ConverterParameter=768}" MaxWidth="768" MaxHeight="768" HorizontalAlignment="Left" Stretch="Uniform" AutomationProperties.Name="Enlarged picture" />
                             <TextBlock Text="{x:Bind ViewModel.UpscaleDescription, Mode=OneWay}" TextWrapping="Wrap" />

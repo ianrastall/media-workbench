@@ -37,6 +37,8 @@ public sealed partial class MainWindow : Window
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(display.X + (display.Width - width) / 2, display.Y + (display.Height - height) / 2, width, height));
         Closed += (_, _) => ViewModel.CancelActiveWork();
         _ = ViewModel.CheckForUpdatesQuietlyAsync();
+        // The packaging smoke test opens the window briefly; it must not tidy the tester's data folder.
+        if (!Environment.GetCommandLineArgs().Contains("--ui-self-test")) _ = ViewModel.StartupMaintenanceAsync();
     }
 
     // The user chose Update: run the verified installer silently; it closes this copy and reopens the new one.

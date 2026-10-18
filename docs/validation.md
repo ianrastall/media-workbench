@@ -193,3 +193,17 @@ Validated on the same Windows 11 host (GTX 1660 Ti 6 GB), 17 October 2026, again
 | Same with a single-file checkpoint reassembled locally from those installed weights (original key layout, own VAE, 1.99 GiB) | Same sequence passed through `from_single_file` with bundled configuration, offline; text to image 13.1 s. Its first image matched the Diffusers-folder result for the same seed |
 
 The single-file fixture was produced on this machine by renaming the pinned SD 1.5 tensors to the original checkpoint layout; it is not distributed. Both checks were run before a third-party fine-tune was available, so they show that the loading paths, gates, and records work, not that every community checkpoint will. The first real run exposed an over-strict type check (CLIP's integer `position_ids` buffer was treated as a quantized weight); it was fixed and the fixtures now include that buffer. Timings vary with drive contention and are single samples. In the painted-change check the model drew a tree where a moon was asked for; the unpainted area was unchanged.
+
+## Clean-up and drive space (0.2.0-alpha.12)
+
+Validated on the same Windows 11 host, 17 October 2026. Checks and Release builds ran from a temporary system-drive copy of exactly the committed files; the development data folder is on the slower project drive.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1` | Passed: 23 Rust tests plus formatting/Clippy, 132 Python tests, 170 C# checks |
+| Release publish and `scripts/test-publish.ps1` (with UI self-test) | Passed, zero warnings/errors; the published self-test reads drive information and runs clean-up on a missing folder without creating it |
+| Drive detection through `mw_drive_info` | The system drive reported `ssd` and the project drive `hdd`, matching the drives |
+| Clean-up dry run on the real, verified development data folder (installation not marked verified, caches kept) | Removed nothing (no logs past 30 days or 300, no unfinished jobs beyond 50, no stale downloads) in 0.01 s |
+| Cache removal on a copy of that folder's download caches on the system drive (`cache/` and `bootstrap/`, 19,621 files, 4.13 GiB) | Removed in 4.35 s with nothing skipped |
+
+The automated checks use disposable temporary folders and cover each rule from Rust, Python, and C#: what is removed and what must be kept (listed unfinished jobs with their Retry pictures and logs, finished images and records, damaged records, an unfinished job's log, fresh downloads, added models, the user's own files), crash leftovers (`.removing/`, a half-written image, stale partial downloads, painted hand-overs), read-only cache files, links that must not be followed, a data folder held by another process (Python and C# lock holders), cancellation, and generation and upscaling refusing before any write when space is short. The real data folder's caches were not removed, so the dry run shows the rules leave a working folder alone, and the copy shows the removal speed; neither is a measurement of a full setup followed by clean-up on a clean machine. Free-space refusal was exercised with a simulated small drive, not by filling a real one.

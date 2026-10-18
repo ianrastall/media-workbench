@@ -1,6 +1,6 @@
-"""Data-folder storage: what each part uses, and user-requested removal of reproducible parts.
+"""Data-folder storage: what each part uses, automatic clean-up, and user-requested removal of reproducible parts.
 
-Rust owns inventory; this thin adapter keeps worker clients on the same native implementation.
+Rust owns inventory and automatic clean-up; this thin adapter keeps worker clients on the same native implementation.
 Removal holds the data-folder lock, so it never races setup or generation.
 """
 import ctypes
@@ -16,21 +16,31 @@ REMOVABLE = {"caches": ["cache", "bootstrap"], "logs": ["logs"]}
 INSTALLATION = [f"runtimes/{PROFILE}", f"models/{RECIPE}", f"models/{UPSCALER}", "cache", "bootstrap"]
 
 
-def summary(payload, cancel=None, app=None):
-    cancel = cancel if cancel is not None else threading.Event()
-    check_cancel(cancel)
-    app = Path(app) if app is not None else Path(__file__).resolve().parents[2]
+CALLBACK = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p)
+BUSY = 7
+
+
+def native(app, name):
+    """A Rust storage service with the shared (input, cancel, context, output, capacity, required) shape."""
     path = native_core_path(app)
     if path is None:
         raise SetupError("The native storage service is missing. Reinstall Media Workbench.")
     core = ctypes.CDLL(str(path))
     core.mw_abi_version.restype = ctypes.c_uint32
-    if core.mw_abi_version() != 1 or not hasattr(core, "mw_storage_summary"):
+    if core.mw_abi_version() != 1 or not hasattr(core, name):
         raise SetupError("The native storage service is incompatible. Reinstall Media Workbench.")
-    callback_type = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p)
+    function = getattr(core, name)
+    function.argtypes = [ctypes.c_char_p, ctypes.c_size_t, CALLBACK, ctypes.c_void_p,
+                         ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    function.restype = ctypes.c_int32
+    return function
+
+
+def call(function, request, cancel):
+    """Sizes and runs one call; returns (status, decoded JSON or None). Callback exceptions are re-raised."""
     failures = []
 
-    @callback_type
+    @CALLBACK
     def on_cancel(_context):
         try:
             return int(cancel.is_set())
@@ -38,12 +48,6 @@ def summary(payload, cancel=None, app=None):
             failures.append(exc)
             return 1
 
-    function = core.mw_storage_summary
-    function.argtypes = [ctypes.c_char_p, ctypes.c_size_t, callback_type, ctypes.c_void_p,
-                         ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
-    function.restype = ctypes.c_int32
-    layout = json.loads((app / "profiles/storage-layout.json").read_text(encoding="utf-8"))
-    request = json.dumps(dict(dataRoot=payload.get("dataRoot"), **layout)).encode("utf-8")
     required = ctypes.c_size_t()
     code = function(request, len(request), on_cancel, None, None, 0, ctypes.byref(required))
     if code != 2 or not 0 < required.value <= 1024 * 1024:
@@ -52,13 +56,62 @@ def summary(payload, cancel=None, app=None):
     code = function(request, len(request), on_cancel, None, output, len(output), ctypes.byref(required))
     if failures:
         raise failures[0]
+    if code != 0 or required.value > len(output):
+        return code, None
+    return code, json.loads(output.raw[:required.value])
+
+
+def summary(payload, cancel=None, app=None):
+    cancel = cancel if cancel is not None else threading.Event()
+    check_cancel(cancel)
+    app = Path(app) if app is not None else Path(__file__).resolve().parents[2]
+    function = native(app, "mw_storage_summary")
+    layout = json.loads((app / "profiles/storage-layout.json").read_text(encoding="utf-8"))
+    request = json.dumps(dict(dataRoot=payload.get("dataRoot"), **layout)).encode("utf-8")
+    code, result = call(function, request, cancel)
     if code == 5:
         raise Cancelled("Storage measurement was cancelled.")
     if code == 1:
         raise ValueError("The data folder or storage layout is invalid, or a managed path passes through a link or junction.")
-    if code != 0 or required.value > len(output):
+    if code != 0:
         raise SetupError(f"The native storage service could not read the folder ({code}). Check folder access; no partial sizes were reported.")
-    return json.loads(output.raw[:required.value])
+    return result
+
+
+def tidy(app, root, verified, remove_caches, cancel=None):
+    """Rust's automatic clean-up under the data-folder lock (old logs, old unfinished-job records,
+    stale downloads, and the download caches once setup is verified). Returns its report."""
+    cancel = cancel if cancel is not None else threading.Event()
+    check_cancel(cancel)
+    app = Path(app)
+    layout = json.loads((app / "profiles/storage-layout.json").read_text(encoding="utf-8"))
+    request = json.dumps(dict(dataRoot=str(root), installationVerified=bool(verified),
+                              removeDownloadCaches=bool(verified and remove_caches), **layout)).encode("utf-8")
+    code, result = call(native(app, "mw_tidy_data_folder"), request, cancel)
+    if code == BUSY:
+        raise SetupError("Another operation is using this data folder")
+    if code == 5:
+        raise Cancelled("Clean-up was cancelled. Nothing it had started is left half-removed.")
+    if code == 1:
+        raise ValueError("The data folder is invalid, or a managed path passes through a link or junction.")
+    if code != 0:
+        raise SetupError(f"The native clean-up could not finish ({code}). Check folder access.")
+    return result
+
+
+def after_setup(app, payload, result, cancel, progress):
+    """Once setup passed its test, remove what it no longer needs; keepDownloadCaches keeps the caches.
+
+    A verified installation never fails because clean-up could not run; the next start tries again.
+    """
+    if result.get("status") != "ready":
+        return result
+    progress({"stage": "Removing setup downloads that are no longer needed"})
+    try:
+        report = tidy(app, data_root(payload), True, payload.get("keepDownloadCaches") is not True, cancel)
+    except (SetupError, ValueError, OSError):
+        return dict(result, cleanedBytes=0)
+    return dict(result, cleanedBytes=report["removedBytes"])
 
 
 def remove(root, folders, cancel, progress):

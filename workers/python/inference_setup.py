@@ -40,6 +40,7 @@ UPSCALE_MAX_SIDE = 2048
 EDIT_MAX_SIDE = 4096
 FRESH_SETUP_BYTES = 20 * 1024**3  # Runtime, wheel cache, model, and download temporaries.
 SETUP_HEADROOM_BYTES = 2 * 1024**3
+WRITE_HEADROOM_BYTES = 256 * 1024**2  # Logs, the job record, and room left for Windows after saving.
 # Drivers report slightly less than nominal capacity (a 6 GB GTX 1660 Ti reports 6143.7 MiB to CUDA).
 VRAM_REPORTING_MARGIN_MIB = 128
 
@@ -660,6 +661,28 @@ def upscale(app, payload, cancel, progress):
     return run_job(app, data_root(payload), "upscale", settings, cancel, progress)
 
 
+def size_text(count):
+    return f"{count / 1024**3:.1f} GB" if count >= 1024**3 else f"{max(1, round(count / 1024**2))} MB"
+
+
+def space_needed(kind, settings):
+    """Room a job needs: its private input copies, the largest picture it can save, and a margin for its log."""
+    inputs = sum(Path(settings[key]).stat().st_size for key in ("sourceImage", "maskImage") if key in settings)
+    if kind == "upscale":
+        side = UPSCALE_MAX_SIDE * settings["scale"]
+    else:  # A painted change keeps the picture's own size; other pictures are at most 768 pixels.
+        side = EDIT_MAX_SIDE if "maskImage" in settings else max(max(size) for size in SIZES)
+    return inputs + side * side * 3 + WRITE_HEADROOM_BYTES  # An uncompressed RGB PNG is the worst case.
+
+
+def check_space(root, needed):
+    free = shutil.disk_usage(root).free
+    if free < needed:
+        raise SetupError(f"There is not enough free space to save the picture: {size_text(free)} is free on the data "
+                         f"folder's drive and about {size_text(needed)} is needed. Free up space on that drive, or move "
+                         "the data folder in Settings. Nothing was written.")
+
+
 def run_job(app, root, kind, settings, cancel, progress):
     """One generation or upscale: readiness gate, durable record, private copy of any input picture, owned child."""
     with exclusive(root):
@@ -669,6 +692,7 @@ def run_job(app, root, kind, settings, cancel, progress):
             raise SetupError("Install / verify Stable Diffusion 1.5 before generating.")
         if not files_unchanged(app, root, ready):
             raise SetupError("Model files changed since they were verified. Install / verify again.")
+        check_space(root, space_needed(kind, settings))  # Before the record, input copies, or log.
         job_id = uuid.uuid4().hex
         manifest = json.loads((app / "profiles/sd15-files.json").read_text())
         source = dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"])

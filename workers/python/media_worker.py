@@ -84,6 +84,8 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
         elif operation == "installation.run":
             result = inference_setup.install(root, payload, cancellation,
                 lambda value: emit(request_id, "progress", value))
+            result = storage.after_setup(root, payload, result, cancellation,
+                lambda value: emit(request_id, "progress", value))
         elif operation == "generate.image":
             result = inference_setup.generate(root, payload, cancellation,
                 lambda value: emit(request_id, "progress", value))

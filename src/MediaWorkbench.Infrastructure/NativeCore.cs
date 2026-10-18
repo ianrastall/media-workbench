@@ -31,6 +31,66 @@ public static unsafe partial class NativeCore
         delegate* unmanaged[Cdecl]<ulong, ulong, nint, int> progress, nint context,
         byte* output, nuint capacity, out nuint required);
 
+    [LibraryImport(Library, EntryPoint = "mw_drive_info")]
+    private static partial int Drive(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
+    [LibraryImport(Library, EntryPoint = "mw_tidy_data_folder")]
+    private static partial int Tidy(byte* input, nuint length,
+        delegate* unmanaged[Cdecl]<nint, int> cancel, nint context,
+        byte* output, nuint capacity, out nuint required);
+    /// <summary>mw_tidy_data_folder: another owner holds the data-folder lock.</summary>
+    public const int DataFolderBusy = 7;
+
+    /// <summary>Free space and drive type for a data folder that may not exist yet; nothing is created.</summary>
+    public static DriveStatus GetDriveStatus(string dataRoot)
+    {
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { dataRoot }, Wire.Json);
+        fixed (byte* pointer = input)
+        {
+            int code = Drive(pointer, (nuint)input.Length, null, 0, out nuint capacity);
+            if (code != 2 || capacity > 65_536) throw new InvalidDataException($"Native drive information failed ({code}).");
+            var output = new byte[(int)capacity];
+            fixed (byte* result = output)
+            {
+                code = Drive(pointer, (nuint)input.Length, result, capacity, out nuint written);
+                if (code == 1) throw new InvalidDataException("Choose an absolute data folder inside a drive.");
+                if (code != 0 || written > capacity) throw new IOException($"The data folder's drive could not be read ({code}).");
+                return JsonSerializer.Deserialize<DriveStatus>(output.AsSpan(0, (int)written), Wire.Json)
+                    ?? throw new InvalidDataException("Native drive information was empty.");
+            }
+        }
+    }
+
+    /// <summary>Rust's bounded automatic clean-up, under the same data-folder lock as setup and generation.</summary>
+    public static TidyReport TidyDataFolder(string dataRoot, StorageLayout layout, bool installationVerified, bool removeDownloadCaches, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { dataRoot, layout.RuntimeProfileId, layout.ModelIds, installationVerified,
+            removeDownloadCaches = installationVerified && removeDownloadCaches }, Wire.Json);
+        var handle = GCHandle.Alloc(cancellationToken);
+        try
+        {
+            fixed (byte* pointer = input)
+            {
+                int code = Tidy(pointer, (nuint)input.Length, null, 0, null, 0, out nuint capacity);
+                if (code != 2 || capacity > 65_536) throw new InvalidDataException($"Native clean-up failed ({code}).");
+                var output = new byte[(int)capacity];
+                fixed (byte* result = output)
+                {
+                    code = Tidy(pointer, (nuint)input.Length, &OnStorageCancel, GCHandle.ToIntPtr(handle), result, capacity, out nuint written);
+                    if (code == 5) throw new OperationCanceledException("Clean-up was cancelled; nothing is left half-removed.", cancellationToken);
+                    if (code == DataFolderBusy) throw new InvalidOperationException("Another operation is using this data folder.");
+                    if (code == 1) throw new InvalidDataException("The data folder is invalid, or a managed path passes through a link or junction.");
+                    if (code != 0 || written > capacity) throw new IOException($"The native clean-up could not finish ({code}). Check folder access.");
+                    return JsonSerializer.Deserialize<TidyReport>(output.AsSpan(0, (int)written), Wire.Json)
+                        ?? throw new InvalidDataException("The native clean-up report was empty.");
+                }
+            }
+        }
+        finally { handle.Free(); }
+    }
+
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int OnStorageCancel(nint context)
     {

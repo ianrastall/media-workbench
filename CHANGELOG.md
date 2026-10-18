@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0-alpha.12 — 2026-10-17
+
+- Media Workbench now cleans up after itself, at startup and after setup, without asking: unfinished-job records beyond the 50 that Library lists (with their private input copies and logs), logs older than 30 days or beyond the newest 300, setup downloads left unfinished for three days, painted-area hand-over files a crash left behind, and update installers once the new version runs. Images, finished job records, anything Library lists for a retry or **Use settings**, and your own files are never removed.
+- Once setup is verified, its download caches (about 4 GB) are removed automatically. Settings → Storage explains this and has **Keep setup's download files for repairs** for anyone who would rather keep them.
+- Generation and upscaling check free space before writing anything and stop with a plain message when the drive is too full. Create, Tools, and Settings warn when less than 5 GiB is free on the data folder's drive.
+- When the data folder is on a hard disk, USB drive, or network drive, Create and Settings say that models load faster from a solid-state drive and that the folder can be moved in Settings.
+- Rust owns the clean-up rules and drive detection (`mw_tidy_data_folder`, `mw_drive_info`, and a new busy status code). Clean-up runs under the same data-folder lock as setup and generation, finishes an interrupted removal on the next start, and never follows links.
+
 ## 0.2.0-alpha.11 — 2026-10-17
 
 - Add a model you already downloaded: once Stable Diffusion 1.5 is ready, open **Add a model you already downloaded** in Create and choose a Stable Diffusion 1.5-family `.safetensors` file or a Diffusers model folder. Media Workbench checks it from its file headers alone, without running any model code, and explains plainly when it cannot be used (SDXL, SD 2, LoRAs, embeddings, inpainting-only models, damaged or incomplete files, and `.ckpt` files, which can run hidden code).

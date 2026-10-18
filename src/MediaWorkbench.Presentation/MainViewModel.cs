@@ -64,6 +64,7 @@ public partial class MainViewModel : ObservableObject
             DataRoot = DataRootDraft = saved.DataRoot;
             SearchQuery = saved.LastSearch;
             CheckForUpdates = saved.CheckForUpdates;
+            KeepDownloadCaches = saved.KeepDownloadCaches;
         }
         catch (Exception ex) { Notice = $"Could not load settings: {ex.Message}"; }
         _loading = false;
@@ -247,6 +248,14 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand<ModelChoice?> RemoveModelCommand { get; }
     public ObservableCollection<StorageItem> StorageItems { get; } = [];
     [ObservableProperty] public partial string StorageText { get; set; } = "Open Settings to measure what the data folder uses.";
+    /// <summary>Keep setup's download caches for repairs instead of removing them once setup passes its test.</summary>
+    [ObservableProperty] public partial bool KeepDownloadCaches { get; set; }
+    /// <summary>Shown in Create and Settings when the data folder's drive is nearly full.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasDriveWarning))] public partial string DriveWarning { get; private set; } = "";
+    public bool HasDriveWarning => DriveWarning.Length > 0;
+    /// <summary>Shown where model loading speed matters when the data folder is on a hard disk, USB, or network drive.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasDriveSpeedNote))] public partial string DriveSpeedNote { get; private set; } = "";
+    public bool HasDriveSpeedNote => DriveSpeedNote.Length > 0;
 
     public bool IsHome => SelectedPage == "home";
     public bool CanEdit => !IsBusy;
@@ -398,10 +407,10 @@ public partial class MainViewModel : ObservableObject
         ModelReady = false;
         try
         {
-            var state = await _service.InstallAsync(DataRoot, ObserveProgress(), token);
+            var state = await _service.InstallAsync(DataRoot, ObserveProgress(), token, KeepDownloadCaches);
             InstallationText = state.Message;
             ModelReady = state.Status == "ready";
-            Notice = state.Message;
+            Notice = state.Message + (state.CleanedBytes > 0 ? $" Removed {StorageSnapshot.Format(state.CleanedBytes)} of setup downloads that are no longer needed." : "");
             Record(state.Message);
         }
         finally
@@ -443,6 +452,7 @@ public partial class MainViewModel : ObservableObject
         await ShowNewImageAsync(image, token);
         Notice = $"Image saved in {image.Seconds:N1} seconds of inference.";
         Record("Saved " + image.ImagePath);
+        _ = RefreshDriveAsync();
     }, longRunning: true);
     private Task RefreshLibraryAsync() => LoadLibraryPageAsync(0, new(LibrarySearch,
         LibraryKindIndex switch { 1 => "generate", 2 => "upscale", _ => "all" }, Limit: LibraryPageSize));
@@ -490,7 +500,7 @@ public partial class MainViewModel : ObservableObject
     }
     private static string WriteTemporaryMask(MaskCanvas mask)
     {
-        string folder = Path.Combine(Path.GetTempPath(), "MediaWorkbench", "painted");
+        string folder = Housekeeping.PaintedFolder; // A crash leaves the file; the next start sweeps it.
         Directory.CreateDirectory(folder);
         string path = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".png");
         File.WriteAllBytes(path, mask.EncodePng());
@@ -539,6 +549,8 @@ public partial class MainViewModel : ObservableObject
         LibraryText = "Open Library to browse images in the new data folder.";
         OnPropertyChanged(nameof(McpConfiguration));
         StorageItems.Clear(); StorageText = "Select Measure storage to see what the new data folder uses.";
+        DriveWarning = DriveSpeedNote = "";
+        if (!_loading) _ = RefreshDriveAsync();
         ShowModels([], ModelChoice.BuiltInId);
         ClearImportCandidate();
     }
@@ -667,6 +679,7 @@ public partial class MainViewModel : ObservableObject
         await ShowNewImageAsync(image, token);
         Notice = $"Saved a {image.Width} × {image.Height} picture to Library.";
         Record("Upscaled " + Path.GetFileName(UpscaleSourcePath));
+        _ = RefreshDriveAsync();
     }, longRunning: true);
 
     private static int NearestChange(double strength) => Array.IndexOf(GenerationSettings.ChangeLevels,
@@ -701,6 +714,7 @@ public partial class MainViewModel : ObservableObject
         if ((value == "create" || value == "tools") && !IsBusy) RefreshInstallationCommand.Execute(null);
         if (value == "library" && !IsBusy) RefreshLibraryCommand.Execute(null);
         if (value == "settings" && !IsBusy) RefreshStorageCommand.Execute(null);
+        if (value is "create" or "tools" or "settings") _ = RefreshDriveAsync();
     }
 
     private Task SearchAsync() => RunAsync("Searching Hugging Face…", async token =>
@@ -747,7 +761,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             if (!Path.IsPathFullyQualified(DataRootDraft)) throw new InvalidDataException("Choose an absolute data folder.");
-            var value = new AppSettings(1, Path.GetFullPath(DataRootDraft), SearchQuery, CheckForUpdates);
+            var value = new AppSettings(1, Path.GetFullPath(DataRootDraft), SearchQuery, CheckForUpdates, KeepDownloadCaches);
             _settings.Save(value);
             DataRoot = DataRootDraft = value.DataRoot;
             Notice = "Settings saved. Models, generation, and Library now use this data folder.";
@@ -759,8 +773,60 @@ public partial class MainViewModel : ObservableObject
     partial void OnCheckForUpdatesChanged(bool value)
     {
         if (_loading) return;
-        try { _settings.Save(new AppSettings(1, DataRoot, SearchQuery, value)); }
+        try { _settings.Save(new AppSettings(1, DataRoot, SearchQuery, value, KeepDownloadCaches)); }
         catch (Exception ex) { Notice = $"Could not save the update preference: {ex.Message}"; }
+    }
+
+    partial void OnKeepDownloadCachesChanged(bool value)
+    {
+        if (_loading) return;
+        try { _settings.Save(new AppSettings(1, DataRoot, SearchQuery, CheckForUpdates, value)); }
+        catch (Exception ex) { Notice = $"Could not save the download cache preference: {ex.Message}"; }
+    }
+
+    /// <summary>Free space and drive type of the saved data folder, for the warnings in Create and Settings. Never throws.</summary>
+    public async Task RefreshDriveAsync()
+    {
+        string root = DataRoot;
+        try
+        {
+            var drive = await _service.GetDriveAsync(root, CancellationToken.None);
+            if (root != DataRoot) return;
+            DriveWarning = drive.Warning;
+            DriveSpeedNote = drive.SpeedNote;
+        }
+        catch (Exception) { if (root == DataRoot) DriveWarning = DriveSpeedNote = ""; }
+    }
+
+    /// <summary>
+    /// Once per start: removes this app's own leftovers in %TEMP% (painted-area hand-overs from a crash,
+    /// installers of an update that has finished), then tidies the saved data folder under its lock.
+    /// Download caches go only when setup is verified and Settings does not keep them. Quiet unless it frees space.
+    /// </summary>
+    public async Task StartupMaintenanceAsync()
+    {
+        await Task.Run(() =>
+        {
+            Housekeeping.SweepPaintedHandOvers(Housekeeping.PaintedFolder, Housekeeping.PaintedMaxAge, DateTime.UtcNow);
+            Housekeeping.RemoveFinishedInstallers(Housekeeping.UpdateFolder, AppVersion, DateTime.UtcNow);
+        });
+        await RunAsync("Tidying the data folder…", async token =>
+        {
+            try
+            {
+                bool verified = (await _service.GetInstallationAsync(DataRoot, token)).Status == "ready";
+                var report = await _service.TidyAsync(DataRoot, verified, verified && !KeepDownloadCaches, token);
+                if (report.RemovedFiles == 0) return;
+                Record($"Removed {report.RemovedFiles:N0} files no longer needed ({StorageSnapshot.Format(report.RemovedBytes)})");
+                if (report.DownloadCaches && report.RemovedBytes >= 1L << 30)
+                    Notice = $"Removed {StorageSnapshot.Format(report.RemovedBytes)} of setup downloads that are no longer needed. To keep them for repairs, see Settings.";
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Record("Tidying skipped: " + ex.Message); // Another operation owns the folder, or it is unreadable; next start tries again.
+            }
+        }, longRunning: true);
+        await RefreshDriveAsync();
     }
 
     private void ShowUpdate(UpdateInfo? update)

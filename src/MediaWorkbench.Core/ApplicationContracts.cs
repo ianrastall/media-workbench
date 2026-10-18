@@ -1,7 +1,8 @@
 namespace MediaWorkbench.Core;
 
-/// <summary>CheckForUpdates defaults to on for settings saved before it existed.</summary>
-public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true)
+/// <summary>CheckForUpdates defaults to on for settings saved before it existed. Setup's download caches are
+/// removed once it passes its test unless KeepDownloadCaches is set.</summary>
+public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true, bool KeepDownloadCaches = false)
 {
     public static AppSettings Default(string stateRoot) => new(1, Path.Combine(stateRoot, "Data"), "stable-diffusion");
 }
@@ -12,7 +13,8 @@ public sealed record HubModel(string Id, long Downloads, long Likes, string Task
 }
 public sealed record ModelDetails(string Id, string Revision, string Task, string Library,
     string License, string Access, string[] Files);
-public sealed record InstallationState(string Status, string Message);
+/// <summary>CleanedBytes: what setup removed after passing its test because nothing needs it any more.</summary>
+public sealed record InstallationState(string Status, string Message, long CleanedBytes = 0);
 public sealed record OperationProgress(string Stage, long Completed = 0, long Total = 0, string Unit = "");
 /// <summary>Defaults match records written before guidance, size, and sampler were selectable.</summary>
 public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps,
@@ -85,6 +87,29 @@ public sealed record ImageExportRequest(string JobId, string Destination);
 /// <summary>One part of the data folder; clearable parts are reproducible and can be removed from the app.</summary>
 public sealed record StorageLayout(string RuntimeProfileId, string[] ModelIds);
 
+/// <summary>Free space and type of the drive holding the data folder. Kind: ssd, hdd, usb, removable, network, or unknown.</summary>
+public sealed record DriveStatus(long FreeBytes, long TotalBytes, string DriveKind)
+{
+    /// <summary>Below this, Create and Settings warn before a save can fail.</summary>
+    public const long LowSpaceBytes = 5L << 30;
+    public bool IsLow => FreeBytes < LowSpaceBytes;
+    /// <summary>Drives that load the 4 GB model noticeably slower than a solid-state drive.</summary>
+    public bool IsSlow => DriveKind is "hdd" or "usb" or "network";
+    public string KindText => DriveKind switch
+    {
+        "ssd" => "a solid-state drive", "hdd" => "a hard disk", "usb" => "a USB drive",
+        "removable" => "a removable drive", "network" => "a network drive", _ => "a drive of unknown type"
+    };
+    public string Warning => IsLow
+        ? $"Only {StorageSnapshot.Format(FreeBytes)} is free on the drive that holds the data folder. New pictures and upscales need room to save, " +
+          "and Media Workbench stops before writing when there is not enough. Free up space on that drive, or move the data folder in Settings."
+        : "";
+    public string SpeedNote => IsSlow ? $"The data folder is on {KindText}. Models load faster from a solid-state drive; you can move the data folder in Settings." : "";
+}
+
+/// <summary>What one automatic clean-up removed. Skipped files were in use and are tried again next time.</summary>
+public sealed record TidyReport(long RemovedFiles, long RemovedBytes, long Logs, long JobRecords, long PartialDownloads, bool DownloadCaches, long Skipped);
+
 public sealed record StorageItem(string Id, string Label, long Bytes, long Files, bool Clearable, string Note)
 {
     public string SizeText => $"{StorageSnapshot.Format(Bytes)} · {Files:N0} {(Files == 1 ? "file" : "files")}";
@@ -117,7 +142,8 @@ public interface IWorkbenchService
     Task<string> GetHealthAsync(CancellationToken cancellationToken);
     InstallationPlan GetBaselinePlan();
     Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken);
-    Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Sets up and verifies the bundled model; afterwards removes the download caches unless keepDownloadCaches.</summary>
+    Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false);
     Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null);
     /// <summary>Copies a completed image outside the data folder after verifying its recorded checksum.</summary>
@@ -137,4 +163,9 @@ public interface IWorkbenchService
     Task<IReadOnlyList<ModelChoice>> RemoveModelAsync(string dataRoot, string modelId, CancellationToken cancellationToken);
     /// <summary>Removes "caches", "logs", or the whole "installation"; images and job records are never removed.</summary>
     Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Free space and drive type for the data folder; quick, and creates nothing.</summary>
+    Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>Removes old logs, old unfinished-job records beyond the ones Library lists, stale downloads, and,
+    /// when asked after a verified setup, the download caches. Throws when another operation holds the data folder.</summary>
+    Task<TidyReport> TidyAsync(string dataRoot, bool installationVerified, bool removeDownloadCaches, CancellationToken cancellationToken);
 }

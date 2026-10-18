@@ -13,7 +13,8 @@ extern "C" {
 /* ABI 1. All strings are UTF-8 with explicit byte lengths, without a NUL.
    Buffers belong to the caller; no allocator ownership crosses this ABI.
    Status: 0 success; 1 invalid input; 2 output buffer too small; 3 I/O error;
-           4 internal panic contained at the boundary; 5 cancelled; 6 checksum mismatch.
+           4 internal panic contained at the boundary; 5 cancelled; 6 checksum mismatch;
+           7 the data folder is busy (another owner holds its lock).
    Query output size using output=NULL, capacity=0 and a valid required pointer.
    Pointer/length pairs must refer to readable/writable memory as appropriate. */
 MW_API uint32_t mw_abi_version(void);
@@ -35,7 +36,8 @@ MW_API int32_t mw_export_artifact(const uint8_t *input, size_t length,
     uint8_t *output, size_t capacity, size_t *required);
 /* Additive ABI 1 Windows storage inventory. JSON: {dataRoot, runtimeProfileId, modelIds}.
    IDs are single safe path components; modelIds must be distinct. Creates a missing dataRoot.
-   Returns JSON {freeBytes,totalBytes,installationBytes,items:[{id,label,bytes,files,clearable,note}]}.
+   Returns JSON {freeBytes,totalBytes,installationBytes,items:[{id,label,bytes,files,clearable,note}],
+   driveKind} (driveKind as for mw_drive_info).
    Refuses links/reparse points in root/managed area ancestors, skips links inside each tree,
    tolerates files disappearing during traversal, and fails on other I/O errors (no partial totals).
    output=NULL or capacity<8192 returns 2, required=8192 (a fixed upper bound), without
@@ -74,6 +76,31 @@ MW_API int32_t mw_verify_file(const uint8_t *input, size_t length,
    No pointers are retained; callbacks must not throw/unwind. */
 MW_API int32_t mw_import_file(const uint8_t *input, size_t length,
     mw_export_progress progress, void *context,
+    uint8_t *output, size_t capacity, size_t *required);
+/* Additive ABI 1 drive information. JSON: {dataRoot} (absolute, not a drive root; it may not exist).
+   Uses the nearest existing folder and creates nothing. Returns JSON {freeBytes,totalBytes,driveKind}
+   with driveKind "ssd", "hdd", "usb", "removable", "network", or "unknown" (volumes that do not
+   report a seek penalty, such as some RAID or Storage Spaces volumes). Free space includes quotas.
+   output=NULL or capacity<256 returns 2, required=256, without filesystem work. */
+MW_API int32_t mw_drive_info(const uint8_t *input, size_t length,
+    uint8_t *output, size_t capacity, size_t *required);
+/* Additive ABI 1 automatic clean-up. JSON: {dataRoot, runtimeProfileId, modelIds,
+   installationVerified, removeDownloadCaches}. removeDownloadCaches requires installationVerified.
+   A missing dataRoot is not created and returns an empty report. Takes the data-folder lock (byte 0
+   of "<dataRoot>/.operation.lock", the range the worker locks) and returns status 7 without changes
+   while another owner holds it. Under the lock it removes: failed/cancelled/interrupted job records
+   beyond the newest 50 (with their logs, private input copies, and half-written image, never a
+   finished image.png); logs beyond the newest 300 or older than 30 days, except logs of running or
+   kept unfinished jobs; ".partial"/".incomplete" files in bootstrap/ and models/<modelId>/ older
+   than 72 hours, or all of them when installationVerified; and, when removeDownloadCaches, cache/
+   and bootstrap/ (renamed into ".removing/" first, which the next call finishes after a crash).
+   Never follows links, refuses links in managed ancestors, and skips damaged or unknown files.
+   Returns JSON {removedFiles,removedBytes,logs,jobRecords,partialDownloads,downloadCaches,skipped,
+   policy:{logs,logDays,problemJobs,partialHours}}; files that cannot be removed now are "skipped".
+   output=NULL or capacity<1024 returns 2, required=1024, without filesystem work or callbacks.
+   The optional synchronous callback returns nonzero to cancel (status 5); it must not unwind. */
+MW_API int32_t mw_tidy_data_folder(const uint8_t *input, size_t length,
+    mw_should_cancel cancel, void *context,
     uint8_t *output, size_t capacity, size_t *required);
 #ifdef __cplusplus
 }

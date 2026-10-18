@@ -3,9 +3,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, panic::catch_unwind, slice, str};
 mod artifact;
+mod drive;
 mod model_import;
 mod path_policy;
 mod storage;
+mod tidy;
 mod verification;
 
 const OK: i32 = 0;
@@ -401,9 +403,120 @@ pub unsafe extern "C" fn mw_import_file(
     .unwrap_or(INTERNAL)
 }
 
+/// Free space and drive type (SSD, hard disk, network) for a data folder; creates nothing.
+/// # Safety
+/// Input/output follow the header contract. Size queries do no filesystem work.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_drive_info(
+    input: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: caller supplies writable size_t storage.
+        unsafe { *required = drive::OUTPUT_CAPACITY };
+        if output.is_null() || capacity < drive::OUTPUT_CAPACITY {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: caller supplies readable input memory.
+        let input = match unsafe { input_bytes(input, length) } {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        let result = match drive::info(input) {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        // SAFETY: caller supplies capacity writable bytes; result is live through this copy.
+        unsafe { copy_output(&result, output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
+/// Bounded automatic clean-up of application-made files, under the data-folder lock.
+/// # Safety
+/// Input/output follow the header contract. The optional callback/context must remain live;
+/// no callback may unwind across the ABI. Size queries do no filesystem work.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_tidy_data_folder(
+    input: *const u8,
+    length: usize,
+    cancel: storage::Cancel,
+    context: *mut std::ffi::c_void,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: caller supplies writable size_t storage.
+        unsafe { *required = tidy::OUTPUT_CAPACITY };
+        if output.is_null() || capacity < tidy::OUTPUT_CAPACITY {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: caller supplies readable input memory.
+        let input = match unsafe { input_bytes(input, length) } {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        let result = match tidy::tidy(input, cancel, context) {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        // SAFETY: caller supplies capacity writable bytes; result is live through this copy.
+        unsafe { copy_output(&result, output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mutation_size_queries_do_no_filesystem_work() {
+        let root = std::env::temp_dir().join("media-workbench-size-query-must-not-exist");
+        let input = serde_json::to_vec(&serde_json::json!({
+            "dataRoot": root, "runtimeProfileId": "p", "modelIds": ["m"],
+            "installationVerified": true, "removeDownloadCaches": true,
+        }))
+        .unwrap();
+        let mut size = 0;
+        // SAFETY: valid input, a null output with zero capacity, and a writable size.
+        unsafe {
+            assert_eq!(
+                mw_tidy_data_folder(
+                    input.as_ptr(),
+                    input.len(),
+                    None,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    0,
+                    &mut size
+                ),
+                BUFFER_SMALL
+            );
+            assert_eq!(size, tidy::OUTPUT_CAPACITY);
+            assert_eq!(
+                mw_drive_info(
+                    input.as_ptr(),
+                    input.len(),
+                    std::ptr::null_mut(),
+                    0,
+                    &mut size
+                ),
+                BUFFER_SMALL
+            );
+            assert_eq!(size, drive::OUTPUT_CAPACITY);
+        }
+        assert!(!root.exists());
+    }
     #[test]
     fn safe_model_paths() {
         for p in [

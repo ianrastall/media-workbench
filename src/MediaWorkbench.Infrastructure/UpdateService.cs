@@ -81,7 +81,7 @@ public sealed partial class UpdateService(HttpClient http, string currentVersion
         if (!match.Success || match.Groups[2].Value != name) throw new InvalidDataException("The update's checksum file is not in the expected format.");
         string expected = match.Groups[1].Value.ToLowerInvariant();
 
-        string folder = Path.Combine(Path.GetTempPath(), "MediaWorkbench-update");
+        string folder = Housekeeping.UpdateFolder; // Emptied by Housekeeping once the new version starts.
         Directory.CreateDirectory(folder);
         string target = Path.Combine(folder, name), partial = target + ".partial";
         try

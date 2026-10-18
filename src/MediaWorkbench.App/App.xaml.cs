@@ -53,6 +53,12 @@ public partial class App : Application
                 MediaWorkbench.Infrastructure.NativeCore.VerifyPinnedFile(root, "workers/python/media_worker.py",
                     new FileInfo(Path.Combine(root, "workers", "python", "media_worker.py")).Length, hash,
                     new Progress<MediaWorkbench.Core.OperationProgress>(), deadline.Token);
+                // Drive information and clean-up of a folder that does not exist create nothing.
+                string untouched = Path.Combine(Path.GetTempPath(), "MediaWorkbench-tidy-smoke-" + Guid.NewGuid().ToString("N"));
+                var drive = await service.GetDriveAsync(untouched, deadline.Token);
+                var tidy = await service.TidyAsync(untouched, true, true, deadline.Token);
+                if (drive.FreeBytes <= 0 || tidy.RemovedFiles != 0 || Directory.Exists(untouched))
+                    throw new InvalidDataException("The bundled native drive and clean-up check failed.");
                 string report = arguments[checkIndex + 1];
                 Directory.CreateDirectory(Path.GetDirectoryName(report)!);
                 string libraryCheck = Path.Combine(Path.GetTempPath(), "MediaWorkbench-library-smoke-" + Guid.NewGuid().ToString("N"));
@@ -112,7 +118,10 @@ public partial class App : Application
         {
             string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench", "Logs");
             Directory.CreateDirectory(folder);
-            File.AppendAllText(Path.Combine(folder, "startup.log"), $"{DateTimeOffset.Now:O}\n{exception}\n\n");
+            string log = Path.Combine(folder, "startup.log");
+            // Bounded: past 1 MiB the log becomes startup.old.log, replacing the previous one.
+            if (File.Exists(log) && new FileInfo(log).Length > 1 << 20) File.Move(log, Path.Combine(folder, "startup.old.log"), overwrite: true);
+            File.AppendAllText(log, $"{DateTimeOffset.Now:O}\n{exception}\n\n");
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
