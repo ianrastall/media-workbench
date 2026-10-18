@@ -1,5 +1,15 @@
 # Initial alpha validation
 
+## Repeat drive-containment trace (installed 0.3.0-alpha.11, 18 October 2026)
+
+This used the same machine, layout and command as the alpha.9 trace below: the installed 0.3.0-alpha.11 release, a new data folder on D:, one UAC prompt from the user, and the filter passing calibration first time. All 12 phases passed (about 42 minutes in all: setup 710 s, SDXL setup 656 s, video setup 259 s). The data folder ended at 14.8 GiB, and the largest `temp/` was 72 MiB (the update installer).
+
+- **The app changed nothing outside the data folder.** The only other entry is `%ProgramData%\NVIDIA Corporation\Drs\nvdrssel.bin`, which the NVIDIA driver opens for writing (0 bytes) whenever CUDA starts. There were no `<app>` writes, so the alpha.10 `-B` fix holds, and no NTFS activity from the app on C:. Windows bookkeeping on D: was 45 MiB of NTFS records, plus paging writes of other programs' folder pages.
+- **Cancel** now leaves the job recorded as *cancelled* (alpha.11), with nothing recovered as interrupted. **Killing the host** mid-picture still leaves no owned process behind and lists that job as *interrupted*.
+- Free space on C: stayed between 22.4 and 22.7 GB throughout.
+- The alpha.11 installer removed the existing `<app>\workers\python\__pycache__` on upgrade, and the installed self-test did not recreate it.
+- Traced timings again varied widely (first SD 1.5 picture 30 s against 201 s last time; painted change 184 s against 84 s) and are not performance evidence.
+
 ## Drive-containment write trace (installed 0.3.0-alpha.9, 18 October 2026)
 
 Windows 11, GTX 1660 Ti (6 GB, driver 610.60), 64 GB memory. C: is the 256 GB system SSD (about 23 GB free); D: is an internal hard disk. The app was installed in its default per-user folder on C:, and the data folder was new, at `artifacts/containment-trace/<time>/data` on D:. Command: `./scripts/containment/trace.ps1`, with the user accepting one UAC prompt. Process Monitor 4.12 used the generated filter, which passed calibration first time, with one capture per phase and each phase run through a fresh `MediaWorkbench.Cli.exe mcp`.

@@ -81,7 +81,9 @@ The user decided the scope of 0.4.0-alpha.1's acceptance:
 
 **Full traced run, 18 October 2026 (installed 0.3.0-alpha.9):** all 12 phases passed. The only app writes outside the data folder were Python bytecode caches in the app folder on C:, now prevented with `-B` and removed by the installer on upgrade and uninstall, plus the NVIDIA driver's 0-byte open of its profile file. Details are in [validation](validation.md#drive-containment-write-trace-installed-030-alpha9-18-october-2026). The summarizer now lists NTFS records and paging writes separately as Windows bookkeeping.
 
-Still to do for the milestone, in order: repeat the trace on the installed 0.3.0-alpha.11 (which has the `-B` fix and the cancel fix) to confirm `app/workers` is gone and cancel records *cancelled*; low-space and disconnected-drive checks on a small attached virtual disk (a second UAC prompt); the interactive session with the user (GUI painted change, Cancel, crash recovery, alpha.8 → alpha.9 Update now and relaunch, never-use drive); then validation notes and the release.
+**Repeat traced run on the installed 0.3.0-alpha.11 (18 October 2026):** clean. Apart from the NVIDIA driver's 0-byte profile open, the app changed nothing outside the data folder, and cancel records *cancelled*. See [validation](validation.md#repeat-drive-containment-trace-installed-030-alpha11-18-october-2026).
+
+Still to do for the milestone, in order: low-space and disconnected-drive checks on a small attached virtual disk (a second UAC prompt); the interactive session with the user (GUI painted change, Cancel, crash recovery, an older alpha → 0.3.0-alpha.11 Update now and relaunch, never-use drive); then validation notes and the release.
 
 ## Resume here
 
