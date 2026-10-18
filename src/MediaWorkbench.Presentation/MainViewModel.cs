@@ -91,6 +91,14 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string InstallationText { get; set; } = "Check model status, or install / verify to prepare image generation.";
     [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand), nameof(ImportModelCommand)), NotifyPropertyChangedFor(nameof(NeedsSetup))] public partial bool ModelReady { get; set; }
     public bool NeedsSetup => !ModelReady;
+    /// <summary>"This computer" for Create's setup card: hardware and the settings chosen from it.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSystemProfile))] public partial string SystemProfileText { get; set; } = "";
+    public bool HasSystemProfile => SystemProfileText.Length > 0;
+    [ObservableProperty] public partial string SystemProfileDetails { get; set; } = "Run diagnostics to read this computer's graphics card, memory, and data folder drive.";
+    /// <summary>Shown beside a ready installation when faster settings could be tested, or the graphics card changed.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasRuntimeNote))] public partial string RuntimeNote { get; set; } = "";
+    public bool HasRuntimeNote => RuntimeNote.Length > 0;
+    private string? _profileRoot;
     private static readonly ModelChoice BuiltInChoice = new(ModelChoice.BuiltInId, "Stable Diffusion 1.5", "ready", "", "bundled", BuiltIn: true);
     /// <summary>Models Create can use now: the bundled model, then added models that passed their test.</summary>
     public ObservableCollection<ModelChoice> ModelChoices { get; } = [];
@@ -311,6 +319,26 @@ public partial class MainViewModel : ObservableObject
         InstallationText = state.Message;
         ModelReady = state.Status == "ready";
         await UpdateModels(token);
+        await UpdateSystemProfile(token);
+    }
+
+    /// <summary>Reads the hardware once per data folder in a session; setup and Diagnostics read it again.</summary>
+    private async Task UpdateSystemProfile(CancellationToken token, bool refresh = false)
+    {
+        if (!refresh && _profileRoot == DataRoot) return;
+        try
+        {
+            var profile = await _service.GetSystemProfileAsync(DataRoot, token);
+            SystemProfileText = profile.Summary;
+            SystemProfileDetails = profile.Details;
+            RuntimeNote = profile.Note;
+            _profileRoot = DataRoot;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SystemProfileText = SystemProfileDetails = "This computer's hardware could not be read: " + ex.Message;
+            RuntimeNote = "";
+        }
     }
 
     /// <summary>Reloads added models, keeping the chosen model when it is still ready.</summary>
@@ -412,6 +440,7 @@ public partial class MainViewModel : ObservableObject
             ModelReady = state.Status == "ready";
             Notice = state.Message + (state.CleanedBytes > 0 ? $" Removed {StorageSnapshot.Format(state.CleanedBytes)} of setup downloads that are no longer needed." : "");
             Record(state.Message);
+            await UpdateSystemProfile(token, refresh: true);  // The tested settings are now the ones in use.
         }
         finally
         {
@@ -742,6 +771,7 @@ public partial class MainViewModel : ObservableObject
     {
         DiagnosticsText = await _service.GetHealthAsync(token);
         WorkerStatus = "Python worker connected";
+        await UpdateSystemProfile(token, refresh: true);
         Record("Native core and worker responded");
     });
 

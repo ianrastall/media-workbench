@@ -209,7 +209,8 @@ class ImportTests(unittest.TestCase):
         record = json.loads((copy.parent / "model.json").read_text())
         self.assertEqual(record["files"], [{"path": "model.safetensors", "size": source.stat().st_size, "sha256": before}])
         self.assertEqual((digest(copy), digest(source)), (before, before))  # The original is untouched.
-        self.assertEqual(self.tests, [("verify-model", {"model": added["id"], "modelFormat": "single-file", "ownVae": True})])
+        self.assertEqual(self.tests, [("verify-model", {"model": added["id"], "modelFormat": "single-file", "ownVae": True, "runtime": "fp32-offload"})])
+        self.assertEqual(record["runtime"], "fp32-offload")
         listed = self.listed()
         self.assertTrue(listed[models.BUILT_IN]["builtIn"])
         self.assertEqual(listed[added["id"]]["status"], "ready")

@@ -10,6 +10,12 @@ namespace MediaWorkbench.Infrastructure;
 public static unsafe partial class NativeCore
 {
     private const string Library = "media_workbench_core";
+    static NativeCore()
+    {
+        // Never resolve the domain core from the working directory or an inherited PATH.
+        NativeLibrary.SetDllImportResolver(typeof(NativeCore).Assembly, (name, _, _) => name == Library
+            ? NativeLibrary.Load(Path.Combine(AppContext.BaseDirectory, Library + ".dll")) : nint.Zero);
+    }
     [LibraryImport(Library, EntryPoint = "mw_abi_version")]
     private static partial uint AbiVersion();
     [LibraryImport(Library, EntryPoint = "mw_validate_relative_path")]

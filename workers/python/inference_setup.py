@@ -18,6 +18,8 @@ import urllib.request
 import uuid
 import zipfile
 
+import hardware
+
 PROFILE = "sd15-cu126-v1"
 RECIPE = "sd15-baseline"
 UPSCALER = "realesrgan-x4plus"
@@ -32,7 +34,9 @@ LIBRARY_PROBLEMS = 50
 PROBLEM_STATUSES = {"failed", "cancelled", "interrupted"}
 # Bump when this module or inference_worker.py changes what a verified installation means
 # (pipeline loading, precision, checks). Source edits alone no longer revoke readiness.
-ADAPTER_VERSION = 2  # 2: verification also tests the Real-ESRGAN upscaler.
+# 2: verification also tests the Real-ESRGAN upscaler. 3: the runtime choice (precision and offloading)
+# follows the hardware profile and is part of the readiness stamp.
+ADAPTER_VERSION = 3
 STAMPED_FILES = ["profiles/sd15-cu126.json", "profiles/sd15-cu126.lock", "profiles/sd15-files.json",
                  "profiles/upscaler-files.json", "recipes/sd15-baseline.json"]
 UPSCALE_MAX_SIDE = 2048
@@ -41,8 +45,6 @@ EDIT_MAX_SIDE = 4096
 FRESH_SETUP_BYTES = 20 * 1024**3  # Runtime, wheel cache, model, and download temporaries.
 SETUP_HEADROOM_BYTES = 2 * 1024**3
 WRITE_HEADROOM_BYTES = 256 * 1024**2  # Logs, the job record, and room left for Windows after saving.
-# Drivers report slightly less than nominal capacity (a 6 GB GTX 1660 Ti reports 6143.7 MiB to CUDA).
-VRAM_REPORTING_MARGIN_MIB = 128
 
 
 class SetupError(Exception):
@@ -122,9 +124,10 @@ def exclusive(root):
                 fcntl.flock(stream, fcntl.LOCK_UN)
 
 
-def profile_stamp(app):
-    """Identity of a verified installation: adapter version plus the pinned profile, lock, manifest, and recipe."""
-    lines = [f"adapter={ADAPTER_VERSION}"]
+def profile_stamp(app, runtime):
+    """Identity of a verified installation: adapter version, runtime choice, and the pinned profile, lock, manifest, and recipe."""
+    settings = hardware.RUNTIMES[runtime]
+    lines = [f"adapter={ADAPTER_VERSION}", f"runtime={runtime}:{settings['precision']}:offload={settings['offload']}"]
     for name in STAMPED_FILES:
         content = (app / name).read_bytes().replace(b"\r\n", b"\n")  # Checkout line endings are not a recipe change.
         lines.append(f"{name}={hashlib.sha256(content).hexdigest()}")
@@ -169,6 +172,12 @@ def plan_installation(app):
     return result
 
 
+def stamp_valid(app, record):
+    """Whether a ready record's stamp matches this app version and the runtime choice it was verified with."""
+    runtime = record.get("runtime")
+    return runtime in hardware.RUNTIMES and record.get("profileStamp") == profile_stamp(app, runtime)
+
+
 def lock_digest(app):
     return hashlib.sha256((app / "profiles/sd15-cu126.lock").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
@@ -209,55 +218,40 @@ def minimum_vram_mib(app):
 
 def meets_vram(total_mib, minimum_mib):
     """Shared by setup (nvidia-smi) and the ML child (CUDA) so both apply the same limit."""
-    return total_mib + VRAM_REPORTING_MARGIN_MIB >= minimum_mib
+    return hardware.fits(total_mib, minimum_mib)
 
 
-def select_gpu(listing, visible=None):
-    """Pick the nvidia-smi row for the device the ML child sees as cuda:0.
-
-    `listing` is `nvidia-smi --query-gpu=index,uuid,name,memory.total --format=csv,noheader,nounits`
-    output. The child runs with CUDA_DEVICE_ORDER=PCI_BUS_ID, matching nvidia-smi ordering, so its
-    device 0 is the first CUDA_VISIBLE_DEVICES entry, or index 0 when that is unset.
-    Returns (name, total MiB).
-    """
-    rows = []
-    for line in listing.splitlines():
-        if line.strip():
-            parts = [part.strip() for part in line.split(",")]
-            if len(parts) != 4:
-                raise SetupError("nvidia-smi returned an unrecognized GPU listing: " + line.strip()[:200])
-            rows.append(parts)
-    if not rows:
-        raise SetupError("nvidia-smi did not list any NVIDIA GPU. Check that the NVIDIA driver is installed.")
-    wanted = (visible or "").split(",")[0].strip() if visible is not None else "0"
-    if not wanted:
-        raise SetupError("CUDA_VISIBLE_DEVICES hides every GPU; clear it or select an NVIDIA GPU.")
-    match = next((row for row in rows if row[0] == wanted or row[1].startswith(wanted)), None)
-    if match is None:
-        raise SetupError(f"CUDA_VISIBLE_DEVICES selects GPU '{wanted[:80]}', which nvidia-smi did not list.")
-    index, _, name, memory = match
-    try:
-        total = float(memory)
-    except ValueError:
-        raise SetupError(f"The NVIDIA driver did not report memory for GPU {index} ({name}): it returned "
-                         f"'{memory[:40]}'. Update the driver, or select another GPU with CUDA_VISIBLE_DEVICES.") from None
-    return name, total
+def check_hardware(app, root):
+    """The hardware profile and the runtime chosen from it; a plain SetupError when this computer cannot run the recipe."""
+    found = hardware.detect(root, app)
+    choice = hardware.choose(found, minimum_vram_mib(app))
+    if choice["blocked"]:
+        raise SetupError(choice["blocked"])
+    return found, choice
 
 
-def check_gpu(app):
-    minimum = minimum_vram_mib(app)
-    try:
-        gpu = subprocess.run([shutil.which("nvidia-smi"), "--query-gpu=index,uuid,name,memory.total",
-            "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise SetupError("nvidia-smi could not be run; check the NVIDIA driver: " + str(exc)) from None
-    if gpu.returncode != 0:
-        raise SetupError("nvidia-smi failed; check the NVIDIA driver. " + (gpu.stderr or gpu.stdout).strip()[:300])
-    name, total = select_gpu(gpu.stdout, os.environ.get("CUDA_VISIBLE_DEVICES"))
-    if not meets_vram(total, minimum):
-        raise SetupError(f"{name} reports {total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
-    return name
+def system_profile(app, payload):
+    """What the GUI shows as "This computer": hardware, the recommended settings, and the verified ones."""
+    root = Path(payload.get("dataRoot") or "")
+    if not root.is_absolute():
+        raise ValueError("An absolute dataRoot is required")
+    found = hardware.detect(root, app)  # Reads the nearest existing folder; nothing is created.
+    choice = hardware.choose(found, minimum_vram_mib(app))
+    record = read_record(state_path(root)) if state_path(root).is_file() else None
+    record = checked_installation(app, root, record) if record else None
+    verified = record.get("runtime") if record and record.get("status") == "ready" else None
+    note, gpu = "", found.get("gpu")
+    if verified and gpu and not hardware.allows(verified, gpu):
+        note = "The graphics card changed since Stable Diffusion 1.5 was tested. Install / verify again in Create."
+        verified = None
+    elif verified and choice["runtime"] and verified != choice["runtime"] and not any(
+            declined_here(item, gpu, choice["runtime"]) for item in record.get("declinedRuntimes") or [] if isinstance(item, dict)):
+        note = (f"This computer can use {hardware.RUNTIMES[choice['runtime']]['label'].lower()} settings. "
+                "Install / verify again in Create to test them.")
+    def describe(runtime):
+        return dict(id=runtime, **{key: hardware.RUNTIMES[runtime][key] for key in ("label", "description", "precision", "offload")}) if runtime else None
+    return dict(hardware=found, recommended=dict(choice, settings=describe(choice["runtime"])),
+                verified=describe(verified), note=note)
 
 
 def file_stamp(path):
@@ -333,19 +327,25 @@ def recover_if_idle(root, job_paths=None):
         return 0  # A live owner holds the lock; its records are not stale.
 
 
+def checked_installation(app, root, record):
+    """Read-only readiness projection shared by status, hardware diagnostics, and added models."""
+    record = dict(record)
+    if record.get("status") == "ready" and not stamp_valid(app, record):
+        record.update(status="needs_verification", message="The runtime recipe changed. Install / verify again.")
+    if record.get("status") == "ready":
+        required = owned(root, f"runtimes/{PROFILE}/python/python.exe")
+        if not required.is_file() or not files_unchanged(app, root, record):
+            record.update(status="needs_verification", message="Runtime or model files are missing or changed. Install / verify again.")
+    return record
+
+
 def status(app, payload):
     root = data_root(payload)
     recover_if_idle(root)
     state = state_path(root)
     if not state.exists():
         return {"status": "not_installed", "message": "Stable Diffusion 1.5 is not installed."}
-    record = json.loads(state.read_text(encoding="utf-8"))
-    if record.get("status") == "ready" and record.get("profileStamp") != profile_stamp(app):
-        record.update(status="needs_verification", message="The runtime recipe changed. Install / verify again.")
-    if record.get("status") == "ready":
-        required = owned(root, f"runtimes/{PROFILE}/python/python.exe")
-        if not required.is_file() or not files_unchanged(app, root, record):
-            record.update(status="needs_verification", message="Runtime or model files are missing or changed. Install / verify again.")
+    record = checked_installation(app, root, json.loads(state.read_text(encoding="utf-8")))
     record.pop("files", None)  # Internal stamps; callers need status and message.
     return record
 
@@ -450,7 +450,7 @@ def inference(app, root, operation, payload, cancel, progress, log_id=None):
     environment.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
         HF_HUB_DISABLE_IMPLICIT_TOKEN="1", HF_HOME=str(owned(root, "cache/huggingface")),
         PYTHONUTF8="1", PYTHONIOENCODING="utf-8", TOKENIZERS_PARALLELISM="false",
-        CUDA_DEVICE_ORDER="PCI_BUS_ID")  # cuda:0 is then the device check_gpu inspected.
+        CUDA_DEVICE_ORDER="PCI_BUS_ID")  # cuda:0 is then the device check_hardware inspected.
     return run_child([python, "-I", "-u", app / "workers/python/inference_worker.py", "--root", app,
         "--data-root", root, "--operation", operation, "--payload", json.dumps(payload)],
         cancel, progress, environment, protocol=True,
@@ -477,6 +477,8 @@ def install(app, payload, cancel, progress):
     plan_installation(app)  # Before any record: a blocked recipe never starts an attempt.
     with exclusive(root):
         recover_interrupted(root)
+        previous = read_record(state_path(root)) if state_path(root).exists() else None
+        declined = [item for item in (previous or {}).get("declinedRuntimes") or [] if isinstance(item, dict)]
         record = {"schemaVersion": 1, "recipeId": RECIPE, "attemptId": uuid.uuid4().hex,
                   "status": "preparing", "startedUtc": datetime.now(timezone.utc).isoformat(),
                   "recipe": json.loads((app / "recipes/sd15-baseline.json").read_text(encoding="utf-8")),
@@ -486,13 +488,13 @@ def install(app, payload, cancel, progress):
             atomic_json(state_path(root), record)
             progress({"stage": message})
         try:
-            stage("preparing", "Checking storage and NVIDIA GPU")
+            stage("preparing", "Checking storage, memory, and the NVIDIA graphics card")
             needed = required_free_bytes(app, root)
             if shutil.disk_usage(root).free < needed:
                 raise SetupError(f"At least {needed / 1024**3:.1f} GiB of free space is required in the data folder for this setup step.")
             if os.name != "nt" or not shutil.which("nvidia-smi"):
                 raise SetupError("This first inference profile requires Windows x64 and an NVIDIA CUDA GPU.")
-            check_gpu(app)
+            found, choice = check_hardware(app, root)
             profile = json.loads((app / "profiles/sd15-cu126.json").read_text())
             bootstrap = owned(root, "bootstrap")
             runtime = owned(root, f"runtimes/{PROFILE}/python")
@@ -520,10 +522,13 @@ def install(app, payload, cancel, progress):
             stage("verifying", "Verifying all model checksums")
             stamps = verify_files(app, root, cancel, progress)
             stage("verifying", "Testing 512 × 512 inference and upscaling on your GPU")
-            evidence = inference(app, root, "verify", {}, cancel, progress)
-            check_cancel(cancel)
-            record.update(status="ready", message="Stable Diffusion 1.5 is ready on " + evidence["gpu"],
-                          profileStamp=profile_stamp(app), verifiedUtc=datetime.now(timezone.utc).isoformat(),
+            runtime, evidence, declined = verify_runtime(app, root, found["gpu"], choice["runtime"], declined, cancel, progress)
+            settings = hardware.RUNTIMES[runtime]
+            message = f"Stable Diffusion 1.5 is ready on {evidence['gpu']} with {settings['label'].lower()} settings."
+            if runtime != choice["runtime"]:
+                message += " Faster settings did not pass their test on this computer."
+            record.update(status="ready", message=message, runtime=runtime, declinedRuntimes=declined,
+                          profileStamp=profile_stamp(app, runtime), verifiedUtc=datetime.now(timezone.utc).isoformat(),
                           evidence=evidence, files=stamps)
             atomic_json(state_path(root), record)
             return {k: v for k, v in record.items() if k != "files"}
@@ -531,6 +536,44 @@ def install(app, payload, cancel, progress):
             record.update(status="cancelled" if isinstance(exc, Cancelled) else "failed", message=str(exc))
             atomic_json(state_path(root), record)
             raise
+
+
+def declined_here(item, gpu, runtime):
+    """A faster choice that already failed on this card and driver with this app's adapter is not retried."""
+    return (item.get("runtime") == runtime and item.get("gpu") == gpu.get("name")
+            and item.get("driver") == gpu.get("driver") and item.get("adapter") == ADAPTER_VERSION)
+
+
+def runtime_candidates(chosen, gpu, declined):
+    """The chosen runtime, unless it failed here before, then the conservative fallback."""
+    first = [] if any(declined_here(item, gpu, chosen) for item in declined) else [chosen]
+    return first + ([hardware.CONSERVATIVE] if chosen != hardware.CONSERVATIVE else [])
+
+
+def verify_runtime(app, root, gpu, chosen, declined, cancel, progress, operation="verify", payload=None):
+    """Run the real GPU test with the chosen runtime, falling back to the conservative one if it fails.
+
+    Returns (runtime that passed, its evidence, updated declined list). Cancellation and a failing
+    conservative test are raised: nothing is ready unless a test passed.
+    """
+    candidates = runtime_candidates(chosen, gpu, declined)
+    for runtime in candidates:
+        label = hardware.RUNTIMES[runtime]["label"]
+        progress({"stage": f"Testing on your GPU with {label.lower()} settings"})
+        try:
+            evidence = inference(app, root, operation, dict(payload or {}, runtime=runtime), cancel, progress)
+            check_cancel(cancel)
+            return runtime, dict(evidence, runtime=runtime), declined
+        except Cancelled:
+            raise
+        except SetupError as exc:
+            if runtime == candidates[-1]:
+                raise
+            declined = [item for item in declined if not declined_here(item, gpu, runtime)] + [dict(
+                runtime=runtime, gpu=gpu.get("name"), driver=gpu.get("driver"), adapter=ADAPTER_VERSION,
+                message=str(exc)[:500], failedUtc=datetime.now(timezone.utc).isoformat())]
+            progress({"stage": f"{label} settings did not pass; testing memory-saving settings"})
+    raise SetupError("No runtime choice was tested.")
 
 
 def validate_generation(payload):
@@ -688,7 +731,7 @@ def run_job(app, root, kind, settings, cancel, progress):
     with exclusive(root):
         recover_interrupted(root)
         ready = json.loads(state_path(root).read_text()) if state_path(root).exists() else {}
-        if ready.get("status") != "ready" or ready.get("profileStamp") != profile_stamp(app):
+        if ready.get("status") != "ready" or not stamp_valid(app, ready):
             raise SetupError("Install / verify Stable Diffusion 1.5 before generating.")
         if not files_unchanged(app, root, ready):
             raise SetupError("Model files changed since they were verified. Install / verify again.")
@@ -696,18 +739,20 @@ def run_job(app, root, kind, settings, cancel, progress):
         job_id = uuid.uuid4().hex
         manifest = json.loads((app / "profiles/sd15-files.json").read_text())
         source = dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"])
-        model, model_name, extra = RECIPE, "Stable Diffusion 1.5", {}
+        model, model_name, extra = RECIPE, "Stable Diffusion 1.5", dict(runtime=ready["runtime"])
         if settings.get("model", RECIPE) != RECIPE:
             import model_library
             added = model_library.ready_model(app, root, settings["model"])
             model, model_name, extra = added["id"], added["name"], model_library.child_payload(added)
             source = dict(provider="local", name=added.get("sourceName", ""), sha256=added["files"][0]["sha256"])
+        if kind == "upscale":
+            extra = {}  # The upscaler always runs in full precision; its tile size follows free graphics memory.
         record = dict(schemaVersion=1, id=job_id, kind=kind, status="running", settings=settings,
                       startedUtc=datetime.now(timezone.utc).isoformat(), recipeId=RECIPE,
                       profileStamp=ready["profileStamp"], runtimeProfileId=PROFILE, source=source,
                       log=f"{kind}-{job_id}.log")
         if kind == "generate":
-            record.update(model=model, modelName=model_name)
+            record.update(model=model, modelName=model_name, runtime=extra["runtime"])
         job = owned(root, f"jobs/{job_id}.json")
         child = dict(settings, jobId=job_id, **extra)
         for key, stem in (("sourceImage", "source"), ("maskImage", "mask")):

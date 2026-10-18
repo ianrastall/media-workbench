@@ -81,6 +81,17 @@ await vm.InstallCommand.ExecuteAsync(null);
 await vm.GenerateCommand.ExecuteAsync(null);
 await vm.RefreshLibraryCommand.ExecuteAsync(null);
 Check(workbench.DataRoots.Count == 4 && workbench.DataRoots.All(r => r == savedRoot), "Status, install, generate, and library use the saved folder, not an unsaved draft");
+Check(workbench.ProfileRoots.Count == 2 && workbench.ProfileRoots.All(r => r == savedRoot), "The hardware profile is read once per folder, and again after setup tests new settings");
+Check(vm.HasSystemProfile && vm.SystemProfileText.StartsWith("This computer: NVIDIA GeForce GTX 1660 Ti with 6 GB of graphics memory · 64 GB of memory (45 GB free now) · Data folder on a hard disk with 276 GB free.")
+    && vm.SystemProfileText.Contains("memory-saving settings (full precision") && !vm.HasRuntimeNote,
+    "Create's setup card describes this computer and its tested settings in plain words");
+Check(vm.SystemProfileDetails.Contains("Driver 610.60 · compute capability 7.5") && vm.SystemProfileDetails.Contains("• NVIDIA GeForce GTX 1660 Ti can make blank pictures at half precision")
+    && vm.SystemProfileDetails.Contains("Models load faster from a solid-state drive"), "Diagnostics explains why these settings were chosen and what a hard disk means");
+workbench.ProfileFailure = new InvalidOperationException("nvidia-smi timed out");
+await vm.DiagnosticsCommand.ExecuteAsync(null);
+Check(vm.SystemProfileDetails == "This computer's hardware could not be read: nvidia-smi timed out" && vm.DiagnosticsText.Length == 0 && workbench.ProfileRoots.Count == 3,
+    "Diagnostics reads the hardware again, and a failed read is reported without failing diagnostics");
+workbench.ProfileFailure = null;
 foreach (var rejected in new[] { "relative-folder", Path.GetPathRoot(output)! })
 {
     vm.DataRootDraft = rejected;
@@ -395,4 +406,31 @@ using var mcpDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 await StorageChecks.RunAsync(Check, root, output, mcpDeadline.Token);
 await FileVerificationChecks.RunAsync(Check, output, mcpDeadline.Token);
 await McpChecks.RunAsync(Check, root, output, mcpDeadline.Token);
+// The hardware profile as the Python worker sends it.
+const string profileJson = """
+{"hardware": {"gpu": {"name": "NVIDIA GeForce RTX 3060", "vramMiB": 12288, "freeVramMiB": 11500, "computeCapability": "8.6", "driver": "610.60"},
+  "gpuProblem": null, "ramMiB": 7987, "availableRamMiB": 3100, "drive": {"path": "C:\\Data", "freeBytes": 53687091200, "totalBytes": 512110190592, "kind": "ssd"}},
+ "recommended": {"runtime": "fp16-gpu", "blocked": null, "reasons": ["12 GB of graphics memory holds the whole model, so nothing waits in system memory."], "warnings": [],
+  "settings": {"id": "fp16-gpu", "label": "Fast", "description": "half precision, the whole model stays on the graphics card", "precision": "float16", "offload": false}},
+ "verified": {"id": "fp32-offload", "label": "Memory-saving", "description": "full precision, parts of the model wait in system memory until needed", "precision": "float32", "offload": true},
+ "note": "This computer can use fast settings. Install / verify again in Create to test them."}
+""";
+var wired = System.Text.Json.JsonSerializer.Deserialize<SystemProfile>(profileJson, Wire.Json)!;
+Check(wired.CanMakePictures && wired.Hardware.Gpu!.ComputeCapability == "8.6" && wired.Recommended.Settings is { Precision: "float16", Offload: false } && wired.Verified!.Id == "fp32-offload",
+    "The worker's hardware profile reads into typed records");
+Check(wired.Summary == "This computer: NVIDIA GeForce RTX 3060 with 12 GB of graphics memory · 7.8 GB of memory (3 GB free now) · Data folder on a solid-state drive with 50 GB free.\n"
+    + "Pictures are made with memory-saving settings (full precision, parts of the model wait in system memory until needed), tested on this computer.\n"
+    + "This computer can use fast settings. Install / verify again in Create to test them.", "The setup card shows tested settings and says when faster ones can be tested");
+var blockedProfile = wired with { Hardware = wired.Hardware with { Gpu = wired.Hardware.Gpu! with { Name = "NVIDIA GeForce GTX 1650", VramMiB = 4096 } },
+    Recommended = new(null, "NVIDIA GeForce GTX 1650 has 4 GB of graphics memory; Stable Diffusion 1.5 needs a graphics card with at least 6 GB.", [], [], null), Verified = null, Note = "" };
+Check(!blockedProfile.CanMakePictures && blockedProfile.Summary.EndsWith("\nNVIDIA GeForce GTX 1650 has 4 GB of graphics memory; Stable Diffusion 1.5 needs a graphics card with at least 6 GB.")
+    && blockedProfile.Details.Contains("4 GB of graphics memory"), "A computer that cannot make pictures is told why in plain words");
+var unread = wired with { Verified = null, Note = "", Recommended = wired.Recommended with { Warnings = ["This computer has 7.8 GB of memory."] },
+    Hardware = wired.Hardware with { Gpu = null, GpuProblem = null, RamMiB = null, Drive = wired.Hardware.Drive! with { Kind = "network", FreeBytes = null } } };
+Check(unread.Summary.Contains("No NVIDIA graphics card was found. · System memory could not be read · Data folder on a network drive.")
+    && unread.Summary.Contains("Setup will test fast settings (half precision") && unread.Summary.Contains("This computer has 7.8 GB of memory.")
+    && unread.DriveAdvice.Length > 0, "Missing readings, warnings, and a network drive are described plainly");
+Check(SystemProfile.Size(6143.7) == "6 GB" && SystemProfile.Size(5939) == "5.8 GB" && SystemProfile.Size(1907729) == "1,863 GB" && SystemProfile.DriveKind("odd") == "a drive of unknown type",
+    "Sizes and drive kinds use plain units and words");
+
 Console.WriteLine($"All {checks} C# checks including MCP passed. Test artifacts: {output}");

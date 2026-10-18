@@ -79,6 +79,8 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
             result = hub_catalog.search(payload)
         elif operation == "catalog.details":
             result = hub_catalog.details(payload)
+        elif operation == "system.profile":
+            result = inference_setup.system_profile(root, payload)
         elif operation == "installation.status":
             result = inference_setup.status(root, payload)
         elif operation == "installation.run":
@@ -170,7 +172,7 @@ def main() -> int:
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
                          "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "demo.run",
-                                        "installation.status", "installation.run", "generate.image", "upscale.image", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear"],
+                                        "system.profile", "installation.status", "installation.run", "generate.image", "upscale.image", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear"],
                          "generationAvailable": False, "installationAvailable": True})
     while True:
         raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)

@@ -39,7 +39,7 @@ def fake_app(folder):
     return app
 
 
-def ready_install(app, root):
+def ready_install(app, root, choice=setup.hardware.CONSERVATIVE):
     for path, body in MODEL_FILES:
         target = root / "models" / setup.RECIPE / path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +52,8 @@ def ready_install(app, root):
     runtime = root / "runtimes" / setup.PROFILE / "python" / "python.exe"
     runtime.parent.mkdir(parents=True, exist_ok=True)
     runtime.write_bytes(b"")
-    setup.atomic_json(setup.state_path(root), {"status": "ready", "profileStamp": setup.profile_stamp(app), "files": stamps})
+    setup.atomic_json(setup.state_path(root), {"status": "ready", "runtime": choice,
+                                               "profileStamp": setup.profile_stamp(app, choice), "files": stamps})
 
 
 def fake_generation(app, data, operation, payload, cancel, progress, log_id=None):
@@ -131,13 +132,13 @@ class SetupTests(unittest.TestCase):
     def test_missing_runtime_revokes_ready_state(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            setup.atomic_json(setup.state_path(root), {"status": "ready", "profileStamp": setup.profile_stamp(ROOT)})
+            setup.atomic_json(setup.state_path(root), {"status": "ready", "runtime": "fp32-offload", "profileStamp": setup.profile_stamp(ROOT, "fp32-offload")})
             self.assertEqual(setup.status(ROOT, {"dataRoot": folder})["status"], "needs_verification")
 
     def test_cancelled_generation_is_durable_and_absent_from_library(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            setup.atomic_json(setup.state_path(root), {"status": "ready", "profileStamp": setup.profile_stamp(ROOT)})
+            setup.atomic_json(setup.state_path(root), {"status": "ready", "runtime": "fp32-offload", "profileStamp": setup.profile_stamp(ROOT, "fp32-offload")})
             with patch.object(setup, "files_unchanged", return_value=True), patch.object(setup, "inference", side_effect=setup.Cancelled("Cancelled")):
                 with self.assertRaises(setup.Cancelled):
                     setup.generate(ROOT, {"dataRoot": folder, "prompt": "house"}, threading.Event(), lambda _: None)
@@ -248,23 +249,23 @@ class ReadinessTests(unittest.TestCase):
     def test_profile_stamp_ignores_adapter_source_and_line_endings(self):
         with tempfile.TemporaryDirectory() as folder:
             app = fake_app(folder)
-            stamp = setup.profile_stamp(app)
+            stamp = setup.profile_stamp(app, "fp32-offload")
             worker = app / "workers/python/inference_worker.py"
             worker.parent.mkdir(parents=True)
             worker.write_text("# edited adapter source\n")
             lock = app / "profiles/sd15-cu126.lock"
             lock.write_bytes(lock.read_bytes().replace(b"\n", b"\r\n"))
-            self.assertEqual(setup.profile_stamp(app), stamp)
+            self.assertEqual(setup.profile_stamp(app, "fp32-offload"), stamp)
 
     def test_profile_stamp_tracks_adapter_version_and_pinned_files(self):
         with tempfile.TemporaryDirectory() as folder:
             app = fake_app(folder)
-            stamp = setup.profile_stamp(app)
+            stamp = setup.profile_stamp(app, "fp32-offload")
             with patch.object(setup, "ADAPTER_VERSION", setup.ADAPTER_VERSION + 1):
-                self.assertNotEqual(setup.profile_stamp(app), stamp)
+                self.assertNotEqual(setup.profile_stamp(app, "fp32-offload"), stamp)
             with (app / "profiles/sd15-cu126.lock").open("a") as lock:
                 lock.write("# changed pin\n")
-            self.assertNotEqual(setup.profile_stamp(app), stamp)
+            self.assertNotEqual(setup.profile_stamp(app, "fp32-offload"), stamp)
 
     def test_generation_checks_recorded_stamps_without_rehashing(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -473,7 +474,7 @@ class InstallGateTests(unittest.TestCase):
 
 
 class GpuTests(unittest.TestCase):
-    LISTING = "0, GPU-aaaa, NVIDIA Small, 4096\n1, GPU-bbbb, NVIDIA Large, 6144\n"
+    LISTING = "0, GPU-aaaa, NVIDIA Small, 4096, 4000, 7.5, 610.60\n1, GPU-bbbb, NVIDIA Large, 6144, 6000, 8.6, 610.60\n"
 
     def test_vram_minimum_comes_from_recipe(self):
         recipe = json.loads((ROOT / "recipes/sd15-baseline.json").read_text())
@@ -484,25 +485,27 @@ class GpuTests(unittest.TestCase):
         self.assertFalse(setup.meets_vram(5632, minimum))
 
     def test_preflight_inspects_the_device_the_child_uses(self):
-        self.assertEqual(setup.select_gpu(self.LISTING), ("NVIDIA Small", 4096))
-        self.assertEqual(setup.select_gpu(self.LISTING, "1"), ("NVIDIA Large", 6144))
-        self.assertEqual(setup.select_gpu(self.LISTING, "GPU-bbbb,0"), ("NVIDIA Large", 6144))
+        rows = setup.hardware.parse_gpus(self.LISTING, setup.hardware.GPU_FIELDS)
+        self.assertEqual(setup.hardware.pick_gpu(rows)["name"], "NVIDIA Small")
+        self.assertEqual(setup.hardware.pick_gpu(rows, "1")["name"], "NVIDIA Large")
+        self.assertEqual(setup.hardware.pick_gpu(rows, "GPU-bbbb,0")["name"], "NVIDIA Large")
         for hidden in ["", "7"]:
-            with self.assertRaises(setup.SetupError):
-                setup.select_gpu(self.LISTING, hidden)
+            with self.assertRaises(setup.hardware.HardwareError):
+                setup.hardware.pick_gpu(rows, hidden)
 
     def test_unreported_memory_is_a_clear_setup_error(self):
-        with self.assertRaisesRegex(setup.SetupError, r"did not report memory.*\[N/A\]"):
-            setup.select_gpu("0, GPU-aaaa, NVIDIA Odd, [N/A]\n")
-        with self.assertRaises(setup.SetupError):
-            setup.select_gpu("")
+        rows = setup.hardware.parse_gpus("0, GPU-aaaa, NVIDIA Odd, [N/A], [N/A], 7.5, 610.60\n", setup.hardware.GPU_FIELDS)
+        with self.assertRaisesRegex(setup.hardware.HardwareError, r"did not report memory.*\[N/A\]"):
+            setup.hardware.gpu_from_row(rows[0])
+        with self.assertRaises(setup.hardware.HardwareError):
+            setup.hardware.parse_gpus("", setup.hardware.GPU_FIELDS)
 
     @unittest.skipUnless(os.name == "nt", "install preflight runs only on Windows")
     def test_install_reports_unparseable_gpu_memory_as_setup_failure(self):
-        listing = subprocess.CompletedProcess([], 0, stdout="0, GPU-aaaa, NVIDIA Odd, [N/A]\n", stderr="")
+        listing = subprocess.CompletedProcess([], 0, stdout="0, GPU-aaaa, NVIDIA Odd, [N/A], [N/A], 7.5, 610.60\n", stderr="")
         environment = {k: v for k, v in os.environ.items() if k != "CUDA_VISIBLE_DEVICES"}
         with tempfile.TemporaryDirectory() as folder, \
-             patch.object(setup.shutil, "disk_usage", return_value=type("Usage", (), {"free": 100 * 1024**3})()), \
+             patch.object(setup.shutil, "disk_usage", return_value=type("Usage", (), {"free": 100 * 1024**3, "total": 200 * 1024**3})()), \
              patch.object(setup.shutil, "which", return_value="nvidia-smi"), \
              patch.object(setup.subprocess, "run", return_value=listing), \
              patch.dict(os.environ, environment, clear=True):

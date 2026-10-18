@@ -207,3 +207,26 @@ Validated on the same Windows 11 host, 17 October 2026. Checks and Release build
 | Cache removal on a copy of that folder's download caches on the system drive (`cache/` and `bootstrap/`, 19,621 files, 4.13 GiB) | Removed in 4.35 s with nothing skipped |
 
 The automated checks use disposable temporary folders and cover each rule from Rust, Python, and C#: what is removed and what must be kept (listed unfinished jobs with their Retry pictures and logs, finished images and records, damaged records, an unfinished job's log, fresh downloads, added models, the user's own files), crash leftovers (`.removing/`, a half-written image, stale partial downloads, painted hand-overs), read-only cache files, links that must not be followed, a data folder held by another process (Python and C# lock holders), cancellation, and generation and upscaling refusing before any write when space is short. The real data folder's caches were not removed, so the dry run shows the rules leave a working folder alone, and the copy shows the removal speed; neither is a measurement of a full setup followed by clean-up on a clean machine. Free-space refusal was exercised with a simulated small drive, not by filling a real one.
+
+## Hardware-aware inference and stack alignment (0.2.0-alpha.13)
+
+Validated on Windows 11, 18 October 2026, using .NET SDK 10.0.113 and Rust 1.97.0. The machine has an NVIDIA GeForce GTX 1660 Ti with 6 GB graphics memory, driver 610.60, and about 64 GB system memory. The existing data folder is on a hard disk. No clean-machine or additional GPU claim follows from these checks.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1 -Artifacts <temporary-check-directory>` with `ContinuousIntegrationBuild=true` | Passed: 23 Rust tests, formatting/Clippy, 157 Python tests and 179 C# checks, without build warnings |
+| `scripts/build.ps1 -Configuration Release -Publish` with `ContinuousIntegrationBuild=true` | Passed, zero warnings/errors; solution, self-contained GUI and console host built against locked NuGet graphs |
+| `scripts/test-publish.ps1` | Passed shipped core/worker, actual GUI initialization, MCP/worker smoke checks, required hardware module, and x64 PE checks for GUI, console host, Rust DLL, .NET runtime and Python |
+| Locked restore with unchanged dependencies, including self-contained x64 CLI | Passed |
+| Temporarily change Toolkit 8.4.2 to 8.4.1, restore with `--locked-mode`, then restore the original central file | Rejected with NU1004; existing locks unchanged |
+| MSBuild native architecture checks | Explicit x64 accepted; ARM64 platform, win-arm64/linux-x64 RIDs and x86 PlatformTarget rejected |
+| `tests/gpu_hardware_profile_check.py <existing-data-folder> --expect fp32-offload` | Passed: profile selected the conservative runtime, native file checks and actual GPU verification passed, status remained ready, generation and 4x upscale succeeded, profile reported the tested runtime |
+| Real verification evidence | Four-step 512 × 512 GPU test including upscaler: 40.05 s, float32/offload, peak 4841 MiB |
+| Real generation evidence | 512 × 512, 20 steps, 139.86 s inference, peak 4841 MiB; recorded runtime was `fp32-offload` |
+| Real upscaling evidence | 2048 × 2048 output, 384-pixel tiles selected from free graphics memory, 3.25 s, peak 1474 MiB |
+| Published startup maintenance on the verified development folder | Removed 19,621 reproducible setup-cache files, 4.13 GiB, and displayed the amount removed; model installation remained usable |
+| Interactive published Diagnostics | GPU/RAM/drive, selected settings, reasons, and hard-disk advice rendered readably. UI Automation exposed only the fixed name "This computer" for the details; that override was removed, and the updated XAML was rebuilt and passed the GUI smoke check. A complete screen-reader audit remains pending |
+
+Hardware tests use fake GPUs to exercise selection, fallback, driver-specific declined settings, readiness stamps and job routing. Real ctypes checks cover native drive information for Unicode/missing folders, invalid paths and missing/incompatible libraries. Readiness regression checks prove that Diagnostics withholds the verified runtime for missing/changed files and an incompatible card, without modifying the saved records. These tests do not certify faster settings on RTX or Pascal GPUs. The GPU test reused the existing models/runtime and retained caches; the subsequent normal app startup performed the default verified-setup cache clean-up.
+
+Timings are single observations while development builds ran, and exclude model import/load time. They are not startup or latency benchmarks. Clean Windows 10/11 installer/upgrade/offline/update/uninstall checks, full accessibility and mixed-DPI evidence, external startup/idle measurements, useful release-symbol archival and mixed debugging remain open in [stack alignment](stack-alignment.md).

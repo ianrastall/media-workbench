@@ -39,7 +39,7 @@ if (args.FirstOrDefault() == "mcp")
 
 if (args.Length < 3)
 {
-    Console.WriteLine("Usage: MediaWorkbench.Cli <absolute-python.exe> <application-root> health|catalog|demo|plan|install|status|generate|library|storage|models [absolute-data-directory] [prompt] [steps]");
+    Console.WriteLine("Usage: MediaWorkbench.Cli <absolute-python.exe> <application-root> health|catalog|demo|plan|install|status|profile|generate|library|storage|models [absolute-data-directory] [prompt] [steps]");
     return 2;
 }
 try
@@ -69,7 +69,7 @@ try
         if (!plan.CanExecute) throw new InvalidOperationException(string.Join("\n", plan.Blockers));
     }
     var operation = args[2] switch { "health" => "health", "catalog" => "catalog.list", "demo" => "demo.run",
-        "install" => "installation.run", "status" => "installation.status", "generate" => "generate.image", "library" => "library.list", "storage" => "storage.summary", "models" => "models.list",
+        "install" => "installation.run", "status" => "installation.status", "profile" => "system.profile", "generate" => "generate.image", "library" => "library.list", "storage" => "storage.summary", "models" => "models.list",
         _ => throw new ArgumentException("Unknown command") };
     if (operation == "demo.run" && (args.Length < 4 || !Path.IsPathFullyQualified(args[3])))
         throw new ArgumentException("Demo requires an explicit absolute output directory.");

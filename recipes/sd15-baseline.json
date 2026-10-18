@@ -15,7 +15,7 @@
   "minimumVramMiB": 6144,
   "notes": [
     "Windows x64, NVIDIA CUDA, at least 6 GB VRAM. Each installation must pass local inference verification.",
-    "512x512, float32 computation with model CPU offload; selected fp16 safetensors stored on disk.",
+    "512x512; precision and offloading are chosen from the GPU and verified per machine, with float32 and model CPU offload as the fallback; selected fp16 safetensors stored on disk.",
     "Model license: CreativeML Open RAIL-M; see the pinned model card and linked license before use.",
     "Experimental recipe; readiness is granted per machine only after checksums and real GPU output checks succeed."
   ]

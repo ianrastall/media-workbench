@@ -121,6 +121,8 @@
                             <TextBlock Text="Stable Diffusion 1.5 is installed and verified on this computer." VerticalAlignment="Center" TextWrapping="Wrap" />
                             <HyperlinkButton Content="Check again" Command="{x:Bind ViewModel.RefreshInstallationCommand}" />
                         </StackPanel>
+                        <InfoBar IsOpen="{x:Bind ViewModel.HasRuntimeNote, Mode=OneWay}" IsClosable="False" Severity="Informational"
+                            Message="{x:Bind ViewModel.RuntimeNote, Mode=OneWay}" Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                         <!-- The chooser appears only once a model the user added has passed its test. -->
                         <ComboBox Header="Model" ItemsSource="{x:Bind ViewModel.ModelChoices}" SelectedIndex="{x:Bind ViewModel.ModelIndex, Mode=TwoWay}" Width="360"
                             Visibility="{x:Bind ViewModel.HasModelChoice, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
@@ -154,6 +156,8 @@
                             <StackPanel Spacing="12">
                                 <TextBlock Text="Set up Stable Diffusion 1.5" Style="{ThemeResource SubtitleTextBlockStyle}" />
                                 <TextBlock Text="{x:Bind ViewModel.InstallationText, Mode=OneWay}" TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind ViewModel.SystemProfileText, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                                    Visibility="{x:Bind ViewModel.HasSystemProfile, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                                 <TextBlock Text="Setup downloads about 5 GiB plus dependency files. Allow 20 GiB free for the runtime, model, and cache. NVIDIA GPU with 6 GB VRAM required. Downloads stay in the data folder shown in Settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <HyperlinkButton Content="Model card and CreativeML Open RAIL-M license" NavigateUri="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5" Padding="0" />
                                 <StackPanel Orientation="Horizontal" Spacing="12">
@@ -406,6 +410,9 @@
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsDiagnostics, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                         <Button Content="Run diagnostics" Command="{x:Bind ViewModel.DiagnosticsCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                        <TextBlock Text="This computer" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBlock Text="{x:Bind ViewModel.SystemProfileDetails, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Text="Components" Style="{ThemeResource SubtitleTextBlockStyle}" />
                         <TextBox Text="{x:Bind ViewModel.DiagnosticsText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="200" AutomationProperties.Name="Component diagnostics" />
                     </StackPanel>
 

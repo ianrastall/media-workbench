@@ -120,6 +120,71 @@ public sealed record StorageSnapshot(long FreeBytes, long TotalBytes, long Insta
     public static string Format(long bytes) => bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):N2} GiB"
         : bytes >= 1L << 20 ? $"{bytes / (double)(1L << 20):N1} MiB" : $"{bytes / 1024.0:N0} KiB";
 }
+/// <summary>The NVIDIA graphics card inference uses, as its driver reports it; ComputeCapability is empty on old drivers.</summary>
+public sealed record GpuDetails(string Name, double VramMiB, double? FreeVramMiB = null, string ComputeCapability = "", string Driver = "");
+/// <summary>The drive holding the data folder (or its nearest existing parent). Kind: ssd, hdd, usb, removable, network, or unknown.</summary>
+public sealed record DataDrive(string Path, long? FreeBytes, long? TotalBytes, string Kind = "unknown");
+public sealed record HardwareDetails(GpuDetails? Gpu, string? GpuProblem, double? RamMiB, double? AvailableRamMiB, DataDrive? Drive);
+/// <summary>One verified way of running models: precision and whether parts of the model wait in system memory.</summary>
+public sealed record RuntimeSettings(string Id, string Label, string Description, string Precision = "float32", bool Offload = true);
+/// <summary>The settings chosen for this computer, or the plain reason it cannot make pictures.</summary>
+public sealed record RuntimeRecommendation(string? Runtime, string? Blocked, string[] Reasons, string[] Warnings, RuntimeSettings? Settings);
+/// <summary>What this computer has and how it makes pictures, read without loading any AI runtime.</summary>
+public sealed record SystemProfile(HardwareDetails Hardware, RuntimeRecommendation Recommended, RuntimeSettings? Verified, string Note = "")
+{
+    /// <summary>Sizes in the words people use for memory and drives ("6 GB", "7.8 GB", "276 GB").</summary>
+    public static string Size(double mib)
+    {
+        double gib = mib / 1024;
+        return gib >= 10 || Math.Abs(gib - Math.Round(gib)) < 0.05 ? $"{gib:N0} GB" : $"{gib:0.0} GB";
+    }
+    public static string DriveKind(string kind) => kind switch
+    {
+        "ssd" => "a solid-state drive", "hdd" => "a hard disk", "usb" => "a USB drive",
+        "removable" => "a removable drive", "network" => "a network drive", _ => "a drive of unknown type"
+    };
+    public bool CanMakePictures => Recommended.Blocked is null && Recommended.Settings is not null;
+    public string GpuLine => Hardware.Gpu is { } gpu ? $"{gpu.Name} with {Size(gpu.VramMiB)} of graphics memory"
+        : Hardware.GpuProblem ?? "No NVIDIA graphics card was found.";
+    public string MemoryLine => Hardware.RamMiB is { } ram ? $"{Size(ram)} of memory" + (Hardware.AvailableRamMiB is { } free ? $" ({Size(free)} free now)" : "")
+        : "System memory could not be read";
+    public string DriveLine => Hardware.Drive is not { } drive ? "The data folder's drive could not be read"
+        : $"Data folder on {DriveKind(drive.Kind)}" + (drive.FreeBytes is { } free ? $" with {Size(free / 1048576.0)} free" : "");
+    /// <summary>The settings in use (once tested) or the ones setup will test, in one sentence.</summary>
+    public string SettingsLine => Verified is { } verified ? $"Pictures are made with {verified.Label.ToLowerInvariant()} settings ({verified.Description}), tested on this computer."
+        : Recommended.Blocked ?? (Recommended.Settings is { } chosen ? $"Setup will test {chosen.Label.ToLowerInvariant()} settings ({chosen.Description})." : "");
+    /// <summary>Plain advice when the drive is the likely reason something is slow.</summary>
+    public string DriveAdvice => Hardware.Drive?.Kind switch
+    {
+        "hdd" or "usb" or "network" => "Models load faster from a solid-state drive; you can move the data folder in Settings.",
+        _ => ""
+    };
+    /// <summary>The short version for Create's setup card (Create shows drive speed and space advice on its own).</summary>
+    public string Summary => string.Join("\n", new[] { $"This computer: {GpuLine} · {MemoryLine} · {DriveLine}.", SettingsLine }
+        .Concat(Recommended.Warnings).Append(Note).Where(line => line.Length > 0));
+    /// <summary>Everything Diagnostics shows, including why these settings were chosen.</summary>
+    public string Details
+    {
+        get
+        {
+            var lines = new List<string> { "Graphics card: " + GpuLine + "." };
+            if (Hardware.Gpu is { } gpu)
+                lines.Add($"   Driver {(gpu.Driver.Length > 0 ? gpu.Driver : "version unknown")} · compute capability {(gpu.ComputeCapability.Length > 0 ? gpu.ComputeCapability : "not reported")}"
+                    + (gpu.FreeVramMiB is { } free ? $" · {Size(free)} free now" : ""));
+            lines.Add("Memory: " + MemoryLine + ".");
+            lines.Add(DriveLine + (Hardware.Drive is { } drive ? $" ({drive.Path})." : "."));
+            lines.Add("");
+            lines.Add(SettingsLine);
+            if (Verified is not null && Recommended.Settings is { } best && best.Id != Verified.Id && Note.Length == 0)
+                lines.Add($"Settings this computer could use: {best.Label.ToLowerInvariant()} ({best.Description}); they did not pass their test here.");
+            lines.AddRange(Recommended.Reasons.Select(reason => "• " + reason));
+            lines.AddRange(Recommended.Warnings.Select(warning => "Warning: " + warning));
+            if (Note.Length > 0) lines.Add(Note);
+            if (DriveAdvice.Length > 0) lines.Add(DriveAdvice);
+            return string.Join("\n", lines);
+        }
+    }
+}
 /// <summary>A newer release with a verified-download installer and its release notes.</summary>
 public sealed record UpdateInfo(string Version, string Notes, string InstallerUrl, string ChecksumUrl, string PageUrl);
 public interface IUpdateService
@@ -142,6 +207,8 @@ public interface IWorkbenchService
     Task<string> GetHealthAsync(CancellationToken cancellationToken);
     InstallationPlan GetBaselinePlan();
     Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>Reads the GPU, memory, and data-folder drive, and the settings chosen from them; creates nothing.</summary>
+    Task<SystemProfile> GetSystemProfileAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Sets up and verifies the bundled model; afterwards removes the download caches unless keepDownloadCaches.</summary>
     Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false);
     Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);

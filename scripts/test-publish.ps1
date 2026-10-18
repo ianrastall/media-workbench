@@ -6,12 +6,28 @@ $taskRequired = @('MediaWorkbench.exe','MediaWorkbench.pri','App.xbf','MainWindo
 $taskRequired += 'profiles/storage-layout.json'
 $taskRequired += 'workers/python/file_verification.py'
 $taskRequired += 'workers/python/model_library.py'
+$taskRequired += 'workers/python/hardware.py'
 foreach ($taskFile in $taskRequired) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published application is incomplete: $taskFile" }
 }
 foreach ($taskFile in @('MediaWorkbench.Cli.exe','MediaWorkbench.Cli.dll','MediaWorkbench.Cli.runtimeconfig.json','MediaWorkbench.Cli.deps.json')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published MCP host is incomplete: $taskFile" }
 }
+# Check actual PE headers: a filename or build configuration does not prove x64 payloads.
+foreach ($taskFile in @('MediaWorkbench.exe', 'MediaWorkbench.Cli.exe', 'media_workbench_core.dll', 'coreclr.dll', 'runtime/python/python.exe')) {
+    $taskReader = [IO.BinaryReader]::new([IO.File]::OpenRead((Join-Path $ApplicationDirectory $taskFile)))
+    try {
+        if ($taskReader.ReadUInt16() -ne 0x5A4D) { throw "Invalid executable header: $taskFile" }
+        $taskReader.BaseStream.Position = 0x3C
+        $taskPeOffset = $taskReader.ReadUInt32()
+        if ($taskPeOffset -gt $taskReader.BaseStream.Length - 6) { throw "Invalid PE offset: $taskFile" }
+        $taskReader.BaseStream.Position = $taskPeOffset
+        if ($taskReader.ReadUInt32() -ne 0x00004550 -or $taskReader.ReadUInt16() -ne 0x8664) {
+            throw "Published executable is not Windows x64: $taskFile"
+        }
+    } finally { $taskReader.Dispose() }
+}
+Write-Output 'PASS: published app, MCP host, Rust core, .NET runtime, and Python are x64'
 $taskReports = if ($ReportsDirectory) { [IO.Path]::GetFullPath($ReportsDirectory) } else { Join-Path $taskRoot 'artifacts/publish-checks' }
 New-Item -ItemType Directory -Path $taskReports -Force | Out-Null
 $taskModes = @('--self-test')
@@ -29,6 +45,7 @@ foreach ($taskMode in $taskModes) {
         $taskResult = Get-Content -LiteralPath $taskReport -Raw | ConvertFrom-Json
         if (-not $taskResult.success) { throw "Published application reported failure: $taskMode" }
         if ($taskMode -eq '--self-test' -and -not $taskResult.nativeVerification) { throw 'Published native verification was not exercised.' }
+        if ($taskMode -eq '--self-test' -and -not $taskResult.hardwareProfile) { throw 'Published hardware profile was not exercised.' }
         Write-Output "PASS: published application $taskMode"
     } finally { $taskProcess.Dispose() }
 }

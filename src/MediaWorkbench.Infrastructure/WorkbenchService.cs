@@ -44,6 +44,9 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
     public InstallationPlan GetBaselinePlan() => new InstallationPlanner().Plan(InstallationPlanner.ReadCatalog(applicationRoot).Single(r => r.Id == "sd15-baseline"));
     public async Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<InstallationState>(await Execute("installation.status", new { dataRoot }, cancellationToken), Wire.Json)!;
+    public async Task<SystemProfile> GetSystemProfileAsync(string dataRoot, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<SystemProfile>(await Execute("system.profile", new { dataRoot }, cancellationToken), Wire.Json)
+            ?? throw new InvalidDataException("Empty hardware profile.");
     public async Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false)
     {
         var plan = GetBaselinePlan();

@@ -14,6 +14,7 @@ import time
 
 # Isolated mode (-I) omits the script directory; the stdlib-only setup module beside this file is app-owned.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hardware  # noqa: E402
 import inference_setup  # noqa: E402
 
 WIRE_OUT = sys.stdout
@@ -72,10 +73,22 @@ def enlarge(payload, data_root, weights, gpu, torch, upscaler):
     progress("Loading the upscaler")
     model = upscaler.load(weights, "cuda")
     started = time.monotonic()
-    image = upscaler.upscale(model, picture, "cuda", progress=lambda done, total: progress("Enlarging picture", done, total, "tiles"))
+    # Larger tiles are faster; the size follows the graphics memory free now, and shrinks if it still runs short.
+    tile = hardware.upscale_tile(torch.cuda.mem_get_info(0)[0] / hardware.MIB)
+    while True:
+        try:
+            image = upscaler.upscale(model, picture, "cuda", tile=tile,
+                                     progress=lambda done, total: progress("Enlarging picture", done, total, "tiles"))
+            break
+        except torch.cuda.OutOfMemoryError:
+            if tile <= hardware.UPSCALE_MIN_TILE:
+                raise RuntimeError("The graphics card ran out of memory while enlarging. Close other programs that use it and try again.") from None
+            torch.cuda.empty_cache()
+            tile = max(hardware.UPSCALE_MIN_TILE, tile // 2)
+            progress(f"Graphics memory is short; using {tile}-pixel tiles")
     if payload["scale"] == 2:
         image = image.resize((picture.width * 2, picture.height * 2), Image.Resampling.LANCZOS)
-    result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda, precision="float32",
+    result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda, precision="float32", tile=tile,
         seconds=round(time.monotonic() - started, 2), width=image.width, height=image.height, scale=payload["scale"],
         peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2), python=sys.version.split()[0])
     save_artifact(data_root, payload["jobId"], image, result)
@@ -114,7 +127,7 @@ def blend_change(picture, mask, box, drawn):
     return result
 
 
-def load_added(data_root, payload, torch):
+def load_added(data_root, payload, torch, dtype):
     """An added SD 1.5 model with the bundled tokenizer, scheduler, and safety checker (and VAE if it has none).
 
     Weights load only from safetensors in the app's own copy; every configuration comes from the
@@ -128,7 +141,7 @@ def load_added(data_root, payload, torch):
         raise ValueError("Invalid model identifier")
     bundled = str(data_root / "models" / inference_setup.RECIPE)
     folder = data_root / "models" / "imported" / model_id
-    weights = dict(torch_dtype=torch.float32, use_safetensors=True, local_files_only=True)
+    weights = dict(torch_dtype=dtype, use_safetensors=True, local_files_only=True)
     parts = dict(tokenizer=CLIPTokenizer.from_pretrained(bundled, subfolder="tokenizer", local_files_only=True),
                  scheduler=PNDMScheduler.from_pretrained(bundled, subfolder="scheduler", local_files_only=True),
                  feature_extractor=CLIPImageProcessor.from_pretrained(bundled, subfolder="feature_extractor", local_files_only=True),
@@ -137,7 +150,7 @@ def load_added(data_root, payload, torch):
         parts["vae"] = AutoencoderKL.from_pretrained(bundled, subfolder="vae", variant="fp16", **weights)
     if payload["modelFormat"] == "single-file":
         return StableDiffusionPipeline.from_single_file(str(folder / "model.safetensors"), config=bundled,
-            torch_dtype=torch.float32, local_files_only=True, **parts)
+            torch_dtype=dtype, local_files_only=True, **parts)
     if payload["modelFormat"] != "diffusers":
         raise ValueError("Unknown model format")
     if payload["ownVae"]:
@@ -185,11 +198,21 @@ def main():
         total = torch.cuda.get_device_properties(0).total_memory / 1024**2
         if not inference_setup.meets_vram(total, minimum):
             raise RuntimeError(f"{gpu} reports {total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
-        # FP32 avoids known half-precision limitations on GTX 16-series devices.
         upscaler_weights = args.data_root / "models" / inference_setup.UPSCALER / "RealESRGAN_x4plus.pth"
         if args.operation == "upscale":
             emit("result", enlarge(payload, args.data_root, upscaler_weights, gpu, torch, upscaler))
             return
+        # The coordinator sends the runtime choice that passed this installation's (or this model's) GPU test, or the
+        # one under test. Check it again against the card CUDA sees, so a swapped GPU cannot run untested settings.
+        runtime = payload.get("runtime")
+        if runtime not in hardware.RUNTIMES:
+            raise ValueError("Unknown runtime choice")
+        major, minor = torch.cuda.get_device_capability(0)
+        if not hardware.allows(runtime, dict(name=gpu, computeCapability=f"{major}.{minor}", vramMiB=total)):
+            raise RuntimeError(f"The settings tested for this installation do not suit {gpu}. Install / verify again in Create.")
+        settings = hardware.RUNTIMES[runtime]
+        # FP16 is used only where hardware.half_precision_ok trusts it; GTX 16-series cards stay in FP32.
+        dtype = torch.float16 if settings["precision"] == "float16" else torch.float32
         source = payload.get("sourceImage") if args.operation == "generate" else None
         painted = painted_change(payload) if source and payload.get("maskImage") else None  # Checked before the slow load.
         added = payload.get("model", inference_setup.RECIPE) != inference_setup.RECIPE
@@ -198,20 +221,23 @@ def main():
         # change redraws only the painted region (Diffusers blends the standard 4-channel UNet's latents).
         pipeline_class = (StableDiffusionInpaintPipeline if painted else StableDiffusionImg2ImgPipeline) if source else StableDiffusionPipeline
         if added:
-            pipe = load_added(args.data_root, payload, torch)
+            pipe = load_added(args.data_root, payload, torch, dtype)
             if pipeline_class is not StableDiffusionPipeline:
                 pipe = pipeline_class.from_pipe(pipe)
         else:
-            pipe = pipeline_class.from_pretrained(str(model), torch_dtype=torch.float32,
+            pipe = pipeline_class.from_pretrained(str(model), torch_dtype=dtype,
                 variant="fp16", use_safetensors=True, local_files_only=True)
-        pipe.enable_model_cpu_offload()
+        if settings["offload"]:
+            pipe.enable_model_cpu_offload()  # Each part moves to the GPU only while it runs.
+        else:
+            pipe.to("cuda")
         pipe.enable_vae_slicing()
         pipe.set_progress_bar_config(disable=True)
-        settings = payload if args.operation == "generate" else dict(
+        request = payload if args.operation == "generate" else dict(
             prompt="A small red ceramic house beside a green tree, watercolor illustration, daylight",
             negativePrompt="", seed=20261017, steps=4, width=512, height=512)
         # The coordinator validated the sampler; the model's own PNDM scheduler is the default.
-        sampler = settings.get("sampler", "pndm")
+        sampler = request.get("sampler", "pndm")
         if sampler == "dpmpp-2m":
             pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config,
                 algorithm_type="dpmsolver++", use_karras_sigmas=True)
@@ -219,28 +245,28 @@ def main():
             pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
         elif sampler != "pndm":
             raise ValueError("Unknown sampler: " + str(sampler)[:40])
-        width, height = settings.get("width", 512), settings.get("height", 512)
+        width, height = request.get("width", 512), request.get("height", 512)
         extra = {}
         if painted:
             picture, mask, box, (width, height) = painted
             # A slightly grown mask lets the model redraw the edge it will be blended across.
             region_mask = mask.crop(box).resize((width, height), Image.Resampling.BILINEAR).filter(ImageFilter.MaxFilter(9))
             extra = dict(image=picture.crop(box).resize((width, height), Image.Resampling.LANCZOS), mask_image=region_mask,
-                         width=width, height=height, strength=settings["strength"])
+                         width=width, height=height, strength=request["strength"])
         elif source:
             with Image.open(source) as opened:
                 picture = ImageOps.exif_transpose(opened).convert("RGB")
             width, height = inference_setup.shape_for(*picture.size)
-            extra = dict(image=ImageOps.fit(picture, (width, height), Image.Resampling.LANCZOS), strength=settings["strength"])
+            extra = dict(image=ImageOps.fit(picture, (width, height), Image.Resampling.LANCZOS), strength=request["strength"])
         else:
             extra = dict(width=width, height=height)
         def step_end(pipeline, step, timestep, callback_kwargs):
             progress("Generating image", step + 1, getattr(pipeline, "num_timesteps", None) or len(pipeline.scheduler.timesteps))
             return callback_kwargs
         started = time.monotonic()
-        output = pipe(prompt=settings["prompt"], negative_prompt=settings["negativePrompt"],
-            num_inference_steps=settings["steps"], **extra,
-            guidance_scale=settings.get("guidanceScale", 7.5), generator=torch.Generator(device="cpu").manual_seed(settings["seed"]),
+        output = pipe(prompt=request["prompt"], negative_prompt=request["negativePrompt"],
+            num_inference_steps=request["steps"], **extra,
+            guidance_scale=request.get("guidanceScale", 7.5), generator=torch.Generator(device="cpu").manual_seed(request["seed"]),
             callback_on_step_end=step_end)
         image = output.images[0]
         blocked = bool(output.nsfw_content_detected and output.nsfw_content_detected[0])
@@ -260,7 +286,8 @@ def main():
                 raise RuntimeError("The upscaler produced an invalid image; the installation is not verified.")
             del model
         result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda,
-            precision="float32", seconds=round(time.monotonic() - started, 2), width=width, height=height, sampler=sampler,
+            precision=settings["precision"], offload=settings["offload"], runtime=runtime,
+            seconds=round(time.monotonic() - started, 2), width=width, height=height, sampler=sampler,
             peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2),
             python=sys.version.split()[0], isolated=bool(sys.flags.isolated), userSiteDisabled=bool(sys.flags.no_user_site))
         if args.operation == "generate":

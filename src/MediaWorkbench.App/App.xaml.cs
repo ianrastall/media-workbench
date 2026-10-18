@@ -64,6 +64,10 @@ public partial class App : Application
                 string libraryCheck = Path.Combine(Path.GetTempPath(), "MediaWorkbench-library-smoke-" + Guid.NewGuid().ToString("N"));
                 try
                 {
+                    // Hardware is read from the nearest existing folder without creating the data folder.
+                    var profile = await service.GetSystemProfileAsync(libraryCheck, deadline.Token);
+                    if (Directory.Exists(libraryCheck) || profile.Hardware.Drive is not { FreeBytes: > 0 } || profile.Hardware.RamMiB is not > 0 || profile.Summary.Length == 0)
+                        throw new InvalidDataException("The bundled hardware profile check failed.");
                     var library = await service.GetLibraryAsync(libraryCheck, deadline.Token);
                     if (library.Total != 0 || library.Images.Count != 0) throw new InvalidDataException("The bundled Library index check failed.");
                     var storage = await service.GetStorageAsync(libraryCheck, deadline.Token);
@@ -74,7 +78,7 @@ public partial class App : Application
                         throw new InvalidDataException("The bundled model listing check failed.");
                 }
                 finally { if (Directory.Exists(libraryCheck)) Directory.Delete(libraryCheck, recursive: true); }
-                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash, libraryIndex = true, nativeVerification = true }));
+                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash, libraryIndex = true, nativeVerification = true, hardwareProfile = true }));
                 Environment.ExitCode = 0;
             }
             catch (Exception ex)

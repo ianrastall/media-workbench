@@ -20,20 +20,48 @@ CALLBACK = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p)
 BUSY = 7
 
 
-def native(app, name):
-    """A Rust storage service with the shared (input, cancel, context, output, capacity, required) shape."""
+def library(app, name):
+    """Load only the app-owned Rust core and require the expected ABI/export."""
     path = native_core_path(app)
     if path is None:
         raise SetupError("The native storage service is missing. Reinstall Media Workbench.")
-    core = ctypes.CDLL(str(path))
+    try:
+        core = ctypes.CDLL(str(path))
+    except OSError as exc:
+        raise SetupError(f"The native storage service could not be loaded: {exc}") from None
     core.mw_abi_version.restype = ctypes.c_uint32
     if core.mw_abi_version() != 1 or not hasattr(core, name):
         raise SetupError("The native storage service is incompatible. Reinstall Media Workbench.")
-    function = getattr(core, name)
+    return core
+
+
+def native(app, name):
+    """A Rust storage service with the shared (input, cancel, context, output, capacity, required) shape."""
+    function = getattr(library(app, name), name)
     function.argtypes = [ctypes.c_char_p, ctypes.c_size_t, CALLBACK, ctypes.c_void_p,
                          ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
     function.restype = ctypes.c_int32
     return function
+
+
+def drive_info(app, root):
+    """Rust's quota-aware free space and drive type; a missing folder is never created."""
+    function = library(Path(app), "mw_drive_info").mw_drive_info
+    function.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t,
+                         ctypes.POINTER(ctypes.c_size_t)]
+    function.restype = ctypes.c_int32
+    request = json.dumps(dict(dataRoot=str(root))).encode("utf-8")
+    required = ctypes.c_size_t()
+    code = function(request, len(request), None, 0, ctypes.byref(required))
+    if code != 2 or not 0 < required.value <= 65536:
+        raise SetupError(f"The native drive service could not size its response ({code}).")
+    output = ctypes.create_string_buffer(required.value)
+    code = function(request, len(request), output, len(output), ctypes.byref(required))
+    if code == 1:
+        raise ValueError("Choose an absolute data folder inside a drive.")
+    if code != 0 or required.value > len(output):
+        raise SetupError(f"The data folder's drive could not be read ({code}). Check folder access.")
+    return json.loads(output.raw[:required.value])
 
 
 def call(function, request, cancel):

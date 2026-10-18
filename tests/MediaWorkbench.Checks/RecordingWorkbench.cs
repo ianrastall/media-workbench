@@ -19,6 +19,20 @@ sealed class RecordingWorkbench : IWorkbenchService
     public InstallationPlan GetBaselinePlan() => throw new NotSupportedException();
     public Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken) =>
         Record(dataRoot, new InstallationState("ready", "Ready"));
+    /// <summary>A GTX 1660 Ti like the development machine's; reads are counted, not recorded as data-folder operations.</summary>
+    public SystemProfile Profile { get; set; } = GtxProfile;
+    public List<string> ProfileRoots { get; } = [];
+    public Exception? ProfileFailure { get; set; }
+    public Task<SystemProfile> GetSystemProfileAsync(string dataRoot, CancellationToken cancellationToken)
+    {
+        ProfileRoots.Add(dataRoot);
+        return ProfileFailure is { } failure ? Task.FromException<SystemProfile>(failure) : Task.FromResult(Profile);
+    }
+    public static readonly RuntimeSettings MemorySaving = new("fp32-offload", "Memory-saving", "full precision, parts of the model wait in system memory until needed");
+    public static readonly SystemProfile GtxProfile = new(
+        new(new("NVIDIA GeForce GTX 1660 Ti", 6144, 4991, "7.5", "610.60"), null, 65198, 45716, new(@"D:\data", 296512593920, 2000381014016, "hdd")),
+        new("fp32-offload", null, ["NVIDIA GeForce GTX 1660 Ti can make blank pictures at half precision, so full precision is used."], [], MemorySaving),
+        MemorySaving);
     public bool? LastKeepDownloadCaches { get; private set; }
     public long InstallCleanedBytes { get; set; }
     public Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false)

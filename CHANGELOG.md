@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0-alpha.13 — 2026-10-18
+
+- Settings chosen for your computer: Media Workbench now reads your graphics card, its memory, your system memory, and the data folder's drive, and shows them in plain words on Create's setup card and in **Diagnostics**, with why its settings were chosen. Nothing new is installed to do this.
+- How pictures are made now follows that hardware: half precision on graphics cards that handle it well, the whole model on the graphics card when it fits, and otherwise the memory-saving settings used until now (full precision, parts of the model waiting in system memory). GTX 16-series cards keep the memory-saving settings, because half precision makes blank pictures on them.
+- Every choice must pass the real test on your GPU during **Install / verify**. If faster settings fail it, the memory-saving settings are tested and used, and that card and driver are not asked to try the faster ones again. Because the settings are now part of what "verified" means, existing installations and added models ask for **Install / verify** (or **Test again**) once after updating; nothing is downloaded again.
+- Computers with less than 8 GB of memory, or a graphics card below 6 GB, are told so plainly before anything downloads; with less than 16 GB, the setup card and Diagnostics warn that memory-saving settings may be slow. If you change graphics cards, Create says when faster settings can be tested or when the old ones must be tested again.
+- Upscaling uses larger tiles when more graphics memory is free, and smaller ones (instead of failing) when memory runs short.
+- The complete real-hardware check passed with memory-saving settings on a GTX 1660 Ti (6 GB), including generation and a 4× upscale. Faster runtime choices still need representative RTX/Pascal hardware checks; simulated hardware tests do not certify them.
+
+- Drive information now comes from one Rust service for both the hardware profile and the desktop, including quota-aware free space. Diagnostics stops calling settings verified if runtime/model files are missing or changed, or the current card cannot use those settings.
+- Development builds now use central NuGet versions, committed dependency lockfiles with locked CI restores, a narrower .NET SDK pin, explicit x64 host checks, and app-local Rust DLL loading. Published checks inspect executable architectures. The stack audit and handoff document the remaining release evidence and deliberate exceptions.
+
 ## 0.2.0-alpha.12 — 2026-10-17
 
 - Media Workbench now cleans up after itself, at startup and after setup, without asking: unfinished-job records beyond the 50 that Library lists (with their private input copies and logs), logs older than 30 days or beyond the newest 300, setup downloads left unfinished for three days, painted-area hand-over files a crash left behind, and update installers once the new version runs. Images, finished job records, anything Library lists for a retry or **Use settings**, and your own files are never removed.

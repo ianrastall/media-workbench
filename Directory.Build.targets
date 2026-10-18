@@ -1,7 +1,14 @@
 <Project>
   <PropertyGroup>
     <NativeCorePath>$(MSBuildThisFileDirectory)artifacts\native\release\media_workbench_core.dll</NativeCorePath>
+    <WorkbenchNativeHost Condition="'$(MSBuildProjectName)' == 'MediaWorkbench.App' or '$(MSBuildProjectName)' == 'MediaWorkbench.Cli' or '$(MSBuildProjectName)' == 'MediaWorkbench.Checks'">true</WorkbenchNativeHost>
+    <PlatformTarget Condition="'$(WorkbenchNativeHost)' == 'true'">x64</PlatformTarget>
   </PropertyGroup>
+  <Target Name="ValidateNativeArchitecture" BeforeTargets="PrepareForBuild" Condition="'$(WorkbenchNativeHost)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(PlatformTarget)' != 'x64'" Text="Media Workbench requires PlatformTarget=x64 to match its Rust core and bundled workers." />
+    <Error Condition="'$(Platform)' != 'AnyCPU' and '$(Platform)' != 'x64'" Text="Media Workbench supports Windows x64 only. Use Platform=x64 (or the solution's AnyCPU configuration, which builds x64 hosts)." />
+    <Error Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'win-x64'" Text="Media Workbench supports RuntimeIdentifier=win-x64 only; the Rust core and bundled workers are x64." />
+  </Target>
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'MediaWorkbench.App' or '$(MSBuildProjectName)' == 'MediaWorkbench.Cli' or '$(MSBuildProjectName)' == 'MediaWorkbench.Checks'">
     <Content Include="$(NativeCorePath)" Link="media_workbench_core.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

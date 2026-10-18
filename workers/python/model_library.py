@@ -25,7 +25,8 @@ import inference_setup as setup
 BUILT_IN = setup.RECIPE
 BUILT_IN_NAME = "Stable Diffusion 1.5"
 # Bump when loading or testing an added model changes what its ready state means.
-IMPORT_ADAPTER_VERSION = 1
+# 2: the model runs with the bundled installation's runtime choice (or the conservative fallback) and records it.
+IMPORT_ADAPTER_VERSION = 2
 HEADER_MAX_BYTES = 100 * 1024**2
 JSON_MAX_BYTES = 1024**2
 NAME_MAX = 80
@@ -323,9 +324,7 @@ def bundled_ready(app, root):
     """The bundled installation an added model shares its runtime, tokenizer, and safety checker with."""
     state = setup.state_path(root)
     ready = setup.read_record(state) if state.exists() else None
-    return bool(ready and ready.get("status") == "ready" and ready.get("profileStamp") == setup.profile_stamp(app)
-                and setup.owned(root, f"runtimes/{setup.PROFILE}/python/python.exe").is_file()
-                and setup.files_unchanged(app, root, ready))
+    return bool(ready and setup.checked_installation(app, root, ready).get("status") == "ready")
 
 
 def readiness(app, root, record, base_ready):
@@ -334,7 +333,7 @@ def readiness(app, root, record, base_ready):
         return record.get("status", "failed"), str(record.get("message", ""))[:2000]
     if not base_ready:
         return "needs_verification", "Install / verify Stable Diffusion 1.5 in Create; added models use its runtime."
-    if record.get("adapterVersion") != IMPORT_ADAPTER_VERSION or record.get("profileStamp") != setup.profile_stamp(app):
+    if record.get("adapterVersion") != IMPORT_ADAPTER_VERSION or not setup.stamp_valid(app, record):
         return "needs_verification", "Media Workbench changed how models run. Test this model again."
     try:
         if stamps(root, record) != record.get("stamps"):
@@ -475,12 +474,14 @@ def test_model(app, root, record, cancel, progress):
         raise Refused("The copied model does not match the file that was checked. Try adding it again.")
     before = stamps(root, record)
     progress({"stage": "Testing 512 × 512 pictures with this model on your GPU"})
-    evidence = setup.inference(app, root, "verify-model", child_payload(record), cancel, progress)
-    setup.check_cancel(cancel)
+    # The bundled installation's verified runtime first; a model that fails there may still pass the conservative one.
+    bundled = setup.read_record(setup.state_path(root)) or {}
+    runtime, evidence, _ = setup.verify_runtime(app, root, {}, bundled["runtime"], [], cancel, progress,
+                                                "verify-model", child_payload(record))
     if stamps(root, record) != before:
         raise setup.SetupError("This model's copied files changed during its test. Test it again.")
-    return dict(record, status="ready", message="Ready", verifiedUtc=datetime.now(timezone.utc).isoformat(),
-                evidence=evidence, stamps=before, adapterVersion=IMPORT_ADAPTER_VERSION, profileStamp=setup.profile_stamp(app))
+    return dict(record, status="ready", message="Ready", verifiedUtc=datetime.now(timezone.utc).isoformat(), runtime=runtime,
+                evidence=evidence, stamps=before, adapterVersion=IMPORT_ADAPTER_VERSION, profileStamp=setup.profile_stamp(app, runtime))
 
 
 def identify_folder_copy(folder):
@@ -496,7 +497,10 @@ def identify_folder_copy(folder):
 
 
 def child_payload(record):
-    return dict(model=record["id"], modelFormat=record["format"], ownVae=bool(record["ownVae"]))
+    payload = dict(model=record["id"], modelFormat=record["format"], ownVae=bool(record["ownVae"]))
+    if record.get("runtime") in setup.hardware.RUNTIMES:
+        payload["runtime"] = record["runtime"]  # A tested model runs as it was tested; a test supplies its own.
+    return payload
 
 
 def import_model(app, payload, cancel, progress):

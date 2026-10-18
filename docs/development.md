@@ -1,5 +1,7 @@
 # Development
 
+Start with [handoff](../HANDOFF.md) for exact resume commands and [stack alignment](stack-alignment.md) for the current architecture decisions, deliberate exceptions, and remaining acceptance evidence. NuGet versions are centralized in `Directory.Packages.props`; committed project lockfiles are enforced for every CI restore. Update and review the locks deliberately when changing packages. Native executable hosts compile as x64, reject conflicting platforms/RIDs, and load the Rust core from beside the executable.
+
 ## Layout
 
 - `src/MediaWorkbench.App`: WinUI views, converters, Windows identity and composition.

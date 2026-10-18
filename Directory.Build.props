@@ -4,7 +4,11 @@
     <Nullable>enable</Nullable>
     <Deterministic>true</Deterministic>
     <LangVersion>14.0</LangVersion>
-    <Version>0.2.0-alpha.12</Version>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+    <!-- Include both ordinary checks and the shipped x64 host in every restore graph. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <Version>0.2.0-alpha.13</Version>
     <Authors>ianrastall</Authors>
     <RepositoryUrl>https://github.com/ianrastall/media-workbench</RepositoryUrl>
   </PropertyGroup>

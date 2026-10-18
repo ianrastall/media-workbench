@@ -2,7 +2,7 @@
   <!-- UI-free view models: no WinUI types, so plain test projects can load and exercise them. -->
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
     <ProjectReference Include="../MediaWorkbench.Infrastructure/MediaWorkbench.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

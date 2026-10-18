@@ -16,7 +16,7 @@ The current core implements installation planning, Windows-aware lexical validat
 - Callers must provide valid nonoverlapping memory for all pointer/length pairs. C ABI boundaries cannot validate arbitrary foreign pointers.
 - Panic handling contains Rust unwinds; it does not turn memory corruption or foreign pointer misuse into safe behavior.
 
-`NativeCore.cs` uses source-generated `LibraryImport` bindings and checks ABI, output bounds, and returned status. Rust test cases and cross-language C# checks cover the actual library.
+`NativeCore.cs` uses source-generated `LibraryImport` bindings and checks ABI, output bounds, and returned status. An explicit resolver loads the core from the executable's directory without falling back to the working directory or PATH. Rust test cases and cross-language C# checks cover the actual library. The current ABI is stateless and retains no owned handles, so no SafeHandle wrapper is needed; any future owned handle must define one.
 
 ## Path policy
 

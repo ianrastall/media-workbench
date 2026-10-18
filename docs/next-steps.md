@@ -1,10 +1,10 @@
-# Development direction after 0.2.0-alpha.11
+# Development direction after 0.2.0-alpha.13
 
-This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, adding SD 1.5-family models the user already downloaded, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
+This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, adding SD 1.5-family models the user already downloaded, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance with automatic clean-up and free-space checks, runtime settings chosen from the computer's hardware, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 
 ## Purpose and next feature priority
 
-Media Workbench moves image and video generation onto the user's own computer: it saves people money, works offline once set up, and reduces load on online generation services. It stays free, MIT-licensed, and unlocked on the public repository. It must serve beginners as well as power users, so runtime, precision, and pipeline details stay under the hood behind plain choices.
+Media Workbench aims to move image and eventually video generation onto the user's own computer, with offline use after setup and less reliance on online generation services. Video is not implemented. Energy, water, chip-demand, and cost benefits have not been measured; local generation still uses electricity and hardware. It stays free, MIT-licensed, and unlocked on the public repository. It must serve beginners as well as power users, so runtime, precision, and pipeline details stay under the hood behind plain choices.
 
 The next user-facing priorities are:
 
@@ -14,19 +14,32 @@ The next user-facing priorities are:
 
 Alongside these, every feature follows the product principles in `AGENTS.md`: easy to use, stable, aware of the computer it runs on, clean, and mindful of drive space. The section below says what that still requires.
 
+## What to do next
+
+The alpha.13 handoff is completed: hardware-aware inference is checked, drive detection is shared through Rust, and NuGet versions/locks, x64 enforcement, and native loading have been tightened. See [stack alignment](stack-alignment.md) and [handoff](../HANDOFF.md). The reference is an acceptance target; the older architecture proposals remain historical.
+
+In order, as of 18 October 2026:
+
+1. **Validate the faster runtime choices on real hardware.** `fp16-gpu`, `fp16-offload`, and `fp32-gpu` are chosen automatically on suitable cards but lack representative end-to-end hardware evidence. The completed GTX 1660 Ti check selects `fp32-offload`; draft notes about forced alternate settings on that card do not establish compatibility of the faster profiles. Run `tests/gpu_hardware_profile_check.py` on an RTX card with 8 GB or more (expects `fp16-gpu`), a 6 GB RTX card (`fp16-offload`), and if possible a Pascal card with 10 GB or more (`fp32-gpu`), record the results in `docs/validation.md`, and adjust the thresholds in `workers/python/hardware.py` if the measurements say so (precision/offloading changes require fresh verification; bump the adapter version for other inference changes).
+2. **Close release and stack evidence gaps.** Run clean-machine validation below, check accessibility/high contrast/text scaling/mixed DPI, measure startup/idle behavior, preserve useful release symbols and build metadata, and verify a mixed managed/Rust breakpoint. Review the pinned Rust version against supported releases before another toolchain upgrade. These checks can proceed independently of access to more GPUs.
+3. **Refresh the model list from Hugging Face** (priority 2 above), using the hardware profile to say which results this computer can run: VRAM fit, supported architecture, safetensors, license.
+4. **Clean-machine validation** (below): installer, upgrade from alpha.12 (installations ask for Install / verify once because the readiness stamp changed), offline launch, update/relaunch.
+5. **Notice a slow or busy drive at run time**: compare model-load time with what the drive kind predicts and say so when a job is slow (the static hard-disk advice already exists).
+6. Then the warm inference worker and durable queue, newer models that fit 6 GB, and video, each as verified profiles.
+
 ## Standing principles: system awareness, clean-up, and drive space
 
 `AGENTS.md` lists these as product principles for every feature. This is where the app stands against them and what to build.
 
 **Already in place.** Setup checks the NVIDIA driver and the GPU's memory against the recipe's minimum, on the same device inference uses. Setup and adding a model check free space first. Settings → Storage shows free space and what each part of the data folder uses. Interrupted generations lose their partial image, unfinished record writes are removed, failed or interrupted model imports are deleted, painted-area hand-over files are deleted after use, and a failed update download is discarded. Download caches and logs can be cleared by hand, and automatic clean-up and free-space checks now follow the rules below.
 
-**System awareness — missing.** Every computer gets one conservative profile chosen for 6 GB GTX 16-series cards: FP32 computation, model CPU offload, and VAE slicing, plus a fixed 256-pixel upscaler tile. Nothing checks system RAM, which offloading and single-file loading depend on. Build a small hardware profile (GPU name, compute capability, VRAM, system RAM, data-drive free space and type), detect it once per session, and show it in plain words in Diagnostics and on Create's setup card. Use it to choose settings: half precision without offloading on GPUs that handle it and have the memory, offloading only when needed, upscaler tile size from free VRAM, and a plain refusal or warning when RAM or VRAM is too small. Each distinct runtime choice is a verified profile: it changes the readiness stamp and must pass the real GPU test before it is used, and the conservative profile remains the fallback.
+**System awareness — done in 0.2.0-alpha.13, verified on one GPU.** A hardware profile (GPU name, compute capability, graphics memory, driver, system memory, data-drive free space and type) is read once per data folder per session without loading an AI runtime and shown in plain words in Diagnostics and on Create's setup card. It chooses one of four runtime choices (half or full precision, whole model on the GPU or offloaded), the upscaler tile size from free graphics memory, and refuses or warns plainly when memory is too small. Each runtime choice has its own readiness stamp and must pass the real GPU test; a failed faster choice falls back to the conservative `fp32-offload` and is not retried on the same card and driver. Drive information now uses Rust's `mw_drive_info` through the storage adapter; the duplicate Python implementation is removed. Diagnostics shares the ordinary installation-readiness checks and does not call missing or changed files verified. Still open: real-hardware validation of the three faster choices (item 1 under What to do next).
 
 **Clean-up — done in 0.2.0-alpha.12.** Rust's `mw_tidy_data_folder` owns the rules and runs under the data-folder lock at startup and after a verified setup: unfinished-job records beyond the 50 Library lists (with their inputs and logs), logs beyond 300 or 30 days (never an unfinished job's), setup downloads left unfinished for 72 hours or after verification, and the download caches once setup is verified unless Settings keeps them. The desktop sweeps painted-area hand-overs and finished update installers from `%TEMP%`. Still open: pruning Library images themselves needs the organization and provenance export described under Later expansion first.
 
 **Drive space and speed — done in 0.2.0-alpha.12, except load.** Generation and upscaling check free space before writing; Create, Tools, and Settings warn below 5 GiB; `mw_drive_info` detects a hard disk, USB, or network data folder and Create and Settings say that models load faster from an SSD and the folder can be moved. Still open: noticing that a drive is busy right now (for example, measuring model-load time against the drive kind) and saying so when a job is slow.
 
-Acceptance: routine tests cover profile selection from fake hardware descriptions, each clean-up rule including what it must keep, crash leftovers, and low-space refusal before any write; opt-in GPU checks verify each runtime choice on real hardware.
+Acceptance: routine tests cover profile selection from fake hardware descriptions, each clean-up rule including what it must keep, crash leftovers, and low-space refusal before any write (all in place); opt-in GPU checks verify each runtime choice on real hardware (only `fp32-offload` so far).
 
 ## Immediate validation
 
