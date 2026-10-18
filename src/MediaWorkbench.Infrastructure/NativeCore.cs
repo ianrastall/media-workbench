@@ -39,6 +39,28 @@ public static unsafe partial class NativeCore
 
     [LibraryImport(Library, EntryPoint = "mw_drive_info")]
     private static partial int Drive(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
+    [LibraryImport(Library, EntryPoint = "mw_plan_hub_model")]
+    private static partial int HubPlan(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
+
+    /// <summary>Pure metadata policy; this never grants model readiness or performs I/O.</summary>
+    public static HubFilePolicy PlanHubFiles(string repoId, string revision, string license, bool gated, HubDownloadFile[] files)
+    {
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { repoId, revision, license, gated, files }, Wire.Json);
+        fixed (byte* pointer = input)
+        {
+            int code = HubPlan(pointer, (nuint)input.Length, null, 0, out nuint capacity);
+            if (code != 2 || capacity is 0 or > 65536) throw new InvalidDataException($"Native Hub planning failed ({code}).");
+            var output = new byte[(int)capacity];
+            fixed (byte* result = output)
+            {
+                code = HubPlan(pointer, (nuint)input.Length, result, capacity, out nuint written);
+                if (code != 0 || written > capacity) throw new InvalidDataException($"The Hub model metadata is invalid ({code}).");
+                return JsonSerializer.Deserialize<HubFilePolicy>(output.AsSpan(0, (int)written), Wire.Json)
+                    ?? throw new InvalidDataException("The native Hub plan was empty.");
+            }
+        }
+    }
     [LibraryImport(Library, EntryPoint = "mw_tidy_data_folder")]
     private static partial int Tidy(byte* input, nuint length,
         delegate* unmanaged[Cdecl]<nint, int> cancel, nint context,

@@ -744,7 +744,7 @@ def run_job(app, root, kind, settings, cancel, progress):
             import model_library
             added = model_library.ready_model(app, root, settings["model"])
             model, model_name, extra = added["id"], added["name"], model_library.child_payload(added)
-            source = dict(provider="local", name=added.get("sourceName", ""), sha256=added["files"][0]["sha256"])
+            source = added.get("source") or dict(provider="local", name=added.get("sourceName", ""), sha256=added["files"][0]["sha256"])
         if kind == "upscale":
             extra = {}  # The upscaler always runs in full precision; its tile size follows free graphics memory.
         record = dict(schemaVersion=1, id=job_id, kind=kind, status="running", settings=settings,

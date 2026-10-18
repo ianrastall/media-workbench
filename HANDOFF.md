@@ -1,12 +1,14 @@
 # Media Workbench handoff
 
-Updated 18 October 2026 for **0.2.0-alpha.13**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 18 October 2026 for **0.2.0-alpha.14**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
 
 ## Where development stopped and resumed
 
 The last committed baseline before this handoff was `b0b0a2b` (alpha.12). The working tree already contained alpha.13 hardware-aware inference, UI/contracts, tests, a version bump, and draft documentation, plus untracked hardware modules. Its generated README release summary was still alpha.12 and alpha.13 had no validation entry.
 
 The resumed work completes that slice, removes duplicate Python drive detection in favor of Rust, fixes Diagnostics readiness for missing/changed runtime/model files and incompatible cards, and tightens stack/build requirements. Central NuGet versions and committed locks retain the existing package versions. CI requires locked restore; native executable hosts are explicitly x64, conflicting settings are rejected, native loading is app-local, and published checks inspect executable architectures. See [stack alignment](docs/stack-alignment.md) for exceptions and outstanding acceptance work.
+
+Alpha.14 adds Discover's public single-file SD 1.5 download path: native metadata planning, bounded remote header identification, computer/space/runtime checks, pinned download with retained notices, and the existing real GPU readiness gate. Snapshot changes invalidate review; generation retains the pinned Hub provenance. The baseline before this slice was `6201fa4`. No adapter/runtime profile change is needed, and existing alpha.13 installations stay verified. See [inference](docs/inference.md#discover-downloads) for implementation and limits.
 
 ## Build, check, run
 
@@ -40,7 +42,7 @@ Routine restore updates locks only when inputs change. To deliberately change a 
 
 1. Obtain real RTX/Pascal execution evidence for faster settings with `tests/gpu_hardware_profile_check.py <absolute-data-folder> --expect <runtime>` using the bundled discovery Python after building. It runs Install / verify, generation and 4x upscaling; use a folder with sufficient disk space and allow GPU work. Record actual evidence, not a simulated profile result.
 2. Run the clean-machine Windows 10/11 installer and alpha.12 upgrade/offline/update/uninstall matrix. Complete accessibility, external startup/idle measurements, useful release-symbol archival, and mixed debugging. Signing remains a distribution decision.
-3. Implement Discover compatibility plus pinned installation behind the existing verification gates. Keep unsupported architectures and video plainly unsupported.
+3. Measure load time separately from inference, then build the durable queue and warm-child lifecycle. Discover compatibility/pinned installation is implemented for public SD 1.5 single-file checkpoints. Direct folder downloads, protected access, other architectures and video remain unsupported until their dedicated verification paths exist.
 4. Follow the queue/warm-child acceptance criteria in [next steps](docs/next-steps.md), then expand models/video with dedicated verification.
 
 Local generation may reduce reliance on datacenter services, but this project has not measured net water, electricity, hardware-demand or cost savings. Do not turn that motivation into a verified environmental claim.

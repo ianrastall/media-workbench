@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, panic::catch_unwind, slice, str};
 mod artifact;
 mod drive;
+mod hub_plan;
 mod model_import;
 mod path_policy;
 mod storage;
@@ -16,6 +17,41 @@ const BUFFER_SMALL: i32 = 2;
 const IO_ERROR: i32 = 3;
 const INTERNAL: i32 = 4;
 const MAX_INPUT: usize = 1_048_576;
+
+/// Plans supported public Hub file downloads without network or filesystem work.
+/// # Safety
+/// Caller owns valid input/output/required memory as specified in the header.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_plan_hub_model(
+    input: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: caller supplies writable size_t storage.
+        unsafe { *required = hub_plan::OUTPUT_CAPACITY };
+        if output.is_null() || capacity < hub_plan::OUTPUT_CAPACITY {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: caller supplies readable input memory.
+        let input = match unsafe { input_bytes(input, length) } {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        let result = match hub_plan::plan(input) {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        // SAFETY: output has sufficient caller-owned capacity, result lives through the copy.
+        unsafe { copy_output(&result, output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
 
 fn valid_relative_path(value: &str) -> bool {
     if value.is_empty() || value.contains([':', '\0', '\\']) || value.starts_with('/') {

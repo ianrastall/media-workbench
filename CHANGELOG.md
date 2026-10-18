@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0-alpha.14 — 2026-10-18
+
+- Discover can now download and test public single-file Stable Diffusion 1.5 models. **Check model** reads a small file header, checks this computer and the saved data folder's free space, and explains what prevents a download. Search results show license metadata and a hint about available model files; newer architectures, add-ons, and video still need their own adapters.
+- **Download and test** uses the exact repository revision, file size, and checksum shown by the check. It requires a model-card/license review, shares the already verified Stable Diffusion 1.5 runtime, verifies the downloaded file through Rust, and runs the real GPU test before selecting the model in Create. Another model file can be chosen under **Advanced options**.
+- Downloads keep one owned copy, check space again during the transfer, report progress as network bytes arrive, and remove unfinished or failed additions, including after a crash. Pinned model cards, licenses, and notices are retained; generation records keep the repository, revision, file checksum, and license metadata. No repository code or configuration is used.
+- Rust owns the bounded public-download metadata policy. Protected downloads, missing licenses or immutable revisions, unsafe paths, unverified hashes, individual model parts, and unsupported file headers cannot become a ready model. Choosing another repository, file, or data folder invalidates an earlier check.
+- Existing installations and local imports remain verified without a new setup test. Downloading Diffusers folders directly from Discover and protected Hub access remain planned; local Diffusers-folder import still works.
+
 ## 0.2.0-alpha.13 — 2026-10-18
 
 - Settings chosen for your computer: Media Workbench now reads your graphics card, its memory, your system memory, and the data folder's drive, and shows them in plain words on Create's setup card and in **Diagnostics**, with why its settings were chosen. Nothing new is installed to do this.

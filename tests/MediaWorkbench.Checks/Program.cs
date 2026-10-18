@@ -433,4 +433,74 @@ Check(unread.Summary.Contains("No NVIDIA graphics card was found. · System memo
 Check(SystemProfile.Size(6143.7) == "6 GB" && SystemProfile.Size(5939) == "5.8 GB" && SystemProfile.Size(1907729) == "1,863 GB" && SystemProfile.DriveKind("odd") == "a drive of unknown type",
     "Sizes and drive kinds use plain units and words");
 
+var hubStore = new SettingsStore(Path.Combine(output, "hub-settings"));
+var nativeHub = NativeCore.PlanHubFiles("owner/model", new string('a', 40), "openrail", false,
+    [new("model.safetensors", 100, new string('b', 64)), new("../escape.safetensors", 100, new string('b', 64)), new("unet/model.safetensors", 100, new string('b', 64))]);
+Check(nativeHub.Blocker == "" && nativeHub.Files is [{ Path: "model.safetensors" }], "C# calls the real Rust Hub planner and excludes unsafe paths and individual model parts");
+Check(NativeCore.PlanHubFiles("owner/model", "main", "openrail", true, []).Blocker.Length > 0,
+    "The native Hub plan refuses protected or unpinned metadata without implying model readiness");
+string hubRoot = Path.Combine(output, "hub-data");
+hubStore.Save(new(1, hubRoot, "model"));
+var hubService = new RecordingWorkbench();
+var hubVm = new MainViewModel(hubService, hubStore, updates);
+var hubModel = new HubModel("owner/model", 1, 1, "text-to-image", "diffusers", "Public");
+hubVm.SelectedModel = hubModel;
+hubVm.DataRootDraft = Path.Combine(output, "unsaved-hub-folder");
+await hubVm.DetailsCommand.ExecuteAsync(null);
+Check(hubService.LastHubCheck is { Root: var checkedRoot, Revision: "", File: "" } && checkedRoot == hubRoot,
+    "Discover checks this computer using the saved folder rather than an unsaved Settings draft");
+Check(!hubVm.DownloadModelCommand.CanExecute(null) && hubVm.HubFiles.Count == 1 && hubVm.HubPlanText.Contains("2.00 GiB"),
+    "A checked Hub file shows its download size and still requires reviewing the license");
+hubVm.HubLicenseReviewed = true;
+Check(hubVm.DownloadModelCommand.CanExecute(null) && hubVm.ModelSourceUrl.EndsWith("/tree/" + new string('a', 40)),
+    "Download requires the checked file and the model-card link uses the pinned revision");
+var alternateHubFile = new HubDownloadFile("alternate.safetensors", 3L << 30, new string('c', 64));
+hubVm.SelectedHubFile = alternateHubFile;
+hubVm.HubLicenseReviewed = true;
+Check(!hubVm.DownloadModelCommand.CanExecute(null), "Changing a model file invalidates its old compatibility check");
+hubService.HubPlan = hubService.HubPlan with { Files = [alternateHubFile], SelectedFile = alternateHubFile };
+await hubVm.CheckHubFileCommand.ExecuteAsync(null);
+Check(hubService.LastHubCheck is { Revision: var checkedRevision, File: "alternate.safetensors" } && checkedRevision == new string('a', 40)
+    && !hubVm.HubLicenseReviewed, "A different file is checked at the reviewed immutable revision and requires a new license review");
+hubVm.HubLicenseReviewed = true;
+await hubVm.DownloadModelCommand.ExecuteAsync(null);
+Check(hubService.LastHubDownload is { Root: var downloadedRoot, Plan.SelectedFile.Path: "alternate.safetensors" } && downloadedRoot == hubRoot
+    && hubVm.SelectedPage == "create" && hubVm.ModelChoices[hubVm.ModelIndex].Id == new string('d', 32),
+    "Discover downloads the exact checked file into the saved folder and selects a model only after it passes");
+hubVm.SelectedModel = hubModel with { Id = "owner/other" };
+Check(hubVm.HubFiles.Count == 0 && !hubVm.DownloadModelCommand.CanExecute(null), "Changing repository clears the previous download authorization");
+hubVm.SelectedModel = hubModel;
+hubService.HubPlan = hubService.HubPlan with { CanInstall = false, Message = "This computer needs more graphics memory." };
+await hubVm.DetailsCommand.ExecuteAsync(null);
+hubVm.HubLicenseReviewed = true;
+Check(!hubVm.DownloadModelCommand.CanExecute(null) && hubVm.HubPlanText.Contains("more graphics memory"),
+    "Discover displays a hardware refusal without enabling download");
+hubService.HubPlan = hubService.HubPlan with { CanInstall = true };
+await hubVm.DetailsCommand.ExecuteAsync(null);
+hubVm.HubLicenseReviewed = true;
+hubService.HubPlanGate = Task.FromException(new InvalidOperationException("Model details unavailable"));
+await hubVm.DetailsCommand.ExecuteAsync(null);
+Check(!hubVm.DownloadModelCommand.CanExecute(null), "A failed refresh cannot reuse an earlier successful compatibility check");
+var hubGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+hubService.HubPlanGate = hubGate.Task;
+var staleHubCheck = hubVm.DetailsCommand.ExecuteAsync(null);
+hubVm.SelectedModel = hubModel with { Id = "owner/new-selection" };
+hubGate.SetResult();
+await staleHubCheck;
+Check(hubVm.HubFiles.Count == 0 && !hubVm.DownloadModelCommand.CanExecute(null), "A late Hub response cannot authorize a different selected model");
+hubService.HubPlanGate = null;
+hubVm.SelectedModel = hubModel;
+await hubVm.DetailsCommand.ExecuteAsync(null);
+hubVm.HubLicenseReviewed = true;
+hubVm.SaveSettingsCommand.Execute(null);
+Check(!hubVm.DownloadModelCommand.CanExecute(null), "Saving a different data folder invalidates a Hub plan tied to the old folder");
+await using (var hubWorker = await PythonWorkerClient.StartAsync(python, root, deadline.Token))
+{
+    string noCreate = Path.Combine(output, "invalid-hub-request");
+    var invalidHub = await hubWorker.ExecuteAsync("catalog.plan", new { dataRoot = noCreate, repoId = "../outside" }, cancellationToken: deadline.Token);
+    var unreviewedHub = await hubWorker.ExecuteAsync("models.download", new { dataRoot = noCreate, licenseReviewed = false }, cancellationToken: deadline.Token);
+    Check(invalidHub.ErrorCode == "invalid_input" && unreviewedHub.ErrorCode == "invalid_input" && !Directory.Exists(noCreate),
+        "The real worker routes Hub operations and rejects unsafe or unreviewed requests before networking or writes");
+}
+
 Console.WriteLine($"All {checks} C# checks including MCP passed. Test artifacts: {output}");

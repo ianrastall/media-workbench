@@ -6,13 +6,27 @@ public sealed record AppSettings(int SchemaVersion, string DataRoot, string Last
 {
     public static AppSettings Default(string stateRoot) => new(1, Path.Combine(stateRoot, "Data"), "stable-diffusion");
 }
-public sealed record HubModel(string Id, long Downloads, long Likes, string Task, string Library, string Access)
+public sealed record HubModel(string Id, long Downloads, long Likes, string Task, string Library, string Access,
+    string License = "Not specified", string Hint = "Load details to check model support.")
 {
     public string Stats => $"{Downloads:N0} downloads · {Likes:N0} likes";
     public string Description => $"{Task} · {Library} · {Access}";
 }
 public sealed record ModelDetails(string Id, string Revision, string Task, string Library,
     string License, string Access, string[] Files);
+public sealed record HubDownloadFile(string Path, long Bytes, string Sha256)
+{
+    public string Label => $"{Path} · {StorageSnapshot.Format(Bytes)}";
+}
+public sealed record HubFilePolicy(HubDownloadFile[] Files, string Blocker);
+/// <summary>A pinned candidate, never an installation/readiness claim.</summary>
+public sealed record HubDownloadPlan(ModelDetails Details, HubDownloadFile[] Files, HubDownloadFile? SelectedFile,
+    bool CanInstall, string Message, string[] Warnings, bool OwnVae = false, bool HeaderChecked = false)
+{
+    public string Summary => string.Join("\n", new[] { Message,
+        SelectedFile is { } file ? $"Download: {StorageSnapshot.Format(file.Bytes)}. Allow an extra 1 GiB free for testing and Windows." : "" }
+        .Concat(Warnings).Where(text => text.Length > 0));
+}
 /// <summary>CleanedBytes: what setup removed after passing its test because nothing needs it any more.</summary>
 public sealed record InstallationState(string Status, string Message, long CleanedBytes = 0);
 public sealed record OperationProgress(string Stage, long Completed = 0, long Total = 0, string Unit = "");
@@ -204,6 +218,8 @@ public interface IWorkbenchService
 {
     Task<IReadOnlyList<HubModel>> SearchAsync(string query, string task, CancellationToken cancellationToken);
     Task<ModelDetails> GetDetailsAsync(string repoId, CancellationToken cancellationToken);
+    Task<HubDownloadPlan> PlanHubModelAsync(string dataRoot, string repoId, string revision, string file, CancellationToken cancellationToken);
+    Task<ModelChoice> DownloadModelAsync(string dataRoot, HubDownloadPlan plan, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<string> GetHealthAsync(CancellationToken cancellationToken);
     InstallationPlan GetBaselinePlan();
     Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken);

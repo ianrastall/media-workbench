@@ -18,6 +18,15 @@ extern "C" {
    Query output size using output=NULL, capacity=0 and a valid required pointer.
    Pointer/length pairs must refer to readable/writable memory as appropriate. */
 MW_API uint32_t mw_abi_version(void);
+/* Additive ABI 1 public Hub download plan. JSON: {repoId,revision,license,gated,
+   files:[{path,bytes,sha256}]}. Returns {files,blocker}; only complete root-level
+   safetensors candidates with bounded sizes and SHA-256 are returned, smallest first.
+   Requires public access, a license and immutable 40-digit revision. No filesystem/network
+   work; metadata never grants model readiness. Header, file, runtime and GPU checks follow.
+   output=NULL or capacity<65536 returns 2, required=65536 without reading input.
+   Invalid/bounded input returns 1. No pointers are retained. */
+MW_API int32_t mw_plan_hub_model(const uint8_t *input, size_t length,
+    uint8_t *output, size_t capacity, size_t *required);
 MW_API int32_t mw_validate_relative_path(const uint8_t *input, size_t length);
 MW_API int32_t mw_plan_installation(const uint8_t *input, size_t length,
     uint8_t *output, size_t capacity, size_t *required);

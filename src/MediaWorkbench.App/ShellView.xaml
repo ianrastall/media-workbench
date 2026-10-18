@@ -91,24 +91,37 @@
                         <Grid ColumnSpacing="20">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="2*" /></Grid.ColumnDefinitions>
                             <ListView ItemsSource="{x:Bind ViewModel.Models}" SelectedItem="{x:Bind ViewModel.SelectedModel, Mode=TwoWay}" SelectionMode="Single"
-                                MaxHeight="470" MinHeight="260" AutomationProperties.Name="Hugging Face search results">
+                                MaxHeight="580" MinHeight="260" AutomationProperties.Name="Hugging Face search results" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
                                 <ListView.ItemTemplate>
                                     <DataTemplate x:DataType="core:HubModel">
                                         <StackPanel Spacing="5" Padding="8,12">
                                             <TextBlock Text="{x:Bind Id}" FontWeight="SemiBold" TextWrapping="Wrap" />
                                             <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                             <TextBlock Text="{x:Bind Stats}" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock Text="{x:Bind Hint}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{x:Bind License}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </ListView.ItemTemplate>
                             </ListView>
                             <StackPanel Grid.Column="1" Spacing="12">
                                 <TextBlock Text="Model details" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Content="Load details" Command="{x:Bind ViewModel.DetailsCommand}" />
-                                    <Button Content="Open source" Command="{x:Bind ViewModel.OpenModelCommand}" />
+                                <StackPanel Spacing="8">
+                                    <Button Content="Check model" Command="{x:Bind ViewModel.DetailsCommand}" />
+                                    <Button Content="Model card / license" Command="{x:Bind ViewModel.OpenModelCommand}" />
                                 </StackPanel>
-                                <TextBox Text="{x:Bind ViewModel.DetailsText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="260" MaxHeight="380" AutomationProperties.Name="Selected model details" />
+                                <TextBlock Text="{x:Bind ViewModel.HubPlanText, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                <CheckBox IsChecked="{x:Bind ViewModel.HubLicenseReviewed, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                                    <TextBlock Text="I reviewed the publisher's model card and license." TextWrapping="Wrap" />
+                                </CheckBox>
+                                <Button Content="Download and test" Command="{x:Bind ViewModel.DownloadModelCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                <Expander Header="Advanced options" HorizontalAlignment="Stretch">
+                                    <StackPanel Spacing="12">
+                                        <ComboBox Header="Model file" ItemsSource="{x:Bind ViewModel.HubFiles}" SelectedItem="{x:Bind ViewModel.SelectedHubFile, Mode=TwoWay}" DisplayMemberPath="Label" HorizontalAlignment="Stretch" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                        <Button Content="Check this file" Command="{x:Bind ViewModel.CheckHubFileCommand}" />
+                                        <TextBox Text="{x:Bind ViewModel.DetailsText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160" MaxHeight="260" AutomationProperties.Name="Selected model details" />
+                                    </StackPanel>
+                                </Expander>
                             </StackPanel>
                         </Grid>
                     </StackPanel>

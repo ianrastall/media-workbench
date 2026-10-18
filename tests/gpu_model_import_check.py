@@ -6,6 +6,11 @@ Usage (from the repository, after scripts/build.ps1):
 The data folder must already pass Install / verify. This copies the model (several GiB) into that
 folder and runs real inference through the same worker the app uses; it is not part of check.ps1.
 Use only a model you are licensed to use; nothing is downloaded.
+
+To exercise Discover's pinned download instead, use `hf:publisher/model` as the source and
+add --license-reviewed after reviewing that repository's model card and license. This downloads
+the smallest eligible single-file checkpoint, retains its notices, and tests pinned provenance.
+The added test model is removed at the end unless --keep is supplied; images/jobs are kept.
 """
 import json
 from pathlib import Path
@@ -33,6 +38,8 @@ def main():
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
     data, source, keep = sys.argv[1], sys.argv[2], "--keep" in sys.argv
+    if source.startswith("hf:") and "--license-reviewed" not in sys.argv:
+        raise SystemExit("Review the repository's model card and license, then pass --license-reviewed for a Hub download check.")
     worker = subprocess.Popen([sys.executable, "-I", str(ROOT / "workers/python/media_worker.py"), "--root", str(ROOT)],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8")
     if json.loads(worker.stdout.readline())["kind"] != "hello":
@@ -54,9 +61,22 @@ def main():
                 raise SystemExit(f"FAIL: {operation}: {event['payload']['message']}")
 
     try:
-        found = call("models.inspect", {"path": source})
-        print("PASS: identified", found["format"], found["summary"])
-        added = call("models.import", {"dataRoot": data, "path": source, "name": "GPU check " + Path(source).stem})
+        if source.startswith("hf:"):
+            plan = call("catalog.plan", {"dataRoot": data, "repoId": source[3:]})
+            if not plan["canInstall"] or not plan["headerChecked"]:
+                raise SystemExit("FAIL: the Hub model cannot be downloaded: " + plan["message"])
+            info, file = plan["details"], plan["selectedFile"]
+            print(f"PASS: checked {info['id']} at {info['revision']}: {file['path']}, {file['bytes'] / 1024**3:.2f} GiB, license {info['license']}", flush=True)
+            added = call("models.download", dict(dataRoot=data, repoId=info["id"], revision=info["revision"],
+                          file=file["path"], sha256=file["sha256"], bytes=file["bytes"], licenseReviewed=True))
+            record = json.loads((Path(data) / "models/imported" / added["id"] / "model.json").read_text(encoding="utf-8"))
+            if record["source"]["revision"] != info["revision"] or record["files"][0]["sha256"] != file["sha256"]:
+                raise SystemExit("FAIL: the model record does not preserve the pinned source")
+            print(f"PASS: pinned source and {len(record.get('notices', []))} upstream notices preserved", flush=True)
+        else:
+            found = call("models.inspect", {"path": source})
+            print("PASS: identified", found["format"], found["summary"])
+            added = call("models.import", {"dataRoot": data, "path": source, "name": "GPU check " + Path(source).stem})
         if added["status"] != "ready":
             raise SystemExit(f"FAIL: added model is {added['status']}: {added['message']}")
         print(f"PASS: added and tested {added['name']} ({added['id']})")
@@ -68,6 +88,8 @@ def main():
         print(f"PASS: text to image {text['width']}x{text['height']} in {text['seconds']}s, peak {text['peakVramMiB']} MiB on {text['gpu']}")
         if text["settings"]["model"] != added["id"] or text["modelName"] != added["name"]:
             raise SystemExit("FAIL: the job record does not name the model that made it")
+        if source.startswith("hf:") and text["source"] != record["source"]:
+            raise SystemExit("FAIL: generation lost the pinned Hub provenance")
         changed = call("generate.image", dict(prompt, prompt="A lighthouse on a rocky coast in winter snow", sourceImage=text["imagePath"], strength=0.6))
         print(f"PASS: image to image in {changed['seconds']}s")
         with tempfile.TemporaryDirectory() as folder:

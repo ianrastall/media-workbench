@@ -1,4 +1,4 @@
-# Development direction after 0.2.0-alpha.13
+# Development direction after 0.2.0-alpha.14
 
 This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, adding SD 1.5-family models the user already downloaded, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance with automatic clean-up and free-space checks, runtime settings chosen from the computer's hardware, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 
@@ -9,23 +9,23 @@ Media Workbench aims to move image and eventually video generation onto the user
 The next user-facing priorities are:
 
 1. **Add your own downloaded models.** Done for SD 1.5-family single files and Diffusers folders in 0.2.0-alpha.11; other architectures follow with their own verified profiles.
-2. **Refresh the model list from Hugging Face.** Discover already searches live metadata. It should also say which results this computer can actually install and run (supported architecture, safetensors files, license shown, VRAM fit), and offer a pinned install with the same verification gate.
+2. **Download models from Hugging Face.** Implemented for public root-level single-file SD 1.5 checkpoints in alpha.14: license/file hints, pinned metadata and bounded header checks, hardware/space/readiness limits, and download through native checks and real inference verification. Direct Diffusers-folder downloads, protected access and other model architectures remain separate verified slices.
 3. Then newer image models that fit 6 GB, and short video, as optional verified profiles.
 
 Alongside these, every feature follows the product principles in `AGENTS.md`: easy to use, stable, aware of the computer it runs on, clean, and mindful of drive space. The section below says what that still requires.
 
 ## What to do next
 
-The alpha.13 handoff is completed: hardware-aware inference is checked, drive detection is shared through Rust, and NuGet versions/locks, x64 enforcement, and native loading have been tightened. See [stack alignment](stack-alignment.md) and [handoff](../HANDOFF.md). The reference is an acceptance target; the older architecture proposals remain historical.
+The alpha.14 Discover download slice is implemented, and the alpha.13 handoff is completed: hardware-aware inference is checked, drive detection is shared through Rust, and NuGet versions/locks, x64 enforcement, and native loading have been tightened. See [stack alignment](stack-alignment.md) and [handoff](../HANDOFF.md). The reference is an acceptance target; the older architecture proposals remain historical.
 
 In order, as of 18 October 2026:
 
 1. **Validate the faster runtime choices on real hardware.** `fp16-gpu`, `fp16-offload`, and `fp32-gpu` are chosen automatically on suitable cards but lack representative end-to-end hardware evidence. The completed GTX 1660 Ti check selects `fp32-offload`; draft notes about forced alternate settings on that card do not establish compatibility of the faster profiles. Run `tests/gpu_hardware_profile_check.py` on an RTX card with 8 GB or more (expects `fp16-gpu`), a 6 GB RTX card (`fp16-offload`), and if possible a Pascal card with 10 GB or more (`fp32-gpu`), record the results in `docs/validation.md`, and adjust the thresholds in `workers/python/hardware.py` if the measurements say so (precision/offloading changes require fresh verification; bump the adapter version for other inference changes).
 2. **Close release and stack evidence gaps.** Run clean-machine validation below, check accessibility/high contrast/text scaling/mixed DPI, measure startup/idle behavior, preserve useful release symbols and build metadata, and verify a mixed managed/Rust breakpoint. Review the pinned Rust version against supported releases before another toolchain upgrade. These checks can proceed independently of access to more GPUs.
-3. **Refresh the model list from Hugging Face** (priority 2 above), using the hardware profile to say which results this computer can run: VRAM fit, supported architecture, safetensors, license.
+3. **Measure model-load versus inference time**, then implement the durable queue and warm-worker lifecycle below. These should improve repeated generation on the existing verified profile before adding more architectures. Discover now supports pinned public SD 1.5 single files; add other download layouts only behind equally strict file/runtime/GPU checks.
 4. **Clean-machine validation** (below): installer, upgrade from alpha.12 (installations ask for Install / verify once because the readiness stamp changed), offline launch, update/relaunch.
 5. **Notice a slow or busy drive at run time**: compare model-load time with what the drive kind predicts and say so when a job is slow (the static hard-disk advice already exists).
-6. Then the warm inference worker and durable queue, newer models that fit 6 GB, and video, each as verified profiles.
+6. Then newer models that fit 6 GB and video, each with a verified adapter/profile; expand Discover download layouts and protected access deliberately.
 
 ## Standing principles: system awareness, clean-up, and drive space
 

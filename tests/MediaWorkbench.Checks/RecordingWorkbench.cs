@@ -8,6 +8,24 @@ sealed class RecordingWorkbench : IWorkbenchService
     public Task<IReadOnlyList<HubModel>> SearchAsync(string query, string task, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<HubModel>>([]);
     public Task<ModelDetails> GetDetailsAsync(string repoId, CancellationToken cancellationToken) => throw new NotSupportedException();
+    public HubDownloadPlan HubPlan { get; set; } = new(new("owner/model", new string('a', 40), "text-to-image", "diffusers", "openrail", "Public", []),
+        [new("model.safetensors", 2L << 30, new string('b', 64))], new("model.safetensors", 2L << 30, new string('b', 64)), true, "Can download and test.", [], true, true);
+    public Task? HubPlanGate { get; set; }
+    public (string Root, string Repo, string Revision, string File)? LastHubCheck { get; private set; }
+    public (string Root, HubDownloadPlan Plan)? LastHubDownload { get; private set; }
+    public async Task<HubDownloadPlan> PlanHubModelAsync(string dataRoot, string repoId, string revision, string file, CancellationToken cancellationToken)
+    {
+        LastHubCheck = (dataRoot, repoId, revision, file);
+        if (HubPlanGate is { } gate) await gate.WaitAsync(cancellationToken);
+        return HubPlan;
+    }
+    public Task<ModelChoice> DownloadModelAsync(string dataRoot, HubDownloadPlan plan, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        LastHubDownload = (dataRoot, plan);
+        var model = new ModelChoice(new string('d', 32), "Downloaded model", "ready", "Ready", "single-file", Bytes: 2L << 30);
+        Models.Add(model);
+        return Task.FromResult(model);
+    }
     public Task? HealthGate { get; set; }
     public TaskCompletionSource? HealthStarted { get; set; }
     public async Task<string> GetHealthAsync(CancellationToken cancellationToken)

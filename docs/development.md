@@ -19,6 +19,8 @@ Start with [handoff](../HANDOFF.md) for exact resume commands and [stack alignme
 
 Run `scripts/build.ps1` before `scripts/run.ps1 -NoBuild`. The build prepares a checksum-verified private Python runtime, compiles the Rust DLL, and builds the solution. Artifacts are under `artifacts/`. The `runtime/`, `.cache/`, `.tools/`, `artifacts/`, and `dist/` trees are local and ignored.
 
+`build.ps1 -ManagedArtifacts <absolute-folder>` places managed build/intermediate outputs in a separate folder, useful for verifying a publish while an existing development app remains open. Publish output still goes to `artifacts/publish/win-x64`; `run.ps1` uses the ordinary default Debug output. Native builds retain the shared Cargo target folder and must not replace a library currently used by a source worker.
+
 Use `scripts/build.ps1 -Configuration Release -Installer` to publish and build the per-user installer. Output is `dist/MediaWorkbench-<version>-win-x64-setup.exe`, with an adjacent SHA-256 file. The installer defaults to the user's local Programs folder. It creates a Start menu shortcut with AppUserModelID `ianrastall.MediaWorkbench`, matching the running application. Taskbar pinning remains a normal user action.
 
 `scripts/test-publish.ps1` checks the shipped resource files, exercises the bundled worker/native core, and starts the actual GUI briefly to check XAML/binding initialization. Pass `-ApplicationDirectory <installed-folder>` to verify an installed copy. CI uses `-SkipUI` for its hosted runner while still requiring the compiled resource files and runtime check.
@@ -48,6 +50,8 @@ Native API declarations are in `native/include/media_workbench.h`. Build with `c
 Storage inventory and verified image export run directly in Rust on a background thread, without launching Python. Worker clients use thin ctypes adapters to those services. The shared `profiles/storage-layout.json` lists the supported runtime/model folders for inventory; its IDs are checked against the inference coordinator in tests. Storage sizes are logical file sizes. Removal remains an exclusive worker operation with its existing readiness invalidation and preservation of images/jobs.
 
 Run `scripts/check.ps1` for Rust formatting/tests/lints, Python tests, and C# boundary tests. `-Online` adds a small public-network search/detail check; routine unit tests do not need the Hub. `-Ffprobe <absolute-path>` enables the optional native-tool probe. Do not make tests depend on model downloads or a particular GPU.
+
+The online check also validates a real pinned single-file header through the Rust Hub planner, downloading only bounded header bytes and requiring no GPU. For a full opt-in Discover download/use/removal check, run the bundled discovery Python with `tests/gpu_model_import_check.py <verified-data-folder> hf:publisher/model --license-reviewed` after reviewing the pinned source's license. It downloads weights and performs real GPU work; `--keep` retains the added model, otherwise removal keeps its generated images/jobs. Routine checks use sparse fixtures. See [Discover downloads](inference.md#discover-downloads).
 
 ## MCP host
 

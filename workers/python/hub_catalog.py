@@ -39,6 +39,34 @@ def access_label(value):
     return "Gated access" if value else "Public"
 
 
+def metadata(repo_id, revision="", fetch=None):
+    component = r"[A-Za-z0-9_](?:[A-Za-z0-9_.-]{0,94}[A-Za-z0-9_])?"
+    if not isinstance(repo_id, str) or not re.fullmatch(component + "/" + component, repo_id):
+        raise ValueError("Use a valid publisher/model repository ID")
+    if not isinstance(revision, str) or revision and not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("Use the pinned model revision from its details")
+    suffix = "/revision/" + revision if revision else ""
+    data = (fetch or fetch_json)("/api/models/" + urllib.parse.quote(repo_id, safe="/") + suffix + "?blobs=true")
+    if not isinstance(data, dict) or str(data.get("id", repo_id)).casefold() != repo_id.casefold():
+        raise CatalogError("The model repository changed. Search again to load its current source.")
+    if revision and data.get("sha") != revision:
+        raise CatalogError("The Hub did not return the requested model revision.")
+    return data
+
+
+def describe(data, repo_id):
+    card = data.get("cardData") if isinstance(data.get("cardData"), dict) else {}
+    license_value = card.get("license") or "Not specified"
+    if not isinstance(license_value, str):
+        license_value = json.dumps(license_value)
+    siblings = data.get("siblings") if isinstance(data.get("siblings"), list) else []
+    return {"id": data.get("id", repo_id), "revision": data.get("sha") or "Not reported",
+            "task": data.get("pipeline_tag") or "Not specified", "library": data.get("library_name") or "Not specified",
+            "license": license_value[:1024], "access": access_label(data.get("gated") or data.get("private") or data.get("disabled")),
+            "files": [entry["rfilename"] for entry in siblings
+                      if isinstance(entry, dict) and isinstance(entry.get("rfilename"), str)][:200]}
+
+
 def search(payload, fetch=fetch_json):
     query = payload.get("query", "")
     task = payload.get("task", "")
@@ -47,7 +75,7 @@ def search(payload, fetch=fetch_json):
         raise ValueError("Invalid search query or task filter")
     if type(limit) is not int or not 1 <= limit <= 50:
         raise ValueError("Search limit must be between 1 and 50")
-    parameters = {"search": query.strip(), "limit": limit, "sort": "downloads", "direction": -1}
+    parameters = {"search": query.strip(), "limit": limit, "sort": "downloads", "direction": -1, "full": "true", "cardData": "true"}
     if task:
         parameters["pipeline_tag"] = task
     data = fetch("/api/models?" + urllib.parse.urlencode(parameters))
@@ -57,24 +85,22 @@ def search(payload, fetch=fetch_json):
     for item in data:
         if not isinstance(item, dict) or not isinstance(item.get("id"), str):
             continue
+        card = item.get("cardData") if isinstance(item.get("cardData"), dict) else {}
+        license_value = card.get("license")
+        has_file = any(isinstance(entry, dict) and isinstance(entry.get("rfilename"), str)
+                       and "/" not in entry["rfilename"] and entry["rfilename"].endswith(".safetensors")
+                       for entry in item.get("siblings") or [])
+        hint = "Model file listed — check this model." if has_file else "No model download listed; inspect the source."
+        if item.get("pipeline_tag") in ("text-to-video", "image-to-video"):
+            hint = "Video is not supported yet."
         models.append({"id": item["id"], "downloads": int(item.get("downloads") or 0),
                        "likes": int(item.get("likes") or 0), "task": item.get("pipeline_tag") or "Task not specified",
                        "library": item.get("library_name") or "Library not specified",
-                       "access": access_label(item.get("gated"))})
+                       "access": access_label(item.get("gated")),
+                       "license": license_value[:1024] if isinstance(license_value, str) else "Not specified", "hint": hint})
     return {"models": models, "source": "Hugging Face public API"}
 
 
 def details(payload, fetch=fetch_json):
     repo_id = payload.get("repoId", "")
-    if not isinstance(repo_id, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo_id):
-        raise ValueError("Use a valid publisher/model repository ID")
-    data = fetch("/api/models/" + urllib.parse.quote(repo_id, safe="/"))
-    card = data.get("cardData") or {}
-    license_value = card.get("license") or "Not specified"
-    if not isinstance(license_value, str):
-        license_value = json.dumps(license_value)
-    return {"id": data.get("id", repo_id), "revision": data.get("sha") or "Not reported",
-            "task": data.get("pipeline_tag") or "Not specified", "library": data.get("library_name") or "Not specified",
-            "license": license_value, "access": access_label(data.get("gated")),
-            "files": [entry["rfilename"] for entry in data.get("siblings", [])
-                      if isinstance(entry, dict) and isinstance(entry.get("rfilename"), str)][:200]}
+    return describe(metadata(repo_id, fetch=fetch), repo_id)

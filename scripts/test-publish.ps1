@@ -7,6 +7,7 @@ $taskRequired += 'profiles/storage-layout.json'
 $taskRequired += 'workers/python/file_verification.py'
 $taskRequired += 'workers/python/model_library.py'
 $taskRequired += 'workers/python/hardware.py'
+$taskRequired += 'workers/python/hub_models.py'
 foreach ($taskFile in $taskRequired) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published application is incomplete: $taskFile" }
 }
@@ -46,6 +47,7 @@ foreach ($taskMode in $taskModes) {
         if (-not $taskResult.success) { throw "Published application reported failure: $taskMode" }
         if ($taskMode -eq '--self-test' -and -not $taskResult.nativeVerification) { throw 'Published native verification was not exercised.' }
         if ($taskMode -eq '--self-test' -and -not $taskResult.hardwareProfile) { throw 'Published hardware profile was not exercised.' }
+        if ($taskMode -eq '--self-test' -and -not $taskResult.hubPlanning) { throw 'Published native Hub planning was not exercised.' }
         Write-Output "PASS: published application $taskMode"
     } finally { $taskProcess.Dispose() }
 }

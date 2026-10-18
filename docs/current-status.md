@@ -1,6 +1,6 @@
 # Current implementation status
 
-Version: **0.2.0-alpha.13**. Development started 17 October 2026.
+Version: **0.2.0-alpha.14**. Development started 17 October 2026.
 
 ## Technology decisions
 
@@ -43,12 +43,18 @@ Builds centralize NuGet versions in `Directory.Packages.props`, commit per-proje
 
 Normal source builds also copy the console host beside the GUI for Settings-generated MCP configuration; published builds already bundle it with the runtime.
 
+**Discover download and test.** Search adds license metadata and a file-availability hint. **Check model** fetches an immutable repository revision with file sizes/LFS SHA-256 metadata; Rust's `mw_plan_hub_model` permits bounded, complete root-level safetensors candidates with public access and a stated license. The worker reads at most an 8 MiB header at that revision and reuses local-import structural checks to reject unsupported architectures, add-ons and damaged files without downloading full weights. It also checks this computer's GPU/memory profile, free space and verified bundled runtime. The smallest candidate is checked by default; another may be selected under **Advanced options**. Search hints do not imply compatibility or readiness.
+
+**Download and test** requires reviewing the pinned card/license, then re-fetches that exact revision and checks the reviewed file size/hash. It downloads one copy directly into an owned import folder, streams size/hash checks with responsive progress/cancel and repeated quota-aware free-space checks, retains bounded pinned model-card/license/notice files with Git-blob hash checks, and reuses native file verification and the existing real GPU test. Only then is the model ready and selected in Create. Failed/cancelled first additions are removed; existing import recovery removes crash leftovers. Repository, revision, file hash and license metadata are retained in the model and generated-job source. This uses the existing adapter/profile stamps, so alpha.13 models do not need re-verification. Local Diffusers folders remain supported; downloading them directly from Discover and authenticated Hub access remain planned. MCP retains its existing bundled-only setup capability and gains no arbitrary-download tool.
+
 ## Still planned
 
 
-Authenticated remote/cloud MCP access, protected Hugging Face account access, installing models from Discover, added models of other architectures (SDXL and newer), LoRAs and embeddings, arbitrary model installation, other GPU vendors and CPU-only generation, real-hardware validation of the half-precision and GPU-resident runtime choices, a dedicated inpainting model, video generation, queues, more enhancement tools, Library image pruning, noticing a busy (rather than slow) data drive, and signed application updates. Tools supports Real-ESRGAN upscaling; Home supports checksum-verified application updates. The SD 1.5 recipe remains experimental and each installation must pass its own inference test; discovery results do not imply runnable pipelines.
+Authenticated remote/cloud MCP access, protected Hugging Face account access, direct Diffusers-folder downloads from Discover, added models of other architectures (SDXL and newer), LoRAs and embeddings, arbitrary model installation, other GPU vendors and CPU-only generation, real-hardware validation of the half-precision and GPU-resident runtime choices, a dedicated inpainting model, video generation, queues, more enhancement tools, Library image pruning, noticing a busy (rather than slow) data drive, and signed application updates. Tools supports Real-ESRGAN upscaling; Home supports checksum-verified application updates. The SD 1.5 recipe remains experimental and each installation must pass its own inference test; discovery results do not imply runnable pipelines.
 
 ## Verification
+
+- Hub download tests use sparse fake SD 1.5 files and the real native planner/verifier. They cover immutable revisions, license/access requirements, unsafe inputs, unsupported headers, no-GPU/low-space/unready-runtime refusals, byte/checksum/range failures, partial-read progress/cancellation, space lost during transfer, crash recovery, duplicate refusal, preserved notices, pinned generation provenance, and failure removing the unready copy. C# checks cover real ABI planning, saved-folder scope, license review, file/repository/folder invalidation, failed and stale checks, selecting a successfully tested model, and real worker rejection before network/writes. `tests/online_catalog_check.py` checks the actual public metadata and bounded pinned header without full weights or a GPU; `tests/gpu_model_import_check.py` accepts `hf:publisher/model --license-reviewed` for the opt-in complete download/GPU path.
 
 - Rust unit tests, formatting, and Clippy are part of `scripts/check.ps1`.
 - File-verifier checks use real Python/C# ABI calls for correct bytes, Unicode paths, size and checksum failures, invalid declarations, missing files/core, streaming cancellation, callback exception containment, Windows file sharing/junctions, retained downloads, and unchanged readiness-stamp shape. Published self-tests exercise the bundled verifier too.
@@ -77,7 +83,7 @@ Product direction (see [What to do next](next-steps.md#what-to-do-next) for the 
 
 1. Validate the faster runtime choices (`fp16-gpu`, `fp16-offload`, `fp32-gpu`) on GPUs that choose them with `tests/gpu_hardware_profile_check.py`; only `fp32-offload` has passed on real hardware.
 2. Close the remaining [stack and release evidence gaps](stack-alignment.md): clean-machine installs/upgrades, accessibility and performance measurements, useful release symbols, and mixed debugging.
-3. A Hugging Face model list that says what this computer can install and run, behind the same real inference verification.
+3. Extend Discover beyond public single-file SD 1.5 checkpoints when the relevant verified adapters and download manifests are ready; local folder import already works.
 4. Clean-machine Windows 10/11 validation, including the upgrade from 0.2.0-alpha.12 (one Install / verify).
 5. A warm inference worker and durable generation queue, retaining owned-process cancellation and crash recovery; then Library organization, more model adapters, and video, each after runtime/hardware validation.
 

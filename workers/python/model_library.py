@@ -28,6 +28,7 @@ BUILT_IN_NAME = "Stable Diffusion 1.5"
 # 2: the model runs with the bundled installation's runtime choice (or the conservative fallback) and records it.
 IMPORT_ADAPTER_VERSION = 2
 HEADER_MAX_BYTES = 100 * 1024**2
+HEADER_MAX_TENSORS = 32000
 JSON_MAX_BYTES = 1024**2
 NAME_MAX = 80
 IMPORT_HEADROOM_BYTES = 1024**3
@@ -65,6 +66,14 @@ def read_header(path):
             raw = stream.read(length)
     except OSError as exc:
         raise Refused(f"The file could not be read: {exc.strerror or exc}") from None
+    return parse_header(raw, size)
+
+
+def parse_header(raw, size):
+    """The same structural checks for local and bounded, pinned remote header bytes."""
+    length = len(raw)
+    if not 2 <= length <= min(HEADER_MAX_BYTES, size - 8):
+        raise Refused("This is not a readable .safetensors model file.")
     try:
         header = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
@@ -72,12 +81,14 @@ def read_header(path):
     if not isinstance(header, dict):
         raise Refused("This is not a readable .safetensors model file.")
     header.pop("__metadata__", None)
+    if len(header) > HEADER_MAX_TENSORS:
+        raise Refused("This model header is too complicated to read safely. Choose another file.")
     payload = size - 8 - length
     tensors = {}
-    end = 0
+    end, ranges = 0, []
     for name, info in header.items():
         if not isinstance(info, dict) or info.get("dtype") not in ITEM_BYTES or not isinstance(info.get("shape"), list) \
-                or not all(type(side) is int and side >= 0 for side in info["shape"]) \
+                or len(info["shape"]) > 8 or not all(type(side) is int and 0 <= side <= 2**31 for side in info["shape"]) \
                 or not isinstance(info.get("data_offsets"), list) or len(info["data_offsets"]) != 2 \
                 or not all(type(offset) is int for offset in info["data_offsets"]):
             raise Refused("This .safetensors file has a damaged header.")
@@ -85,14 +96,23 @@ def read_header(path):
         count = ITEM_BYTES[info["dtype"]]
         for side in info["shape"]:
             count *= side
+            if count > payload:
+                raise Refused("This file is incomplete or has a damaged header.")
         if not 0 <= start <= stop or stop - start != count:
             raise Refused("This .safetensors file has a damaged header.")
         end = max(end, stop)
+        if stop > start:
+            ranges.append((start, stop))
         tensors[name] = (info["dtype"], tuple(info["shape"]))
     if end > payload:
         raise Refused("This file is incomplete. If it is still downloading, wait for it to finish and try again.")
     if end != payload or not tensors:
         raise Refused("This .safetensors file has a damaged header.")
+    position = 0
+    for start, stop in sorted(ranges):
+        if start != position:
+            raise Refused("This .safetensors file has overlapping or missing tensor data.")
+        position = stop
     return tensors
 
 
@@ -305,7 +325,7 @@ def read_model(root, model_id):
 def stored_files(root, record):
     """(path, manifest entry) for the copied weights; app-written configs are watched by stamps too."""
     folder = folder_of(root, record["id"])
-    return [(setup.owned(folder, entry["path"]), entry) for entry in record["files"]
+    return [(setup.owned(folder, entry["path"]), entry) for entry in record["files"] + record.get("notices", [])
             if isinstance(entry, dict) and isinstance(entry.get("path"), str)]
 
 
@@ -503,6 +523,20 @@ def child_payload(record):
     return payload
 
 
+def finish_import(app, root, record, cancel, progress):
+    """One commit path for copied local models and pinned Hub downloads. Caller owns the folder lock."""
+    folder = folder_of(root, record["id"])
+    for other in imported_records(root):
+        if other["id"] != record["id"] and sorted((f["path"], f["sha256"]) for f in other["files"]) == sorted((f["path"], f["sha256"]) for f in record["files"]):
+            raise Refused(f"This model is already added as “{other['name']}”.")
+    bundled_configs(root, folder, record)
+    record.update(status="testing", message="Testing the model on your GPU.")
+    setup.atomic_json(record_path(root, record["id"]), record)
+    record = test_model(app, root, record, cancel, progress)
+    setup.atomic_json(record_path(root, record["id"]), record)
+    return entry(app, root, record, True)
+
+
 def import_model(app, payload, cancel, progress):
     identified = inspect(payload)  # Before data_root, which creates the folder.
     name = payload.get("name", "")
@@ -530,15 +564,7 @@ def import_model(app, payload, cancel, progress):
                 setup.check_cancel(cancel)
                 digest = native_copy(app, root, item["source"], f"models/imported/{model_id}/{item['path']}", cancel, progress, item["path"])
                 record["files"].append(dict(path=item["path"], size=item["size"], sha256=digest))
-            for other in imported_records(root):
-                if other["id"] != model_id and sorted((f["path"], f["sha256"]) for f in other["files"]) == sorted((f["path"], f["sha256"]) for f in record["files"]):
-                    raise Refused(f"This model is already added as “{other['name']}”.")
-            bundled_configs(root, folder, record)
-            record.update(status="testing", message="Testing the model on your GPU.")
-            setup.atomic_json(record_path(root, model_id), record)
-            record = test_model(app, root, record, cancel, progress)
-            setup.atomic_json(record_path(root, model_id), record)
-            return entry(app, root, record, True)
+            return finish_import(app, root, record, cancel, progress)
         except BaseException:
             # A model that never passed its test is not kept; the user's original is untouched.
             shutil.rmtree(folder, ignore_errors=True)

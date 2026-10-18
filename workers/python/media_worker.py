@@ -17,6 +17,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hub_catalog
+import hub_models
 import inference_setup
 import model_library
 import storage
@@ -79,6 +80,10 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
             result = hub_catalog.search(payload)
         elif operation == "catalog.details":
             result = hub_catalog.details(payload)
+        elif operation == "catalog.plan":
+            result = hub_models.plan(root, payload, cancellation)
+        elif operation == "models.download":
+            result = hub_models.install(root, payload, cancellation, lambda value: emit(request_id, "progress", value))
         elif operation == "system.profile":
             result = inference_setup.system_profile(root, payload)
         elif operation == "installation.status":
@@ -171,7 +176,7 @@ def main() -> int:
         print("The selected root must contain recipes/", file=sys.stderr)
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
-                         "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "demo.run",
+                         "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "catalog.plan", "models.download", "demo.run",
                                         "system.profile", "installation.status", "installation.run", "generate.image", "upscale.image", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear"],
                          "generationAvailable": False, "installationAvailable": True})
     while True:

@@ -230,3 +230,25 @@ Validated on Windows 11, 18 October 2026, using .NET SDK 10.0.113 and Rust 1.97.
 Hardware tests use fake GPUs to exercise selection, fallback, driver-specific declined settings, readiness stamps and job routing. Real ctypes checks cover native drive information for Unicode/missing folders, invalid paths and missing/incompatible libraries. Readiness regression checks prove that Diagnostics withholds the verified runtime for missing/changed files and an incompatible card, without modifying the saved records. These tests do not certify faster settings on RTX or Pascal GPUs. The GPU test reused the existing models/runtime and retained caches; the subsequent normal app startup performed the default verified-setup cache clean-up.
 
 Timings are single observations while development builds ran, and exclude model import/load time. They are not startup or latency benchmarks. Clean Windows 10/11 installer/upgrade/offline/update/uninstall checks, full accessibility and mixed-DPI evidence, external startup/idle measurements, useful release-symbol archival and mixed debugging remain open in [stack alignment](stack-alignment.md).
+
+## Discover pinned downloads (0.2.0-alpha.14)
+
+Validated on the same Windows 11 host, 18 October 2026, with the existing verified SD 1.5 runtime on a GTX 1660 Ti (6 GB, driver 610.60). The data folder is on a hard disk. The unchanged adapter/profile stamps kept the baseline ready; no baseline reinstallation or runtime provisioning was needed.
+
+| Check | Result |
+|---|---|
+| Full `scripts/check.ps1` with `ContinuousIntegrationBuild=true` | Passed: 25 Rust tests plus formatting/Clippy, 175 Python tests, 193 C# checks |
+| Release solution build | Passed, zero warnings/errors |
+| `scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts <isolated-output>` | Passed against locked dependencies; shipped native/worker/MCP smoke tests and x64 inventory passed. The app self-test exercises the native Hub planner |
+| `tests/online_catalog_check.py` | Passed actual public search/details and pinned metadata/header identification without downloading full weights or requiring a GPU |
+| Complete opt-in `tests/gpu_model_import_check.py <verified-folder> hf:stable-diffusion-v1-5/stable-diffusion-v1-5 --license-reviewed` | Passed pinned download, native file/notice verification, real GPU test, model listing, text/image-to-image, painted edit, 2x upscale, pinned generation provenance and model removal |
+| Downloaded source | Commit `451f4fe16113bff5a5d2269ed5ad43b0592e9a14`, `v1-5-pruned-emaonly.safetensors`, 4,265,146,304 bytes, SHA-256 `6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa`; license metadata `creativeml-openrail-m`; the pinned README was retained and natively verified |
+| Text to image | 512 × 512, 20 steps, `fp32-offload`, 159.16 s inference, peak 4841 MiB; the job retained the repository/commit/file/hash/license source |
+| Image to image / painted change | Succeeded in 109.45 s / 182.76 s respectively |
+| Upscale / removal | Produced 1024 × 1024; removing the added test model kept all four images and their job records |
+
+Routine fixtures cover unsupported headers, bounded tensor counts/ranks/arithmetic and payload ranges, unsafe IDs/paths, gated or unlicensed sources, immutable snapshot/hash/size mismatches, headers without full weights, missing GPU/runtime/space, low space during download, partial-read progress/cancellation, corrupted weights/notices, duplicate refusal before full transfer, failure/crash clean-up, native ABI sizing/round trips, saved-folder scoping, license review and stale/failed selection checks. A filename containing ordinary words such as `dream-of-spring` remains eligible; numbered shard names are excluded. No download or GPU work runs in the routine suite.
+
+The real check used an official baseline single-file checkpoint, not a community fine-tune; it adds no RTX/Pascal or newer-architecture certification. Timings are single observations under development load, excluding import/model loading. A preliminary download was deliberately stopped while improving streaming progress, and ordinary orphan-import recovery removed its unfinished copy before retrying.
+
+Interactive computer use was stopped by the user with Escape before the Discover walkthrough. No further desktop input was made; interactive layout, keyboard/screen-reader and narrow/high-DPI validation of this flow remain pending. Subsequent publishing used isolated managed outputs and `-SkipUI` smoke checks, leaving the open development app alone. Clean-machine Windows install/upgrade/update validation remains pending.

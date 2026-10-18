@@ -26,8 +26,16 @@ class CatalogTests(unittest.TestCase):
                 hub_catalog.search(payload, fail)
 
     def test_details_restricts_repo_id(self):
-        with self.assertRaises(ValueError):
-            hub_catalog.details({"repoId": "../outside?token=x"}, lambda url: {})
+        for repo in ("../outside?token=x", "../outside", "owner/..", "owner/model?token=x", "owner//model"):
+            with self.subTest(repo=repo), self.assertRaises(ValueError):
+                hub_catalog.details({"repoId": repo}, lambda url: self.fail("Invalid IDs must not reach the network"))
+
+    def test_search_hints_are_metadata_only_and_show_video_and_license(self):
+        result = hub_catalog.search({}, lambda _: [dict(id="owner/model", pipeline_tag="text-to-image", cardData={"license": "openrail"},
+            siblings=[dict(rfilename="model.safetensors")]), dict(id="owner/video", pipeline_tag="text-to-video")])
+        self.assertEqual(result["models"][0]["license"], "openrail")
+        self.assertIn("check this model", result["models"][0]["hint"])
+        self.assertIn("not supported", result["models"][1]["hint"])
 
     def test_details_handles_missing_optional_fields(self):
         result = hub_catalog.details({"repoId": "owner/model"}, lambda url: {"id": "owner/model", "siblings": [{"rfilename": "config.json"}]})

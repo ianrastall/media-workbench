@@ -26,6 +26,8 @@ public partial class MainViewModel : ObservableObject
         InstallUpdateCommand = new AsyncRelayCommand(InstallUpdateAsync, () => !IsBusy && HasUpdate);
         SearchCommand = new AsyncRelayCommand(SearchAsync, () => !IsBusy);
         DetailsCommand = new AsyncRelayCommand(LoadDetailsAsync, () => !IsBusy && SelectedModel is not null);
+        CheckHubFileCommand = new AsyncRelayCommand(CheckHubFileAsync, () => !IsBusy && _hubPlan is not null && SelectedHubFile is not null);
+        DownloadModelCommand = new AsyncRelayCommand(DownloadHubModelAsync, () => !IsBusy && CanDownloadHubModel);
         DiagnosticsCommand = new AsyncRelayCommand(DiagnoseAsync, () => !IsBusy);
         PlanCommand = new RelayCommand(ShowPlan, () => !IsBusy);
         SaveSettingsCommand = new RelayCommand(SaveSettings, () => !IsBusy);
@@ -174,7 +176,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -188,6 +190,35 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial bool HasProblems { get; set; }
     public IAsyncRelayCommand SearchCommand { get; }
     public IAsyncRelayCommand DetailsCommand { get; }
+    public IAsyncRelayCommand CheckHubFileCommand { get; }
+    public IAsyncRelayCommand DownloadModelCommand { get; }
+    public ObservableCollection<HubDownloadFile> HubFiles { get; } = [];
+    private HubDownloadPlan? _hubPlan;
+    private string? _hubRoot;
+    [ObservableProperty] public partial string HubPlanText { get; set; } = "Check a model to see whether this computer can download and test it.";
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(DownloadModelCommand), nameof(CheckHubFileCommand))]
+    public partial HubDownloadFile? SelectedHubFile { get; set; }
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(DownloadModelCommand))]
+    public partial bool HubLicenseReviewed { get; set; }
+    public bool CanDownloadHubModel => _hubPlan is { CanInstall: true, HeaderChecked: true, SelectedFile: { } file }
+        && file == SelectedHubFile && _hubRoot == DataRoot && _hubPlan.Details.Id == SelectedModel?.Id && HubLicenseReviewed;
+
+    partial void OnSelectedModelChanged(HubModel? value) => ClearHubPlan();
+    partial void OnSelectedHubFileChanged(HubDownloadFile? value)
+    {
+        HubLicenseReviewed = false;
+        if (_hubPlan is { SelectedFile: { } file } && file != value)
+            HubPlanText = "Check this file before downloading. A different file can contain a different kind of model.";
+    }
+
+    private void ClearHubPlan()
+    {
+        _hubPlan = null; _hubRoot = null;
+        HubFiles.Clear(); SelectedHubFile = null; HubLicenseReviewed = false;
+        HubPlanText = "Check a model to see whether this computer can download and test it.";
+        DetailsText = "Select a model to inspect its source, revision, and files.";
+        CheckHubFileCommand.NotifyCanExecuteChanged(); DownloadModelCommand.NotifyCanExecuteChanged();
+    }
     public IAsyncRelayCommand DiagnosticsCommand { get; }
     public IRelayCommand PlanCommand { get; }
     public IRelayCommand SaveSettingsCommand { get; }
@@ -570,6 +601,7 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnDataRootChanged(string value)
     {
+        ClearHubPlan();
         ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = "";
         UpscalePreviewPath = ""; SourceImagePath = ""; UpscaleSourcePath = "";
         LatestImage = null; LatestUpscale = null;
@@ -752,20 +784,52 @@ public partial class MainViewModel : ObservableObject
         Models.Clear();
         SelectedModel = null;
         foreach (var model in models) Models.Add(model);
-        Notice = models.Count == 0 ? "No models matched. Try another search or task filter." : $"Found {models.Count} public models. These results do not imply installation support or hardware compatibility.";
+        Notice = models.Count == 0 ? "No models matched. Try another search or task filter." : $"Found {models.Count} models. Check a model to read its files and this computer's limits. Downloads currently support single-file Stable Diffusion 1.5 checkpoints.";
         Record($"Loaded {models.Count} model results");
     });
 
     private Task LoadDetailsAsync()
     {
         string? id = SelectedModel?.Id;
-        return id is null ? Task.CompletedTask : RunAsync("Loading model details…", async token =>
+        return id is null ? Task.CompletedTask : LoadHubPlanAsync(id, "", "");
+    }
+
+    private Task CheckHubFileAsync() => _hubPlan is { } plan && SelectedHubFile is { } file
+        ? LoadHubPlanAsync(plan.Details.Id, plan.Details.Revision, file.Path) : Task.CompletedTask;
+
+    private Task LoadHubPlanAsync(string id, string revision, string file)
+    {
+        string folder = DataRoot;
+        // An earlier successful check must never authorize a failed refresh.
+        _hubPlan = null; HubLicenseReviewed = false;
+        return RunAsync("Checking model files and this computer…", async token =>
         {
-            var model = await _service.GetDetailsAsync(id, token);
+            var plan = await _service.PlanHubModelAsync(folder, id, revision, file, token);
+            if (SelectedModel?.Id != id || DataRoot != folder) return;
+            var model = plan.Details;
             DetailsText = $"{model.Id}\n\nTask: {model.Task}\nLibrary: {model.Library}\nAccess: {model.Access}\nLicense: {model.License}\nRevision: {model.Revision}\n\nRepository files (up to 200):\n{string.Join("\n", model.Files)}";
+            HubFiles.Clear(); foreach (var candidate in plan.Files) HubFiles.Add(candidate);
+            SelectedHubFile = HubFiles.FirstOrDefault(candidate => candidate == plan.SelectedFile);
+            _hubPlan = plan; _hubRoot = folder;
+            HubPlanText = plan.Summary;
+            CheckHubFileCommand.NotifyCanExecuteChanged(); DownloadModelCommand.NotifyCanExecuteChanged();
             Record($"Inspected {model.Id}");
         });
     }
+
+    private Task DownloadHubModelAsync() => RunAsync("Downloading and testing your model…", async token =>
+    {
+        if (!CanDownloadHubModel || _hubPlan is not { } plan) return;
+        string folder = DataRoot;
+        var added = await _service.DownloadModelAsync(folder, plan, ObserveProgress(), token);
+        ClearHubPlan();
+        await UpdateInstallation(token);
+        await UpdateModels(token, added.IsReady ? added.Id : null);
+        if (added.IsReady) SelectedPage = "create";
+        Notice = added.IsReady ? $"“{added.Name}” passed its GPU test and is selected in Create. Its pinned source, model card, and license information are kept with the model."
+            : $"“{added.Name}” is not ready: {added.Message}";
+        Record($"Downloaded and tested {added.Name}");
+    }, longRunning: true);
 
     private Task DiagnoseAsync() => RunAsync("Checking components…", async token =>
     {
@@ -914,11 +978,13 @@ public partial class MainViewModel : ObservableObject
         if (SelectedModel is null) return;
         try
         {
-            string id = string.Join('/', SelectedModel.Id.Split('/').Select(Uri.EscapeDataString));
-            Process.Start(new ProcessStartInfo("https://huggingface.co/" + id) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(ModelSourceUrl) { UseShellExecute = true });
         }
         catch (Exception ex) { Notice = ex.Message; }
     }
+    public string ModelSourceUrl => SelectedModel is not { } model ? "" : "https://huggingface.co/"
+        + string.Join('/', model.Id.Split('/').Select(Uri.EscapeDataString))
+        + (_hubPlan is { } plan && plan.Details.Id == model.Id ? "/tree/" + Uri.EscapeDataString(plan.Details.Revision) : "");
     private void Record(string message)
     {
         Activity.Insert(0, $"{DateTime.Now:t}   {message}");

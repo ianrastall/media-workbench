@@ -71,7 +71,13 @@ Buffer-size queries behave as for verification: a null/short output returns stat
 
 Links and junctions are never followed: managed-area ancestors containing one are refused (status 1), links inside trees are skipped or, inside a cache being removed, deleted as links. Read-only cache files are made writable and deleted. A file another program holds open is counted as `skipped` and tried again next time. The report is `{removedFiles, removedBytes, logs, jobRecords, partialDownloads, downloadCaches, skipped, policy}`, where `policy` states the limits (`logs` 300, `logDays` 30, `problemJobs` 50, `partialHours` 72) so clients can check they match Library. A null/short output returns status 2 with `required=1024` and no filesystem work; the optional cancellation callback is polled between entries (status 5). The desktop calls it directly at startup (removing caches only when setup is verified and Settings does not keep them); the worker calls it through the storage adapter after a verified setup.
 
-## Future additions
+## Public Hub file planning
+
+`mw_plan_hub_model` is an additive ABI 1 pure service. Input JSON contains `{repoId,revision,license,gated,files:[{path,bytes,sha256}]}`; output is `{files,blocker}`. It bounds/validates metadata, permits only complete root-level safetensors candidates with published size/SHA-256, and requires public access, a stated license and an immutable 40-digit commit. Unsafe paths, individual components/shards, oversized files and malformed pins cannot authorize a download. Candidates are sorted by size/name, with at most 64 returned from 512 metadata entries. A null/short output returns status 2, `required=65536`, without reading input; other invalid/bounded input returns status 1. No filesystem/network work, callbacks, handles or readiness state is involved.
+
+The GUI's worker uses a thin ctypes adapter; `NativeCore.PlanHubFiles` also exercises the same service from C# and the published app self-test. Header identification, installed runtime/file checks and actual GPU inference remain mandatory after a successful metadata plan. See [Discover downloads](inference.md#discover-downloads).
+
+## Further native work
 
 
 Move bootstrap/package verification and owned-storage operations into this core as they are needed. Keep new exports narrow and append-only within ABI 1, or bump the ABI when compatibility breaks. Native exports should have matching header documentation and meaningful Rust plus C# boundary checks.

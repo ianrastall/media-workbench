@@ -7,19 +7,15 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.2.0-alpha.13](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.13)** · 2026-10-18 · Pre-release · Windows x64
+**[0.2.0-alpha.14](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.14)** · 2026-10-18 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.13/MediaWorkbench-0.2.0-alpha.13-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.13/MediaWorkbench-0.2.0-alpha.13-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.13/MediaWorkbench-0.2.0-alpha.13-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.14/MediaWorkbench-0.2.0-alpha.14-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.14/MediaWorkbench-0.2.0-alpha.14-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.14/MediaWorkbench-0.2.0-alpha.14-README.md)
 
-- Settings chosen for your computer: Media Workbench now reads your graphics card, its memory, your system memory, and the data folder's drive, and shows them in plain words on Create's setup card and in **Diagnostics**, with why its settings were chosen. Nothing new is installed to do this.
-- How pictures are made now follows that hardware: half precision on graphics cards that handle it well, the whole model on the graphics card when it fits, and otherwise the memory-saving settings used until now (full precision, parts of the model waiting in system memory). GTX 16-series cards keep the memory-saving settings, because half precision makes blank pictures on them.
-- Every choice must pass the real test on your GPU during **Install / verify**. If faster settings fail it, the memory-saving settings are tested and used, and that card and driver are not asked to try the faster ones again. Because the settings are now part of what "verified" means, existing installations and added models ask for **Install / verify** (or **Test again**) once after updating; nothing is downloaded again.
-- Computers with less than 8 GB of memory, or a graphics card below 6 GB, are told so plainly before anything downloads; with less than 16 GB, the setup card and Diagnostics warn that memory-saving settings may be slow. If you change graphics cards, Create says when faster settings can be tested or when the old ones must be tested again.
-- Upscaling uses larger tiles when more graphics memory is free, and smaller ones (instead of failing) when memory runs short.
-- The complete real-hardware check passed with memory-saving settings on a GTX 1660 Ti (6 GB), including generation and a 4× upscale. Faster runtime choices still need representative RTX/Pascal hardware checks; simulated hardware tests do not certify them.
-
-- Drive information now comes from one Rust service for both the hardware profile and the desktop, including quota-aware free space. Diagnostics stops calling settings verified if runtime/model files are missing or changed, or the current card cannot use those settings.
-- Development builds now use central NuGet versions, committed dependency lockfiles with locked CI restores, a narrower .NET SDK pin, explicit x64 host checks, and app-local Rust DLL loading. Published checks inspect executable architectures. The stack audit and handoff document the remaining release evidence and deliberate exceptions.
+- Discover can now download and test public single-file Stable Diffusion 1.5 models. **Check model** reads a small file header, checks this computer and the saved data folder's free space, and explains what prevents a download. Search results show license metadata and a hint about available model files; newer architectures, add-ons, and video still need their own adapters.
+- **Download and test** uses the exact repository revision, file size, and checksum shown by the check. It requires a model-card/license review, shares the already verified Stable Diffusion 1.5 runtime, verifies the downloaded file through Rust, and runs the real GPU test before selecting the model in Create. Another model file can be chosen under **Advanced options**.
+- Downloads keep one owned copy, check space again during the transfer, report progress as network bytes arrive, and remove unfinished or failed additions, including after a crash. Pinned model cards, licenses, and notices are retained; generation records keep the repository, revision, file checksum, and license metadata. No repository code or configuration is used.
+- Rust owns the bounded public-download metadata policy. Protected downloads, missing licenses or immutable revisions, unsafe paths, unverified hashes, individual model parts, and unsupported file headers cannot become a ready model. Choosing another repository, file, or data folder invalidates an earlier check.
+- Existing installations and local imports remain verified without a new setup test. Downloading Diffusers folders directly from Discover and protected Hub access remain planned; local Diffusers-folder import still works.
 <!-- release-summary:end -->
 
 ## Install
@@ -59,10 +55,14 @@ Cancel stops the owned worker operation. Retrying setup reuses completed downloa
 
 Developer architecture and remaining acceptance work are recorded in [stack alignment](docs/stack-alignment.md) and [handoff](HANDOFF.md). Dependency versions are centralized and locked in CI; native hosts and published payloads are checked for x64, and the Rust core loads from beside the application.
 
+**Download a model from Discover:** search the public Hub, select a result, and choose **Check model**. The app reads a bounded header to identify an SD 1.5-family single-file model and checks the graphics card, system memory, and data folder's free space. Review the pinned model card/license, tick the review box, and choose **Download and test**. Stable Diffusion 1.5 must already be verified in Create because added models share its private runtime. Only a file that passes native size/checksum checks and real GPU inference becomes available and is selected in Create. Search metadata is a hint; it never proves compatibility. **Advanced options** offers other files at the same immutable revision. Direct downloads of Diffusers folders and protected repositories are not supported yet; local folder import remains available.
+
+The download keeps one copy under the managed models folder, preserves the pinned model card/license/notice files, checks free space during the transfer, and removes incomplete or failed additions. A crash leftover is recovered at the next idle operation. Cancelled downloads restart rather than resume. Images and job records preserve the pinned source; removing a downloaded model in Settings keeps those images and records.
+
 ## What works now
 
 - Native dark WinUI shell with MVVM commands and observable state.
-- Live public Hugging Face search with task filters.
+- Live public Hugging Face search with task filters, license metadata and file hints; bounded header/hardware/space checks and pinned download-and-test for public SD 1.5 single-file checkpoints.
 - Model details: publisher/repository, revision, task, library, license metadata, access state, and repository files.
 - Rust installation-plan validation, relative-path policy, and streaming SHA-256 through C ABI 1.
 - Rust-owned completed-job validation and cancellable, checksum-verified PNG export with atomic replacement.

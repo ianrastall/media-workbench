@@ -34,6 +34,15 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         var data = await Execute("catalog.details", new { repoId }, cancellationToken);
         return JsonSerializer.Deserialize<ModelDetails>(data, Wire.Json) ?? throw new InvalidDataException("Empty model details.");
     }
+    public async Task<HubDownloadPlan> PlanHubModelAsync(string dataRoot, string repoId, string revision, string file, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<HubDownloadPlan>(await Execute("catalog.plan", new { dataRoot, repoId, revision, file }, cancellationToken), Wire.Json)
+            ?? throw new InvalidDataException("Empty model download plan.");
+    public async Task<ModelChoice> DownloadModelAsync(string dataRoot, HubDownloadPlan plan, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        if (!plan.CanInstall || plan.SelectedFile is not { } file) throw new InvalidOperationException("Check this model's details before downloading.");
+        return JsonSerializer.Deserialize<ModelChoice>(await Execute("models.download", new { dataRoot, repoId = plan.Details.Id,
+            revision = plan.Details.Revision, file = file.Path, file.Sha256, file.Bytes, licenseReviewed = true }, cancellationToken, progress), Wire.Json)!;
+    }
     public async Task<string> GetHealthAsync(CancellationToken cancellationToken)
     {
         uint abi = NativeCore.VerifyAbi();
