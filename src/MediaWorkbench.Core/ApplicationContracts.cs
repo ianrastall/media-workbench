@@ -131,8 +131,9 @@ public sealed record ImageExportRequest(string JobId, string Destination);
 /// <summary>One part of the data folder; clearable parts are reproducible and can be removed from the app.</summary>
 public sealed record StorageLayout(string RuntimeProfileId, string[] ModelIds);
 
-/// <summary>Free space and type of the drive holding the data folder. Kind: ssd, hdd, usb, removable, network, or unknown.</summary>
-public sealed record DriveStatus(long FreeBytes, long TotalBytes, string DriveKind)
+/// <summary>Free space and type of the drive holding the data folder. Kind: ssd, hdd, usb, removable, network, or unknown.
+/// Volume is the drive's mount point (such as D:\ or a mounted folder), or empty when Windows does not say.</summary>
+public sealed record DriveStatus(long FreeBytes, long TotalBytes, string DriveKind, string Volume = "")
 {
     /// <summary>Below this, Create and Settings warn before a save can fail.</summary>
     public const long LowSpaceBytes = 5L << 30;
@@ -150,6 +151,9 @@ public sealed record DriveStatus(long FreeBytes, long TotalBytes, string DriveKi
         : "";
     public string SpeedNote => IsSlow ? $"The data folder is on {KindText}. Models load faster from a solid-state drive; you can move the data folder in Settings." : "";
 }
+
+/// <summary>One place Media Workbench keeps files, and the drive it is really on, for Settings.</summary>
+public sealed record StorageLocation(string Label, string Path, string Detail);
 
 /// <summary>What one automatic clean-up removed. Skipped files were in use and are tried again next time.</summary>
 public sealed record TidyReport(long RemovedFiles, long RemovedBytes, long Logs, long JobRecords, long PartialDownloads, bool DownloadCaches, long Skipped);
@@ -242,6 +246,8 @@ public interface IUpdateService
 }
 public interface ISettingsStore
 {
+    /// <summary>Where preferences (and, beside them, the startup log) are kept; outside the data folder.</summary>
+    string Folder { get; }
     AppSettings Load();
     void Save(AppSettings settings);
 }

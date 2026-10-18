@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0-alpha.2 — 2026-10-18
+
+- **Temporary work stays in your data folder.** Setup, pictures, videos and upscaling keep their temporary files in the data folder's `temp` folder instead of Windows' temporary folder on the system drive, and remove them when each job ends. Package unpacking during setup and the graphics card's compiled-kernel cache go there too. This is the first part of the drive-containment work planned for 0.4.0-alpha.1.
+- Painted areas being handed to a job, and downloaded app updates, also go into the data folder. An update download first checks that the drive will keep at least 512 MB free.
+- If the data folder's drive is disconnected, full or read-only, Media Workbench stops with a plain explanation and writes nothing anywhere else. Reading this computer's hardware or searching Hugging Face still never creates a data folder that does not exist yet.
+- Settings has a new **Where Media Workbench keeps things** list: the data folder, temporary work, caches, preferences and the app itself, each with the drive it is really on (mounted folders included), and one sentence saying what, if anything, is on another drive. Storage lists **Temporary work** as its own area.
+- Temporary folders left by a crash are removed at the next start, while a job that is still running keeps its own. Leftovers from earlier versions in Windows' temporary folder are still cleaned up.
+- Still on the system drive: preferences and the startup log (about 2 MB at most), the app installation, and the installer's own unpacking. Changing the data folder still does not move existing files. Inference itself is unchanged; existing installations and added models stay verified.
+
 ## 0.3.0-alpha.1 — 2026-10-18
 
 - **Short videos.** Create has a new **What to make → A short video** choice that makes 2- or 3-second clips (16 or 24 frames) with Stable Diffusion 1.5 and the AnimateDiff motion adapter. **Set up videos** downloads the pinned adapter (1.7 GB, Apache-2.0), verifies it, and makes a real test clip on your graphics card; nothing can be made until that passes. Videos are saved as MP4 with Windows' own H.264 encoder, play on a loop in Create, show their first frame in Library (**Videos** filter, **Play video**, **Save a copy…** as a verified MP4), and every frame is reviewed by the model's safety checker.

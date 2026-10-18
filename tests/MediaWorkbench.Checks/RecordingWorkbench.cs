@@ -188,7 +188,9 @@ sealed class RecordingWorkbench : IWorkbenchService
 
     /// <summary>Drive reads and clean-ups are not data-folder operations the other checks count.</summary>
     public DriveStatus Drive { get; set; } = new(100L << 30, 500L << 30, "ssd");
-    public Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken) => Task.FromResult(Drive);
+    /// <summary>Optional per-folder answer, for checks of which drive each location is on.</summary>
+    public Func<string, DriveStatus>? DriveFor { get; set; }
+    public Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken) => Task.FromResult(DriveFor?.Invoke(dataRoot) ?? Drive);
     public List<(bool Verified, bool RemoveCaches)> Tidies { get; } = [];
     public TidyReport TidyResult { get; set; } = new(0, 0, 0, 0, 0, false, 0);
     public Exception? TidyFailure { get; set; }

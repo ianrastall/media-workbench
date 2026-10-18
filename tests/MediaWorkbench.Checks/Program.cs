@@ -133,6 +133,19 @@ var legacy = System.Text.Json.JsonSerializer.Deserialize<GenerationSettings>("{\
 Check(legacy is { Width: 512, Height: 512, Sampler: "pndm", GuidanceScale: 7.5 }, "Older job records read with the original fixed settings");
 await vm.RefreshStorageCommand.ExecuteAsync(null);
 Check(vm.StorageItems.Count == 2 && vm.StorageText.Contains("5.00 GiB") && workbench.DataRoots[^1] == nextRoot, "Storage is measured in the saved data folder");
+Check(vm.Locations.Count == 5 && vm.Locations[0].Path == nextRoot && vm.Locations[1].Path == WorkFolders.Temporary(nextRoot)
+    && !vm.LocationsText.Contains("Only") && !vm.LocationsText.Contains("So does"), "Settings lists every location; drives Windows did not name are not compared");
+workbench.DriveFor = path => path.StartsWith(nextRoot, StringComparison.OrdinalIgnoreCase)
+    ? new(200L << 30, 900L << 30, "hdd", @"E:\") : new(30L << 30, 250L << 30, "ssd", @"C:\");
+await vm.RefreshStorageCommand.ExecuteAsync(null);
+Check(vm.LocationsText == "Your pictures, videos, models, caches and temporary work all stay on E:\\. Only preferences and the startup log (about 2 MB at most) are on C:\\, and the app itself is on C:\\."
+    && vm.Locations[0].Detail == "On E:\\: a hard disk, 200.00 GiB free." && vm.Locations[3].Detail.StartsWith("On C:\\."),
+    "Settings names the data folder's drive and exactly what stays on another drive");
+workbench.DriveFor = _ => new(200L << 30, 900L << 30, "ssd", @"E:\");
+await vm.RefreshStorageCommand.ExecuteAsync(null);
+Check(vm.LocationsText.EndsWith("all stay on E:\\. So does everything else Media Workbench keeps.") && vm.Locations[4].Detail.StartsWith("Same drive"),
+    "When everything is on one drive, Settings says so");
+workbench.DriveFor = null;
 vm.ModelReady = true;
 await vm.ClearStorageCommand.ExecuteAsync("installation");
 Check(workbench.Cleared.SequenceEqual(["installation"]) && !vm.ModelReady && vm.StorageText.Contains("use 0 KiB"), "Removing the installation clears readiness and shows the new sizes");

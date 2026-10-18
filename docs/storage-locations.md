@@ -13,7 +13,10 @@ Recorded 18 October 2026. **In progress; not complete or released as 0.4.0-alpha
 | Painted hand-overs | `temp/painted` (`WorkFolders.WritePaintedAsync`) |
 | Update downloads | `temp/updates`, refused when the drive would keep less than 512 MiB free after the download |
 | Preferences, startup log, installation, installer extraction | **Unchanged**: still Local AppData / Inno Setup defaults |
-| Settings location display, volume restrictions, Move existing data | **Not started** |
+| Settings location display | **Done (slice 2)**: Settings lists each location with its real volume and says what is on another drive |
+| Volume restrictions, Move existing data | **Not started** |
+
+**Slice 2 implemented:** Settings has **Where Media Workbench keeps things**, listing the data folder, its `temp/` and `cache/` folders, the preferences/startup-log folder and the app folder, each with the volume it is really on (Rust `mw_drive_info` now returns the mount point from `GetVolumePathNameW`, so mounted folders are named correctly) and one sentence saying what, if anything, is on another drive.
 
 ## Problem and current evidence
 
@@ -61,4 +64,4 @@ The promise covers Media Workbench and its owned processes. Windows may independ
 
 ## Resume here
 
-Slice 1 (worker/update/painted paths) is done; see the table at the top. Next, in order: (2) Settings shows the actual locations and their volumes, and long operations re-check the data folder's volume before heavy writes; (3) **Move existing data** with preflight, copy-verify, atomic switch and crash recovery; (4) installer destination retention and the all-app-owned-files arrangement; (5) real write-trace acceptance on a two-volume machine with the user available. Location/volume validation is still C# (`WorkFolders.Prepare`) and Python (`owned`); moving it behind the Rust ABI belongs with the migration slice, which needs the same checks. Use ignored build/check output on a suitable development volume; development tools' own caches are a separate audit from the shipped application.
+Slice 1 (worker/update/painted paths) is done; see the table at the top. Slice 2 (locations in Settings) is done. Next, in order: (3) **Move existing data** with preflight, copy-verify, atomic switch and crash recovery; (4) installer destination retention and the all-app-owned-files arrangement; (5) real write-trace acceptance on a two-volume machine with the user available. Location/volume validation is still C# (`WorkFolders.Prepare`) and Python (`owned`); moving it behind the Rust ABI belongs with the migration slice, which needs the same checks. Use ignored build/check output on a suitable development volume; development tools' own caches are a separate audit from the shipped application.

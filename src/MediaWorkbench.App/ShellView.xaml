@@ -367,11 +367,24 @@
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsSettings, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                         <TextBox IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Text="{x:Bind ViewModel.DataRootDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Data folder" PlaceholderText="Choose an absolute folder path" />
-                        <TextBlock Text="Models, private inference environments, and media use this folder. A new path takes effect when you save settings; it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="Models, private inference environments, media, caches and temporary work use this folder, so choose a drive with plenty of room. A new path takes effect when you save settings; it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Button Content="Save settings" Command="{x:Bind ViewModel.SaveSettingsCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             <Button Content="Open folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
                         </StackPanel>
+                        <TextBlock Text="Where Media Workbench keeps things" Style="{ThemeResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
+                        <TextBlock Text="{x:Bind ViewModel.LocationsText, Mode=OneWay}" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.Locations}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="core:StorageLocation">
+                                    <StackPanel Spacing="2" Padding="16,10" Margin="0,0,0,6" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                        <TextBlock Text="{x:Bind Label}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind Path}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <TextBlock Text="Storage" Style="{ThemeResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
                         <TextBlock Text="{x:Bind ViewModel.StorageText, Mode=OneWay}" TextWrapping="Wrap" />
                         <InfoBar Title="The data folder's drive is nearly full" Severity="Warning" IsClosable="False"

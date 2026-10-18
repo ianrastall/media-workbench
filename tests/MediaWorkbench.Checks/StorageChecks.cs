@@ -29,6 +29,9 @@ static class StorageChecks
         var snapshot = await service.GetStorageAsync(folder, token);
         check(snapshot.InstallationBytes == 166 && snapshot.FreeBytes > 0 && snapshot.TotalBytes >= snapshot.FreeBytes,
             "Rust measures the supported installation and available disk space without Python");
+        var drive = NativeCore.GetDriveStatus(Path.Combine(folder, "not", "created"));
+        check(drive.Volume.EndsWith(Path.DirectorySeparatorChar) && Path.GetFullPath(folder).StartsWith(drive.Volume, StringComparison.OrdinalIgnoreCase) && !Directory.Exists(Path.Combine(folder, "not")),
+            "Rust names the volume a data folder is really on without creating it");
         var items = snapshot.Items.ToDictionary(item => item.Id);
         check(items.Count == 9 && items["temp"].Bytes == 0 && items["images"].Bytes == 5 && items["library"].Bytes == 2 && items["model"].Files == 2 && items["imported"].Bytes == 9,
             "Native storage inventory preserves per-area sizes/counts and Unicode paths");

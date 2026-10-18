@@ -97,10 +97,11 @@ MW_API int32_t mw_import_file(const uint8_t *input, size_t length,
     mw_export_progress progress, void *context,
     uint8_t *output, size_t capacity, size_t *required);
 /* Additive ABI 1 drive information. JSON: {dataRoot} (absolute, not a drive root; it may not exist).
-   Uses the nearest existing folder and creates nothing. Returns JSON {freeBytes,totalBytes,driveKind}
-   with driveKind "ssd", "hdd", "usb", "removable", "network", or "unknown" (volumes that do not
-   report a seek penalty, such as some RAID or Storage Spaces volumes). Free space includes quotas.
-   output=NULL or capacity<256 returns 2, required=256, without filesystem work. */
+   Uses the nearest existing folder and creates nothing. Returns JSON {freeBytes,totalBytes,driveKind,
+   volume} with driveKind "ssd", "hdd", "usb", "removable", "network", or "unknown" (volumes that do not
+   report a seek penalty, such as some RAID or Storage Spaces volumes) and volume the mount point
+   ("D:\", a mounted folder, or a share root; "" if unknown). Free space includes quotas.
+   output=NULL or capacity<8192 returns 2, required=8192, without filesystem work. */
 MW_API int32_t mw_drive_info(const uint8_t *input, size_t length,
     uint8_t *output, size_t capacity, size_t *required);
 /* Additive ABI 1 automatic clean-up. JSON: {dataRoot, runtimeProfileId, modelIds,

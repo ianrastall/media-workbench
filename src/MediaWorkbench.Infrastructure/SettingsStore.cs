@@ -5,6 +5,8 @@ namespace MediaWorkbench.Infrastructure;
 
 public sealed class SettingsStore(string stateRoot) : ISettingsStore
 {
+    public string Folder => stateRoot;
+
     public AppSettings Load()
     {
         string file = Path.Combine(stateRoot, "settings.json");

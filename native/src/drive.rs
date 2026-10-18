@@ -3,7 +3,8 @@ use crate::{INVALID, IO_ERROR, storage::lexically_valid_root};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub(crate) const OUTPUT_CAPACITY: usize = 256;
+/// Room for the counts, the kind, and a volume mount point of up to 1024 UTF-16 units, JSON-escaped.
+pub(crate) const OUTPUT_CAPACITY: usize = 8192;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +18,8 @@ struct Drive {
     free_bytes: u64,
     total_bytes: u64,
     drive_kind: &'static str,
+    /// The volume's mount point, such as `D:\` or a mounted folder; empty when Windows does not say.
+    volume: String,
 }
 
 #[cfg(windows)]
@@ -65,6 +68,40 @@ pub(crate) fn space(_root: &Path) -> Result<(u64, u64), i32> {
     Err(IO_ERROR) // This application/service targets Windows x64.
 }
 
+/// The NUL-terminated mount point of the volume holding an existing folder (`D:\`, a mounted folder,
+/// or a share root), so two folders can be compared by the volume they are really on.
+#[cfg(windows)]
+fn mount_point(root: &Path) -> Option<[u16; 1024]> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        #[link_name = "GetVolumePathNameW"]
+        fn get_volume_path_name(path: *const u16, volume: *mut u16, length: u32) -> i32;
+    }
+    let path = wide(root, false);
+    let mut volume = [0u16; 1024];
+    // SAFETY: path is NUL-terminated; volume is a writable buffer of the declared length.
+    if unsafe { get_volume_path_name(path.as_ptr(), volume.as_mut_ptr(), volume.len() as u32) } == 0
+    {
+        return None;
+    }
+    Some(volume)
+}
+
+#[cfg(windows)]
+pub(crate) fn volume(root: &Path) -> String {
+    mount_point(root)
+        .map(|value| {
+            let end = value.iter().position(|c| *c == 0).unwrap_or(value.len());
+            String::from_utf16_lossy(&value[..end])
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(not(windows))]
+pub(crate) fn volume(_root: &Path) -> String {
+    String::new()
+}
+
 /// "ssd", "hdd", "usb", "removable", "network", or "unknown" for the volume holding an existing folder.
 /// The same vocabulary as the worker's hardware profile.
 #[cfg(windows)]
@@ -86,8 +123,6 @@ pub(crate) fn kind(root: &Path) -> &'static str {
     }
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        #[link_name = "GetVolumePathNameW"]
-        fn get_volume_path_name(path: *const u16, volume: *mut u16, length: u32) -> i32;
         #[link_name = "GetDriveTypeW"]
         fn get_drive_type(root: *const u16) -> u32;
         #[link_name = "GetVolumeNameForVolumeMountPointW"]
@@ -116,14 +151,10 @@ pub(crate) fn kind(root: &Path) -> &'static str {
         #[link_name = "CloseHandle"]
         fn close_handle(handle: *mut c_void) -> i32;
     }
-    let path = wide(root, false);
-    let mut volume = [0u16; 1024];
-    // SAFETY: path is NUL-terminated; volume is a writable buffer of the declared length.
-    if unsafe { get_volume_path_name(path.as_ptr(), volume.as_mut_ptr(), volume.len() as u32) } == 0
-    {
+    let Some(volume) = mount_point(root) else {
         return "unknown";
-    }
-    // SAFETY: volume was NUL-terminated by the successful call above.
+    };
+    // SAFETY: volume was NUL-terminated by GetVolumePathNameW.
     match unsafe { get_drive_type(volume.as_ptr()) } {
         DRIVE_REMOTE => return "network",
         DRIVE_REMOVABLE => return "removable",
@@ -220,6 +251,7 @@ pub(crate) fn info(input: &[u8]) -> Result<Vec<u8>, i32> {
         free_bytes,
         total_bytes,
         drive_kind: kind(existing),
+        volume: volume(existing),
     })
     .map_err(|_| crate::INTERNAL)
 }
@@ -250,5 +282,10 @@ mod tests {
                 .contains(&result["driveKind"].as_str().unwrap())
         );
         assert!(!missing.exists());
+        let volume = result["volume"].as_str().unwrap();
+        assert!(
+            volume.ends_with('\\') && missing.starts_with(volume),
+            "{volume}"
+        );
     }
 }

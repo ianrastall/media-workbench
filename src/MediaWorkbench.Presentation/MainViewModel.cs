@@ -345,6 +345,9 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand<ModelChoice?> RetestModelCommand { get; }
     public IAsyncRelayCommand<ModelChoice?> RemoveModelCommand { get; }
     public ObservableCollection<StorageItem> StorageItems { get; } = [];
+    /// <summary>Every place the app keeps files, with the drive each is really on.</summary>
+    public ObservableCollection<StorageLocation> Locations { get; } = [];
+    [ObservableProperty] public partial string LocationsText { get; set; } = "";
     [ObservableProperty] public partial string StorageText { get; set; } = "Open Settings to measure what the data folder uses.";
     /// <summary>Keep setup's download caches for repairs instead of removing them once setup passes its test.</summary>
     [ObservableProperty] public partial bool KeepDownloadCaches { get; set; }
@@ -754,6 +757,7 @@ public partial class MainViewModel : ObservableObject
         LibraryText = "Open Library to browse images in the new data folder.";
         OnPropertyChanged(nameof(McpConfiguration));
         StorageItems.Clear(); StorageText = "Select Measure storage to see what the new data folder uses.";
+        Locations.Clear(); LocationsText = "";
         DriveWarning = DriveSpeedNote = "";
         if (!_loading) _ = RefreshDriveAsync();
         ShowModels([], ModelChoice.BuiltInId);
@@ -772,7 +776,54 @@ public partial class MainViewModel : ObservableObject
     {
         await UpdateModels(token);
         ShowStorage(await _service.GetStorageAsync(DataRoot, token));
+        await UpdateLocations(token);
     });
+
+    /// <summary>Preferences and the startup log together stay below this (settings.json plus two rotated 1 MiB logs).</summary>
+    public const string ProfileFootprint = "about 2 MB at most";
+
+    /// <summary>
+    /// Lists where the app keeps files and which drive each is really on (mounted folders included), and says in
+    /// one sentence which drive holds the work and what, if anything, stays elsewhere.
+    /// </summary>
+    private async Task UpdateLocations(CancellationToken token)
+    {
+        string root = DataRoot;
+        async Task<DriveStatus?> Drive(string path)
+        {
+            try { return await _service.GetDriveAsync(path, token); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
+        }
+        static string Name(DriveStatus? drive) => drive is { Volume.Length: > 0 } ? drive.Volume : "a drive Windows did not name";
+        static bool Known(DriveStatus? drive) => drive is { Volume.Length: > 0 };
+        static bool Same(DriveStatus? left, DriveStatus? right) =>
+            Known(left) && Known(right) && string.Equals(left!.Volume, right!.Volume, StringComparison.OrdinalIgnoreCase);
+        // Only drives Windows named are compared; an unnamed one is neither claimed the same nor different.
+        static bool Different(DriveStatus? left, DriveStatus? right) => Known(left) && Known(right) && !Same(left, right);
+        var data = await Drive(root);
+        var preferences = await Drive(_settings.Folder);
+        string appFolder = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
+        var app = await Drive(appFolder);
+        if (root != DataRoot) return;
+        string where = data is null ? "The data folder's drive could not be read; it may be disconnected."
+            : $"On {Name(data)}: {data.KindText}, {StorageSnapshot.Format(data.FreeBytes)} free.";
+        string Elsewhere(DriveStatus? drive, string note) => Same(drive, data) ? "Same drive as the data folder. " + note : $"On {Name(drive)}. " + note;
+        Locations.Clear();
+        Locations.Add(new("Pictures, videos, models and setup", root, where));
+        Locations.Add(new("Temporary work and update downloads", WorkFolders.Temporary(root),
+            "Same drive as the data folder. A job's temporary files are removed when it ends; Media Workbench never falls back to Windows' temporary folder."));
+        Locations.Add(new("Download and graphics-card caches", Path.Combine(root, "cache"),
+            "Same drive as the data folder. Setup's downloads are removed once it passes its test, unless you keep them below."));
+        Locations.Add(new("Preferences and startup log", _settings.Folder, Elsewhere(preferences, $"Small: {ProfileFootprint}.")));
+        Locations.Add(new("Media Workbench itself", appFolder, Elsewhere(app, "Updates replace the app here.")));
+        var apart = new List<string>();
+        if (Different(preferences, data)) apart.Add($"preferences and the startup log ({ProfileFootprint}) are on {Name(preferences)}");
+        if (Different(app, data)) apart.Add($"the app itself is on {Name(app)}");
+        LocationsText = data is null ? where
+            : $"Your pictures, videos, models, caches and temporary work all stay on {Name(data)}." +
+              (apart.Count > 0 ? " Only " + string.Join(", and ", apart) + "."
+                : Same(preferences, data) && Same(app, data) ? " So does everything else Media Workbench keeps." : "");
+    }
     private Task ClearStorageAsync(string? area) => RunAsync(area == "installation" ? "Removing Stable Diffusion 1.5…" : "Clearing storage…", async token =>
     {
         if (area == "installation") ModelReady = false;

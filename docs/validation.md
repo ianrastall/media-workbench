@@ -1,8 +1,8 @@
 # Initial alpha validation
 
-## Drive containment slice 1
+## Drive containment slices 1–2 (0.3.0-alpha.2)
 
-18 October 2026, Windows 11, development machine. Unreleased work after 0.3.0-alpha.1.
+18 October 2026, Windows 11, development machine. Released as 0.3.0-alpha.2; the slice-2 run of `scripts/check.ps1` passed 35 Rust tests, 202 Python tests and 231 C# checks.
 
 | Check | Result |
 | --- | --- |
@@ -10,6 +10,8 @@
 | New C# checks | Real Python worker's `TEMP`, `TMP`, `tempfile` and a written temporary file are under `temp/work`; removed on stop; owner file cannot be deleted while running; read-only operations create no missing data folder; a data folder on an unassigned drive letter refuses the worker and a painted hand-over with the plain message; a junction at `temp` is refused and nothing reaches its target; updates download to `temp/updates` and are refused before writing when space is short; Create and MCP hand-overs are in `temp/painted` |
 | `scripts/build.ps1` | Passed, zero warnings/errors |
 | `scripts/build.ps1 -Configuration Release -Publish` (headless published checks) | Passed: x64 inventory, `--self-test` (health creates no data folder; storage lists the new Temporary work area), MCP host/worker |
+
+Slice 2 adds: a Rust test that `volume` is a drive-root-style mount point containing the queried folder; a C# check that the real ABI names the volume without creating the folder; view-model checks that Settings lists five locations, names the data folder's drive and exactly what is on another drive, and says so when everything shares one drive.
 
 Not checked: a process-tree write trace, GPU setup/generation with the new child environment (`CUDA_CACHE_PATH`, `TORCH_HOME`, child `TEMP`), update install/relaunch, or the interactive app. Readiness stamps and adapter versions are unchanged because inference itself does not change.
 
