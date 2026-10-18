@@ -76,17 +76,19 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
 }
 /// <summary>ModelName records which model made the image; null in records made before models could be added.
 /// Seconds is the work itself; LoadSeconds is loading the model before it (null in records made before 0.2.0-alpha.16),
-/// and LoadNote says in plain words when that load was slow and why it probably was.</summary>
+/// and LoadNote says in plain words when that load was slow and why it probably was. KeptLoaded: the model was still
+/// loaded from the previous picture, so nothing was loaded.</summary>
 public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha256, GenerationSettings Settings,
     string CompletedUtc, double Seconds, string Gpu, string Kind = "generate", int Width = 0, int Height = 0, string? ModelName = null,
-    double? LoadSeconds = null, string? LoadNote = null, string? VideoPath = null, int Frames = 0, int Fps = 0)
+    double? LoadSeconds = null, string? LoadNote = null, string? VideoPath = null, int Frames = 0, int Fps = 0, bool KeptLoaded = false)
 {
     /// <summary>A short video: ImagePath is its first frame, used as its picture everywhere a picture is shown.</summary>
     public bool IsVideo => Kind == "video" && !string.IsNullOrEmpty(VideoPath);
     public bool IsPicture => !IsVideo;
     /// <summary>What Create says once the picture or video is saved.</summary>
     public string SavedNotice => $"{(IsVideo ? "Video" : "Image")} saved in {Seconds:N1} seconds of inference"
-        + (LoadSeconds is { } load ? $", after {load:N1} seconds loading the model." : ".")
+        + (KeptLoaded ? "; the model was still loaded from the last picture."
+            : LoadSeconds is { } load ? $", after {load:N1} seconds loading the model." : ".")
         + (string.IsNullOrEmpty(LoadNote) ? "" : " " + LoadNote);
     public bool CanReuseSettings => Settings.IsUpscale ? !string.IsNullOrEmpty(Settings.SourceImage) : !string.IsNullOrWhiteSpace(Settings.Prompt);
     /// <summary>Names an added model; images from the bundled model keep their familiar description.</summary>

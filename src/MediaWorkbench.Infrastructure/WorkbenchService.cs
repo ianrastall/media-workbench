@@ -3,24 +3,107 @@ using MediaWorkbench.Core;
 
 namespace MediaWorkbench.Infrastructure;
 
-public sealed class WorkbenchService(string applicationRoot, string pythonExecutable) : IWorkbenchService
+/// <summary>
+/// Runs worker operations. Picture, upscale and video jobs share one coordinator that keeps the picture model loaded
+/// between pictures (and with it the data folder) until <see cref="KeepLoadedFor"/> passes without a job; any other
+/// work that needs the data folder releases it first. Everything else runs in its own short-lived worker.
+/// </summary>
+public sealed class WorkbenchService(string applicationRoot, string pythonExecutable) : IWorkbenchService, IAsyncDisposable
 {
     /// <summary>Operations that only read; they must not create a data folder that does not exist yet.</summary>
     private static readonly HashSet<string> ReadOnly = ["health", "system.profile", "catalog.search", "catalog.details", "models.inspect"];
+    /// <summary>Jobs that run in the kept coordinator, one after another.</summary>
+    private static readonly HashSet<string> Jobs = ["generate.image", "upscale.image", "generate.video"];
+    /// <summary>Reads that never need the data folder to themselves, so a kept model may stay loaded meanwhile.</summary>
+    private static readonly HashSet<string> Reads = [.. ReadOnly, "catalog.plan", "installation.status", "video.status", "xl.status", "models.list", "library.list", "storage.summary"];
+
+    /// <summary>How long the picture model stays loaded after the last job. It holds system and graphics memory meanwhile.</summary>
+    public TimeSpan KeepLoadedFor { get; init; } = TimeSpan.FromMinutes(2);
+    private readonly SemaphoreSlim _keptGate = new(1, 1);
+    private PythonWorkerClient? _kept;
+    private string? _keptRoot;
+    private long _keptUse;
+
+    /// <summary>The kept coordinator's process ID, or null; for checks.</summary>
+    public int? KeptProcessId => _kept?.ProcessId;
 
     /// <summary>Runs one worker operation; its temporary files stay inside <paramref name="dataRoot"/>.</summary>
     private async Task<JsonElement> Execute(string dataRoot, string operation, object payload, CancellationToken token, IProgress<OperationProgress>? progress = null)
     {
+        if (Jobs.Contains(operation)) return await ExecuteKept(dataRoot, operation, payload, token, progress);
+        if (!Reads.Contains(operation)) await ReleaseLoadedModelAsync(); // Setup, imports, removals and clearing need the folder to themselves.
         await using var worker = await PythonWorkerClient.StartAsync(pythonExecutable, applicationRoot, dataRoot, token,
             createDataFolder: !ReadOnly.Contains(operation));
-        var response = await worker.ExecuteAsync(operation, payload, onEvent: value =>
+        return Interpret(await worker.ExecuteAsync(operation, payload, onEvent: Forward(progress), cancellationToken: token), token);
+    }
+
+    private async Task<JsonElement> ExecuteKept(string dataRoot, string operation, object payload, CancellationToken token, IProgress<OperationProgress>? progress)
+    {
+        await _keptGate.WaitAsync(token);
+        try
         {
-            if (value.Kind == "progress" && progress is not null)
+            Interlocked.Increment(ref _keptUse); // A pending idle release no longer applies.
+            if (_kept is not null && _keptRoot != dataRoot) await DropKept();
+            _kept ??= await PythonWorkerClient.StartAsync(pythonExecutable, applicationRoot, dataRoot, token, keepModelLoaded: true);
+            _keptRoot = dataRoot;
+            WorkerEvent response;
+            try { response = await _kept.ExecuteAsync(operation, payload, onEvent: Forward(progress), cancellationToken: token); }
+            catch
             {
-                var update = JsonSerializer.Deserialize<OperationProgress>(value.Payload, Wire.Json);
-                if (update is not null) progress.Report(update);
+                await DropKept(); // A stopped or confused transport is never reused.
+                throw;
             }
-        }, cancellationToken: token);
+            ScheduleIdleRelease();
+            return Interpret(response, token);
+        }
+        finally { _keptGate.Release(); }
+    }
+
+    private void ScheduleIdleRelease()
+    {
+        long use = Interlocked.Read(ref _keptUse);
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(KeepLoadedFor);
+            await _keptGate.WaitAsync();
+            try { if (Interlocked.Read(ref _keptUse) == use) await DropKept(); }
+            finally { _keptGate.Release(); }
+        });
+    }
+
+    private async Task DropKept()
+    {
+        var kept = _kept;
+        _kept = null;
+        _keptRoot = null;
+        if (kept is not null) await kept.DisposeAsync(); // Ends the coordinator, its model, and the data-folder hold.
+    }
+
+    /// <summary>Releases the kept picture model and the data folder it holds; the next picture loads it again.</summary>
+    public async Task ReleaseLoadedModelAsync()
+    {
+        await _keptGate.WaitAsync();
+        try
+        {
+            Interlocked.Increment(ref _keptUse);
+            await DropKept();
+        }
+        finally { _keptGate.Release(); }
+    }
+
+    public async ValueTask DisposeAsync() => await ReleaseLoadedModelAsync();
+
+    private static Action<WorkerEvent> Forward(IProgress<OperationProgress>? progress) => value =>
+    {
+        if (value.Kind == "progress" && progress is not null)
+        {
+            var update = JsonSerializer.Deserialize<OperationProgress>(value.Payload, Wire.Json);
+            if (update is not null) progress.Report(update);
+        }
+    };
+
+    private static JsonElement Interpret(WorkerEvent response, CancellationToken token)
+    {
         if (response.Kind == "error")
         {
             if (response.ErrorCode == "cancelled") throw new OperationCanceledException(token);
@@ -139,14 +222,22 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         }, cancellationToken);
     public Task<DataMovePlan> PlanDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.PlanDataMove(dataRoot, destination), cancellationToken);
-    public Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
-        Task.Run(() => NativeCore.MoveDataFolder(dataRoot, destination, progress, cancellationToken), cancellationToken);
+    public async Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        await ReleaseLoadedModelAsync();
+        await Task.Run(() => NativeCore.MoveDataFolder(dataRoot, destination, progress, cancellationToken), cancellationToken);
+    }
     public Task<MovedDataRemoval> RemoveMovedDataAsync(string oldRoot, string dataRoot, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.RemoveMovedData(oldRoot, dataRoot, cancellationToken), cancellationToken);
     public Task AbandonDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.MoveDataFolder(dataRoot, destination, new Progress<OperationProgress>(), cancellationToken, abandon: true), cancellationToken);
     public Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.GetDriveStatus(dataRoot), cancellationToken);
-    public Task<TidyReport> TidyAsync(string dataRoot, bool installationVerified, bool removeDownloadCaches, CancellationToken cancellationToken) =>
+    public async Task<TidyReport> TidyAsync(string dataRoot, bool installationVerified, bool removeDownloadCaches, CancellationToken cancellationToken)
+    {
+        await ReleaseLoadedModelAsync();
+        return await TidyNative(dataRoot, installationVerified, removeDownloadCaches, cancellationToken);
+    }
+    private Task<TidyReport> TidyNative(string dataRoot, bool installationVerified, bool removeDownloadCaches, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.TidyDataFolder(dataRoot, ReadLayout(), installationVerified, removeDownloadCaches, cancellationToken), cancellationToken);
 }

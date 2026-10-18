@@ -71,6 +71,8 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
             cancellation: threading.Event) -> None:
     global active
     try:
+        if operation != "generate.image":
+            inference_setup.KEPT.release()  # Only pictures reuse a kept-loaded model; anything else runs without it.
         if operation == "health":
             result = {"python": platform.python_version(), "executable": sys.executable,
                       "platform": platform.system(), "gpu": gpu_probe(),
@@ -243,6 +245,7 @@ def main() -> int:
             remaining[1].set()
     if remaining:
         remaining[2].join(timeout=6)
+    inference_setup.KEPT.release()
     return 0
 
 

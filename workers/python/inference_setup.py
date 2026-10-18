@@ -142,10 +142,25 @@ def contained(environment, root, folder):
     return environment
 
 
-@contextmanager
-def exclusive(root):
-    path = owned(root, ".operation.lock")
-    with path.open("a+b") as stream:
+# Data folders this process owns: key -> [open lock file, holders, kept-model holders]. A kept-loaded picture
+# model holds the folder between pictures, and work of the same coordinator nests with that hold. Any other
+# second hold, even in the same process, is refused like another owner.
+_LOCKS = {}
+
+
+def _busy():
+    return SetupError("Another operation is using this data folder (another Media Workbench window, a local "
+                      "MCP client, or a picture model kept loaded for the next picture, which is released "
+                      "after two idle minutes)")
+
+
+def _acquire(root, kept=False):
+    key = os.path.normcase(os.path.abspath(str(root)))
+    held = _LOCKS.get(key)
+    if held is not None and not (kept or held[2]):
+        raise _busy()
+    if held is None:
+        stream = owned(root, ".operation.lock").open("a+b")
         # Windows permits byte-range locks beyond EOF; flock needs no file content either.
         # No sentinel write/flush before acquiring the lock: concurrent first owners must
         # contend on the lock itself, without racing a write or waiting for disk writeback.
@@ -158,15 +173,42 @@ def exclusive(root):
                 import fcntl
                 fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
-            raise SetupError("Another operation is using this data folder") from exc
-        try:
-            yield
-        finally:
-            stream.seek(0)
-            if os.name == "nt":
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(stream, fcntl.LOCK_UN)
+            stream.close()
+            raise _busy() from exc
+        held = _LOCKS[key] = [stream, 0, 0]
+    held[1] += 1
+    held[2] += kept
+    return key, kept
+
+
+def _release(token):
+    key, kept = token
+    held = _LOCKS[key]
+    held[1] -= 1
+    held[2] -= kept
+    if held[1]:
+        return
+    del _LOCKS[key]
+    stream = held[0]
+    try:
+        stream.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(stream, fcntl.LOCK_UN)
+    finally:
+        stream.close()
+
+
+@contextmanager
+def exclusive(root):
+    key = _acquire(root)
+    try:
+        yield
+    finally:
+        _release(key)
 
 
 def profile_stamp(app, runtime):
@@ -492,6 +534,107 @@ def run_child(arguments, cancel, progress, environment=None, protocol=False, log
         child.stdout.close()
 
 
+# Set by the desktop for the coordinator it keeps running: pictures then reuse a loaded model.
+KEEP_VARIABLE = "MEDIA_WORKBENCH_KEEP_MODEL"
+
+
+class KeptModel:
+    """One ML child that keeps the runtime and the last picture model loaded between pictures.
+
+    It holds the data-folder lock while it lives, so no other program loads a model onto the same graphics
+    card meanwhile. It is discarded after any error, cancellation, or exit of the child, and released before
+    every other kind of work. The coordinator's owner (the desktop) releases it after an idle period.
+    """
+
+    def __init__(self):
+        self.child = None
+        self.root = None
+        self.lines = None
+        self.stack = None
+
+    def release(self):
+        child, stack, self.child, self.stack, self.root = self.child, self.stack, None, None, None
+        if child is None:
+            return
+        try:
+            child.stdin.close()  # The serve loop ends at end of input.
+            child.wait(timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=10)
+            child.stdout.close()
+            stack.close()  # Removes the child's temporary folder, then gives back the data folder.
+
+    def _start(self, app, root, python, environment):
+        from contextlib import ExitStack
+        stack = ExitStack()
+        try:
+            stack.callback(_release, _acquire(root, kept=True))
+            folder = stack.enter_context(scratch(root))
+            environment = {k: v for k, v in environment.items() if k != KEEP_VARIABLE}
+            child = subprocess.Popen([str(a) for a in [python, "-I", "-u", app / "workers/python/inference_worker.py",
+                "--root", app, "--data-root", root, "--operation", "serve"]],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                errors="replace", env=contained(environment, root, folder),
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except BaseException:
+            stack.close()
+            raise
+        lines = queue.Queue()
+        def read():
+            try:
+                for line in child.stdout:
+                    lines.put(line[:8192])
+            except (OSError, ValueError):
+                pass
+            finally:
+                lines.put(None)
+        threading.Thread(target=read, daemon=True).start()
+        self.child, self.root, self.lines, self.stack = child, root, lines, stack
+
+    def run(self, app, root, python, environment, payload, cancel, progress, log_path):
+        if self.child is not None and (self.root != root or self.child.poll() is not None):
+            self.release()
+        if self.child is None:
+            self._start(app, root, python, environment)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        tail = []
+        try:
+            with log_path.open("w", encoding="utf-8") as log:
+                self.child.stdin.write(json.dumps({"operation": "generate", "payload": payload}) + "\n")
+                self.child.stdin.flush()
+                while True:
+                    check_cancel(cancel)
+                    try:
+                        line = self.lines.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+                    if line is None:
+                        raise SetupError("Child process failed: " + "\n".join(tail)[-2000:])
+                    log.write(line)
+                    log.flush()
+                    tail = (tail + [line.strip()])[-8:]
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue  # Third-party diagnostics are never sent as wire messages.
+                    if event.get("kind") == "progress":
+                        progress(event["payload"])
+                    elif event.get("kind") == "result":
+                        return event["payload"]
+                    elif event.get("kind") == "error":
+                        raise SetupError(event["payload"]["message"])
+        except BaseException:
+            self.release()  # After cancellation or any failure the next picture starts a fresh child.
+            raise
+
+
+KEPT = KeptModel()
+
+
 def inference(app, root, operation, payload, cancel, progress, log_id=None):
     python = owned(root, f"runtimes/{PROFILE}/python/python.exe")
     environment = os.environ.copy()
@@ -499,11 +642,15 @@ def inference(app, root, operation, payload, cancel, progress, log_id=None):
         HF_HUB_DISABLE_IMPLICIT_TOKEN="1", HF_HOME=str(owned(root, "cache/huggingface")),
         PYTHONUTF8="1", PYTHONIOENCODING="utf-8", TOKENIZERS_PARALLELISM="false",
         CUDA_DEVICE_ORDER="PCI_BUS_ID")  # cuda:0 is then the device check_hardware inspected.
+    environment.pop(KEEP_VARIABLE, None)
+    log_path = owned(root, f"logs/{operation}-{log_id or uuid.uuid4().hex}.log")
+    if operation == "generate" and os.environ.get(KEEP_VARIABLE) == "1":
+        return KEPT.run(app, root, python, environment, payload, cancel, progress, log_path)
+    KEPT.release()  # Setup tests, downloads, upscaling and videos run alone on the graphics card.
     with scratch(root) as folder:
         return run_child([python, "-I", "-u", app / "workers/python/inference_worker.py", "--root", app,
             "--data-root", root, "--operation", operation, "--payload", json.dumps(payload)],
-            cancel, progress, contained(environment, root, folder), protocol=True,
-            log_path=owned(root, f"logs/{operation}-{log_id or uuid.uuid4().hex}.log"))
+            cancel, progress, contained(environment, root, folder), protocol=True, log_path=log_path)
 
 
 def verify_files(app, root, cancel, progress):

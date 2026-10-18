@@ -1,6 +1,6 @@
 # Media Workbench handoff
 
-Updated 18 October 2026 for **0.3.0-alpha.4**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 18 October 2026 for **0.3.0-alpha.5**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
 
 ## Where development stopped and resumed
 
@@ -30,7 +30,9 @@ Alpha.16 → 0.3.0-alpha.1 (resumed from `5e41ca7`, checkpoint `04ff7bf`) adds t
 
 **Slice 3 implemented (0.3.0-alpha.3):** Settings → **Move my data there…** checks the typed folder with Rust `mw_plan_data_move` (files and bytes to copy, free space with a 1 GiB reserve, same-volume note, and plain blockers: inside/containing the data folder, not empty, a link inside the data folder, not enough space), then **Move now** runs `mw_move_data_folder`: under the data-folder lock it copies everything except `.operation.lock`, `temp/`, `library/` (rebuilt) and `.removing/` into a marked `.<name>.moving` staging folder, hashes each file while reading, re-reads and compares the copy, keeps modification times (readiness stamps compare size and time), re-checks free space before every file, and renames the staging folder into place last. Only then are settings switched. The old folder is never changed; the app says it can be deleted in File Explorer once the new one is checked. Failure or cancellation removes the staging folder; a crash is recovered at the next start from `PendingMove` in preferences. Readiness carries over because the bytes and times are identical and the runtime, job and readiness records hold no absolute paths (checked on the development data folder); no GPU run after a real move has been made yet.
 
-**Unreleased since 0.3.0-alpha.4:** the installer reopens the app after a silent installation only when it is not `/VERYSILENT` (`ReopenAfterUpdate` in `packaging/media-workbench.iss`). Every app version's in-app updater passes `/SILENT`, so updates still reopen the app; unattended installations no longer open a window. Compiled locally with the pinned ISCC to check syntax; the behavior is verified only once a release installer runs. Add a changelog line for it with the next version bump.
+**Kept-loaded picture model (0.3.0-alpha.5):** picture/upscale/video jobs share one long-running coordinator; pictures reuse a loaded model for two idle minutes while the coordinator holds the data-folder lock; anything needing the folder releases it first. Real GPU check `tests/gpu_kept_model_check.py` passed (byte-identical pictures, 15.6 s vs 25 s). See [inference](docs/inference.md#keeping-the-picture-model-loaded).
+
+**Installer reopen fix (0.3.0-alpha.5):** the installer reopens the app after a silent installation only when it is not `/VERYSILENT` (`ReopenAfterUpdate` in `packaging/media-workbench.iss`). Every app version's in-app updater passes `/SILENT`, so updates still reopen the app; unattended installations no longer open a window. Compiled locally with the pinned ISCC to check syntax; the behavior is verified only once a release installer runs.
 
 ## Build, check, run
 

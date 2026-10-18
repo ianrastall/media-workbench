@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.5 — 2026-10-18
+
+- **Faster repeated pictures.** After a picture, Media Workbench keeps the model loaded for two minutes, so the next picture with the same model and mode starts straight away. On a GTX 1660 Ti, 12-step pictures went from about 25 seconds to about 16. The pictures are exactly the same as before: a check on that card compares them byte for byte. Create says when the model was still loaded from the last picture.
+- While the model stays loaded, Media Workbench keeps the data folder to itself, so another program, such as a local MCP client, cannot load a second model onto the same graphics card; it is told why and that the model is released after two idle minutes. Setup, adding or removing models, clearing storage, moving the data folder, upscaling and videos release it first; it is also released when you switch data folders or close the app.
+- An unattended installation (`/VERYSILENT`) no longer opens Media Workbench afterwards. In-app updates still reopen the updated app.
+
 ## 0.3.0-alpha.4 — 2026-10-18
 
 - **Choose the drive before the big download.** Settings lists the drives on this computer with their free space and type, and which one holds Windows. **Use this drive** fills in a folder there; you still choose whether to save it or move your data. If the data folder is still the default on a drive with less room than another, Create asks where Media Workbench should work before setup's first download, and waits until you keep the drive or choose another. Your choice is remembered.

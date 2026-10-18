@@ -16,6 +16,7 @@ public sealed class PythonWorkerClient : IWorkerClient
     private ScratchFolder? _scratch;
     private bool _disposed;
     public WorkerEvent Handshake { get; private set; } = null!;
+    public int ProcessId => _process.Id;
 
     private PythonWorkerClient(Process process, ProcessTreeJob job)
     {
@@ -39,7 +40,7 @@ public sealed class PythonWorkerClient : IWorkerClient
     /// <paramref name="createDataFolder"/> false is for read-only operations that must not create a missing data folder.
     /// </summary>
     public static async Task<PythonWorkerClient> StartAsync(string pythonExecutable, string root, string? dataRoot,
-        CancellationToken cancellationToken = default, bool createDataFolder = true)
+        CancellationToken cancellationToken = default, bool createDataFolder = true, bool keepModelLoaded = false)
     {
         root = Path.GetFullPath(root);
         var worker = Path.Combine(root, "workers", "python", "media_worker.py");
@@ -60,6 +61,8 @@ public sealed class PythonWorkerClient : IWorkerClient
         start.Environment["PYTHONUTF8"] = "1";
         var scratch = dataRoot is null ? null : ScratchFolder.Create(dataRoot, createDataFolder);
         scratch?.Apply(start.Environment);
+        // A long-running coordinator keeps the picture model loaded between pictures; see WorkbenchService.
+        if (keepModelLoaded) start.Environment["MEDIA_WORKBENCH_KEEP_MODEL"] = "1";
         var job = new ProcessTreeJob();
         Process process;
         try

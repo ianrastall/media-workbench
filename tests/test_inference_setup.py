@@ -290,6 +290,112 @@ class ContainmentTests(unittest.TestCase):
             self.assertFalse(missing.parent.parent.exists())
 
 
+SERVING_CHILD = """
+import json, os, sys, time
+count = 0
+for line in sys.stdin:
+    payload = json.loads(line)["payload"]
+    count += 1
+    print("third-party diagnostic", flush=True)
+    print(json.dumps({"kind": "progress", "payload": {"stage": "Generating image", "completed": 1, "total": 1}}), flush=True)
+    time.sleep(payload.get("sleep", 0))
+    if payload.get("fail"):
+        print(json.dumps({"kind": "error", "payload": {"message": "The model safety checker rejected the result."}}), flush=True)
+        continue
+    print(json.dumps({"kind": "result", "payload": {"pid": os.getpid(), "count": count, "temp": os.environ["TEMP"],
+                                                     "keep": os.environ.get("MEDIA_WORKBENCH_KEEP_MODEL")}}), flush=True)
+"""
+
+OTHER_OWNER = ("import sys; sys.path.insert(0, sys.argv[1]); import inference_setup as s; from pathlib import Path\n"
+               "try:\n    with s.exclusive(Path(sys.argv[2])): print('locked')\nexcept s.SetupError: print('busy')")
+
+
+class KeptModelTests(unittest.TestCase):
+    """A kept-loaded picture model: reused between pictures, owning the data folder, discarded on any failure."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.app, self.root = Path(self.folder.name) / "app", Path(self.folder.name) / "data"
+        worker = self.app / "workers/python/inference_worker.py"
+        worker.parent.mkdir(parents=True)
+        worker.write_text(SERVING_CHILD)
+        self.root.mkdir()
+        self.kept = setup.KeptModel()
+
+    def tearDown(self):
+        self.kept.release()
+        self.folder.cleanup()
+
+    def picture(self, cancel=None, name="generate-a.log", **payload):
+        seen = []
+        result = self.kept.run(self.app, self.root, Path(sys.executable), dict(os.environ, MEDIA_WORKBENCH_KEEP_MODEL="1"), payload,
+                               cancel or threading.Event(), seen.append, self.root / "logs" / name)
+        return result, seen
+
+    def other_owner(self):
+        return subprocess.run([sys.executable, "-c", OTHER_OWNER, str(ROOT / "workers/python"), str(self.root)],
+                              capture_output=True, text=True, timeout=30).stdout.strip()
+
+    def test_pictures_reuse_one_child_that_owns_the_data_folder_until_released(self):
+        first, progress = self.picture(name="generate-1.log")
+        second, _ = self.picture(name="generate-2.log")
+        self.assertEqual((first["pid"], second["pid"], second["count"]), (first["pid"], first["pid"], 2))
+        self.assertEqual(progress, [{"stage": "Generating image", "completed": 1, "total": 1}])
+        self.assertTrue(Path(first["temp"]).is_relative_to(self.root / "temp/work"))
+        self.assertIsNone(first["keep"], "the child is never told to keep children of its own")
+        self.assertIn("third-party diagnostic", (self.root / "logs/generate-2.log").read_text())
+        self.assertNotIn('"count": 2', (self.root / "logs/generate-1.log").read_text(), "each picture has its own log")
+        self.assertEqual(self.other_owner(), "busy", "no other program loads a model meanwhile")
+        with setup.exclusive(self.root):
+            pass  # The same coordinator's next job nests with the kept model's hold.
+        self.kept.release()
+        self.assertEqual(self.other_owner(), "locked")
+        self.assertFalse((self.root / "temp").exists(), "the child's temporary folder goes with it")
+
+    def test_a_failed_picture_discards_the_child_and_frees_the_folder(self):
+        first, _ = self.picture()
+        with self.assertRaisesRegex(setup.SetupError, "safety checker"):
+            self.picture(fail=True)
+        self.assertIsNone(self.kept.child)
+        self.assertEqual(self.other_owner(), "locked")
+        again, _ = self.picture()
+        self.assertNotEqual(again["pid"], first["pid"])
+        self.assertEqual(again["count"], 1)
+
+    def test_cancellation_stops_the_child(self):
+        first, _ = self.picture()
+        cancel = threading.Event()
+        threading.Timer(0.5, cancel.set).start()
+        with self.assertRaises(setup.Cancelled):
+            self.picture(cancel=cancel, sleep=30)
+        self.assertIsNone(self.kept.child)
+        self.assertEqual(self.other_owner(), "locked")
+
+    def test_a_child_that_exits_is_replaced_and_a_second_folder_releases_the_first(self):
+        first, _ = self.picture()
+        self.kept.child.kill()
+        self.kept.child.wait(timeout=10)
+        second, _ = self.picture()
+        self.assertNotEqual(second["pid"], first["pid"])
+        other = Path(self.folder.name) / "other"
+        other.mkdir()
+        self.kept.run(self.app, other, Path(sys.executable), dict(os.environ), {}, threading.Event(), lambda _: None,
+                      other / "logs/generate-x.log")
+        self.assertEqual(self.other_owner(), "locked", "moving to another data folder releases the first one")
+
+    def test_only_a_kept_coordinator_keeps_a_model_and_other_work_releases_it(self):
+        calls = []
+        with patch.object(setup, "KEPT") as kept, patch.object(setup, "run_child", side_effect=lambda *a, **k: calls.append(a) or {"ok": 1}):
+            with patch.dict(os.environ, {"MEDIA_WORKBENCH_KEEP_MODEL": "1"}):
+                setup.inference(self.app, self.root, "generate", {}, threading.Event(), lambda _: None, "a" * 32)
+                self.assertEqual(kept.run.call_count, 1)
+                setup.inference(self.app, self.root, "upscale", {}, threading.Event(), lambda _: None, "b" * 32)
+                self.assertEqual((kept.release.call_count, len(calls)), (1, 1), "upscaling runs alone on the graphics card")
+            os.environ.pop("MEDIA_WORKBENCH_KEEP_MODEL", None)
+            setup.inference(self.app, self.root, "generate", {}, threading.Event(), lambda _: None, "c" * 32)
+            self.assertEqual((kept.run.call_count, len(calls)), (1, 2), "a one-shot coordinator keeps nothing")
+
+
 class ReadinessTests(unittest.TestCase):
     def test_profile_stamp_ignores_adapter_source_and_line_endings(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -262,6 +262,8 @@ var timed = System.Text.Json.JsonSerializer.Deserialize<GeneratedImage>("""
 Check(timed.SavedNotice == "Image saved in 14.1 seconds of inference, after 48.4 seconds loading the model. Loading the model took 48 seconds. The data folder is on a hard disk."
     && RecordingWorkbench.Image(nextRoot).SavedNotice == "Image saved in 1.0 seconds of inference." && vm.Notice == RecordingWorkbench.Image(nextRoot).SavedNotice,
     "Create reports model loading apart from inference, with the plain reason when loading was slow, and older records keep their notice");
+Check((timed with { KeptLoaded = true, LoadNote = null }).SavedNotice == "Image saved in 14.1 seconds of inference; the model was still loaded from the last picture.",
+    "A picture from a kept-loaded model says nothing had to load");
 // Stable Diffusion XL: an optional setup that joins the Model chooser with its own sizes once tested.
 Check(vm.NeedsXlSetup && !vm.ModelChoices.Any(model => model.IsXl) && vm.AddedModels.All(model => !model.IsXl), "Stable Diffusion XL is offered for setup and is not listed as an added model");
 await vm.InstallXlCommand.ExecuteAsync(null);
@@ -427,6 +429,7 @@ Check(await TryDownload($"{goodHash}  {installerName}", UpdateService.DownloadRe
 await HousekeepingChecks.RunAsync(Check, root, output, deadline.Token);
 await WorkFolderChecks.RunAsync(Check, python, output, deadline.Token);
 await MoveChecks.RunAsync(Check, root, python, output, deadline.Token);
+using (var keptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(90))) await KeptModelChecks.RunAsync(Check, python, output, keptDeadline.Token);
 
 
 async Task<string> Fixture(string name, string body)

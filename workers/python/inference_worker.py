@@ -280,15 +280,214 @@ def make_video(args, payload, torch, gpu, total, startup):
     return result
 
 
+class Session:
+    """The loaded inference runtime: imports, the CUDA device checks, and (when serving) the last pipeline."""
+
+    def __init__(self, args):
+        progress("Loading inference runtime")
+        launched = time.monotonic()
+        import torch
+        import upscaler
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is unavailable. Check your NVIDIA driver; this profile requires an NVIDIA GPU.")
+        self.torch, self.upscaler = torch, upscaler
+        # The parent sets CUDA_DEVICE_ORDER=PCI_BUS_ID, so device 0 is the GPU its preflight inspected.
+        self.gpu = torch.cuda.get_device_name(0)
+        minimum = inference_setup.minimum_vram_mib(args.root)
+        self.total = torch.cuda.get_device_properties(0).total_memory / 1024**2
+        if not inference_setup.meets_vram(self.total, minimum):
+            raise RuntimeError(f"{self.gpu} reports {self.total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
+        # Starting the runtime, loading the model, and the work itself are timed apart, so a slow drive or a busy
+        # computer can be told from slow inference.
+        self.startup = round(time.monotonic() - launched, 2)
+        # Kept between requests only in serve mode: (key, pipeline, safety checker, default scheduler).
+        self.kept = None
+
+    def release(self):
+        """Drops a kept pipeline and returns its graphics memory."""
+        self.kept = None
+        import gc
+        gc.collect()
+        self.torch.cuda.empty_cache()
+
+
+def load_pipeline(session, args, payload, xl, added, source, painted, settings, dtype, keep):
+    """The pipeline for this request. With keep, the last one is reused when it was loaded for exactly the same
+    model, runtime choice and mode; anything else is released first and loaded fresh."""
+    from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionInpaintPipeline, StableDiffusionPipeline
+    # The same weights serve every mode: image-to-image starts from the user's picture, and a painted
+    # change redraws only the painted region (Diffusers blends the standard 4-channel UNet's latents).
+    pipeline_class = (StableDiffusionInpaintPipeline if painted else StableDiffusionImg2ImgPipeline) if source else StableDiffusionPipeline
+    key = (xl, payload.get("model", inference_setup.RECIPE), payload.get("runtime"), payload.get("modelFormat"),
+           payload.get("ownVae"), "painted" if painted else "source" if source else "text")
+    if keep and session.kept and session.kept[0] == key:
+        return session.kept[1], session.kept[2], session.kept[3], True
+    if session.kept:
+        session.release()  # Never two models in graphics memory at once.
+    progress("Loading Stable Diffusion XL" if xl else "Loading your model" if added else "Loading Stable Diffusion 1.5")
+    torch = session.torch
+    checker = None
+    if xl:
+        from diffusers import StableDiffusionXLImg2ImgPipeline, StableDiffusionXLInpaintPipeline, StableDiffusionXLPipeline
+        pipe = StableDiffusionXLPipeline.from_pretrained(str(args.data_root / "models" / inference_setup.XL_MODEL), torch_dtype=dtype,
+            variant="fp16", use_safetensors=True, local_files_only=True, add_watermarker=False)
+        if source:
+            pipe = (StableDiffusionXLInpaintPipeline if painted else StableDiffusionXLImg2ImgPipeline).from_pipe(pipe)
+        checker = safety_checker(args.data_root, torch)  # SDXL has none of its own.
+    elif added:
+        pipe = load_added(args.data_root, payload, torch, dtype)
+        if pipeline_class is not StableDiffusionPipeline:
+            pipe = pipeline_class.from_pipe(pipe)
+    else:
+        pipe = pipeline_class.from_pretrained(str(args.data_root / "models" / inference_setup.RECIPE), torch_dtype=dtype,
+            variant="fp16", use_safetensors=True, local_files_only=True)
+    place(pipe, settings["offload"])
+    pipe.enable_vae_slicing()
+    if xl:
+        pipe.enable_vae_tiling()  # Decoding 1024 pixels in full precision would not fit 6 GB in one piece.
+    pipe.set_progress_bar_config(disable=True)
+    # Each request starts from the model's own scheduler, so a sampler choice never carries into the next one.
+    default = (type(pipe.scheduler), pipe.scheduler.config)
+    if keep:
+        session.kept = (key, pipe, checker, default)
+    return pipe, checker, default, False
+
+
+def make_picture(session, args, operation, payload, keep=False):
+    """Verification or generation of one picture; the result record the coordinator stores."""
+    from diffusers import DPMSolverMultistepScheduler, EulerAncestralDiscreteScheduler
+    from PIL import Image, ImageFilter, ImageOps, ImageStat
+    torch, gpu, total = session.torch, session.gpu, session.total
+    # The coordinator sends the runtime choice that passed this installation's (or this model's) GPU test, or the
+    # one under test. Check it again against the card CUDA sees, so a swapped GPU cannot run untested settings.
+    # Stable Diffusion XL has its own verified runtime choices; everything else uses SD 1.5's.
+    xl = operation == "verify-xl" or payload.get("model") == inference_setup.XL_MODEL
+    table = hardware.XL_RUNTIMES if xl else hardware.RUNTIMES
+    runtime = payload.get("runtime")
+    if runtime not in table:
+        raise ValueError("Unknown runtime choice")
+    major, minor = torch.cuda.get_device_capability(0)
+    if not hardware.allows(runtime, dict(name=gpu, computeCapability=f"{major}.{minor}", vramMiB=total), table):
+        raise RuntimeError(f"The settings tested for this installation do not suit {gpu}. Install / verify again in Create.")
+    settings = table[runtime]
+    # FP16 is used only where hardware.half_precision_ok trusts it; GTX 16-series cards stay in FP32.
+    dtype = torch.float16 if settings["precision"] == "float16" else torch.float32
+    source = payload.get("sourceImage") if operation == "generate" else None
+    painted = painted_change(payload, xl) if source and payload.get("maskImage") else None  # Checked before the slow load.
+    added = not xl and payload.get("model", inference_setup.RECIPE) != inference_setup.RECIPE
+    loading = time.monotonic()
+    torch.cuda.reset_peak_memory_stats()
+    pipe, checker, default, reused = load_pipeline(session, args, payload, xl, added, source, painted, settings, dtype, keep)
+    loaded = round(time.monotonic() - loading, 2)
+    request = payload if operation in ("generate", "verify-xl") else dict(
+        prompt="A small red ceramic house beside a green tree, watercolor illustration, daylight",
+        negativePrompt="", seed=20261017, steps=4, width=512, height=512)
+    # The coordinator validated the sampler; the model's own scheduler (PNDM for SD 1.5) is the default.
+    sampler = request.get("sampler", "pndm")
+    if sampler == "dpmpp-2m":
+        pipe.scheduler = DPMSolverMultistepScheduler.from_config(default[1], algorithm_type="dpmsolver++", use_karras_sigmas=True)
+    elif sampler == "euler-a":
+        pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(default[1])
+    elif sampler == "pndm":
+        pipe.scheduler = default[0].from_config(default[1])
+    else:
+        raise ValueError("Unknown sampler: " + str(sampler)[:40])
+    width, height = request.get("width", 512), request.get("height", 512)
+    extra = {}
+    if painted:
+        picture, mask, box, (width, height) = painted
+        # A slightly grown mask lets the model redraw the edge it will be blended across.
+        region_mask = mask.crop(box).resize((width, height), Image.Resampling.BILINEAR).filter(ImageFilter.MaxFilter(9))
+        extra = dict(image=picture.crop(box).resize((width, height), Image.Resampling.LANCZOS), mask_image=region_mask,
+                     width=width, height=height, strength=request["strength"])
+    elif source:
+        with Image.open(source) as opened:
+            picture = ImageOps.exif_transpose(opened).convert("RGB")
+        width, height = inference_setup.shape_for(*picture.size, xl=xl)
+        extra = dict(image=ImageOps.fit(picture, (width, height), Image.Resampling.LANCZOS), strength=request["strength"])
+    else:
+        extra = dict(width=width, height=height)
+    def step_end(pipeline, step, timestep, callback_kwargs):
+        progress("Generating image", step + 1, getattr(pipeline, "num_timesteps", None) or len(pipeline.scheduler.timesteps))
+        return callback_kwargs
+    started = time.monotonic()
+    output = pipe(prompt=request["prompt"], negative_prompt=request["negativePrompt"],
+        num_inference_steps=request["steps"], **extra,
+        guidance_scale=request.get("guidanceScale", 7.5), generator=torch.Generator(device="cpu").manual_seed(request["seed"]),
+        callback_on_step_end=step_end)
+    image = output.images[0]
+    if checker is not None:
+        progress("Checking the picture")
+    blocked = flagged(*checker, [image.convert("RGB")], torch) if checker is not None \
+        else bool(output.nsfw_content_detected and output.nsfw_content_detected[0])
+    del output
+    # The SDXL setup test only proves the runtime; its 4-step picture is unfinished and can be misread.
+    if blocked and operation != "verify-xl":
+        raise RuntimeError("The model safety checker rejected the result. Try a different prompt.")
+    if image.size != (width, height) or max(ImageStat.Stat(image).stddev) < 1:
+        raise RuntimeError("Inference produced an empty or invalid image; the installation is not verified.")
+    if painted:
+        image = blend_change(picture, mask, box, image)
+        width, height = image.size
+    if operation == "verify":
+        # The upscaler shares this runtime; a small real enlargement proves it loads and runs here.
+        progress("Testing the picture upscaler")
+        weights = args.data_root / "models" / inference_setup.UPSCALER / "RealESRGAN_x4plus.pth"
+        model = session.upscaler.load(weights, "cuda")
+        enlarged = session.upscaler.upscale(model, image.crop((0, 0, 64, 64)), "cuda")
+        if enlarged.size != (256, 256) or max(ImageStat.Stat(enlarged).stddev) < 1:
+            raise RuntimeError("The upscaler produced an invalid image; the installation is not verified.")
+        del model
+    result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda,
+        precision=settings["precision"], offload=settings["offload"], runtime=runtime,
+        seconds=round(time.monotonic() - started, 2), loadSeconds=loaded, startupSeconds=session.startup,
+        width=width, height=height, sampler=sampler,
+        peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2),
+        python=sys.version.split()[0], isolated=bool(sys.flags.isolated), userSiteDisabled=bool(sys.flags.no_user_site))
+    if reused:
+        result["keptLoaded"] = True  # The runtime and model were already loaded by an earlier picture.
+    if operation == "generate":
+        save_artifact(args.data_root, payload["jobId"], image, result)
+    if keep:
+        session.startup = 0.0  # Later pictures do not start the runtime again.
+        # The graphics memory this picture used stays reserved for the next one: emptying PyTorch's cache here made
+        # each kept picture about 4 s slower on a GTX 1660 Ti. Releasing the kept model gives it all back.
+    return result
+
+
+def serve(args):
+    """Keeps the runtime and the last picture model loaded and makes one picture per request line on stdin.
+
+    Only picture generation is served; the coordinator runs setup tests, upscaling and videos in their own
+    one-shot children after releasing this one. After any error the coordinator discards this process.
+    """
+    session = None
+    for line in sys.stdin:
+        try:
+            request = json.loads(line)
+            if request.get("operation") != "generate":
+                raise ValueError("A kept-loaded model only makes pictures.")
+            with redirect_stdout(sys.stderr):
+                session = session or Session(args)
+                result = make_picture(session, args, "generate", request["payload"], keep=True)
+            emit("result", result)
+        except Exception as exc:
+            print(f"{type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+            emit("error", {"message": str(exc)[:2000]})
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--data-root", type=Path, required=True)
-    parser.add_argument("--operation", choices=["download", "verify", "verify-model", "generate", "upscale", "video", "verify-video", "verify-xl"], required=True)
-    parser.add_argument("--payload", required=True)
+    parser.add_argument("--operation", choices=["download", "verify", "verify-model", "generate", "upscale", "video", "verify-video", "verify-xl", "serve"], required=True)
+    parser.add_argument("--payload", default="{}")
     args = parser.parse_args()
     if not sys.flags.isolated or not sys.flags.no_user_site:
         raise RuntimeError("The inference interpreter must run in isolated mode (-I).")
+    if args.operation == "serve":
+        serve(args)
+        return
     payload = json.loads(args.payload)
     # Downloads name one of the pinned manifests; each has its own folder under models/.
     downloads = {"sd15-files.json": inference_setup.RECIPE, "sdxl-files.json": inference_setup.XL_MODEL}
@@ -310,139 +509,16 @@ def main():
                 fetch_model_file(hf_hub_download, manifest, entry, model)
             emit("result", {"downloaded": True})
             return
-        progress("Loading inference runtime")
-        launched = time.monotonic()
-        import torch
-        import upscaler
-        from diffusers import (DPMSolverMultistepScheduler, EulerAncestralDiscreteScheduler,
-                               StableDiffusionImg2ImgPipeline, StableDiffusionInpaintPipeline, StableDiffusionPipeline)
-        from PIL import Image, ImageFilter, ImageOps, ImageStat
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA is unavailable. Check your NVIDIA driver; this profile requires an NVIDIA GPU.")
-        # The parent sets CUDA_DEVICE_ORDER=PCI_BUS_ID, so device 0 is the GPU its preflight inspected.
-        gpu = torch.cuda.get_device_name(0)
-        minimum = inference_setup.minimum_vram_mib(args.root)
-        total = torch.cuda.get_device_properties(0).total_memory / 1024**2
-        if not inference_setup.meets_vram(total, minimum):
-            raise RuntimeError(f"{gpu} reports {total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
-        upscaler_weights = args.data_root / "models" / inference_setup.UPSCALER / "RealESRGAN_x4plus.pth"
-        # Starting the runtime, loading the model, and the work itself are timed apart, so a slow drive or a busy
-        # computer can be told from slow inference.
-        startup = round(time.monotonic() - launched, 2)
+        session = Session(args)
         if args.operation == "upscale":
-            emit("result", dict(enlarge(payload, args.data_root, upscaler_weights, gpu, torch, upscaler), startupSeconds=startup))
+            weights = args.data_root / "models" / inference_setup.UPSCALER / "RealESRGAN_x4plus.pth"
+            emit("result", dict(enlarge(payload, args.data_root, weights, session.gpu, session.torch, session.upscaler),
+                                startupSeconds=session.startup))
             return
         if args.operation in ("video", "verify-video"):
-            emit("result", make_video(args, payload, torch, gpu, total, startup))
+            emit("result", make_video(args, payload, session.torch, session.gpu, session.total, session.startup))
             return
-        # The coordinator sends the runtime choice that passed this installation's (or this model's) GPU test, or the
-        # one under test. Check it again against the card CUDA sees, so a swapped GPU cannot run untested settings.
-        # Stable Diffusion XL has its own verified runtime choices; everything else uses SD 1.5's.
-        xl = args.operation == "verify-xl" or payload.get("model") == inference_setup.XL_MODEL
-        table = hardware.XL_RUNTIMES if xl else hardware.RUNTIMES
-        runtime = payload.get("runtime")
-        if runtime not in table:
-            raise ValueError("Unknown runtime choice")
-        major, minor = torch.cuda.get_device_capability(0)
-        if not hardware.allows(runtime, dict(name=gpu, computeCapability=f"{major}.{minor}", vramMiB=total), table):
-            raise RuntimeError(f"The settings tested for this installation do not suit {gpu}. Install / verify again in Create.")
-        settings = table[runtime]
-        # FP16 is used only where hardware.half_precision_ok trusts it; GTX 16-series cards stay in FP32.
-        dtype = torch.float16 if settings["precision"] == "float16" else torch.float32
-        source = payload.get("sourceImage") if args.operation == "generate" else None
-        painted = painted_change(payload, xl) if source and payload.get("maskImage") else None  # Checked before the slow load.
-        added = not xl and payload.get("model", inference_setup.RECIPE) != inference_setup.RECIPE
-        progress("Loading Stable Diffusion XL" if xl else "Loading your model" if added else "Loading Stable Diffusion 1.5")
-        loading = time.monotonic()
-        # The same weights serve every mode: image-to-image starts from the user's picture, and a painted
-        # change redraws only the painted region (Diffusers blends the standard 4-channel UNet's latents).
-        pipeline_class = (StableDiffusionInpaintPipeline if painted else StableDiffusionImg2ImgPipeline) if source else StableDiffusionPipeline
-        checker = None
-        if xl:
-            from diffusers import StableDiffusionXLImg2ImgPipeline, StableDiffusionXLInpaintPipeline, StableDiffusionXLPipeline
-            pipe = StableDiffusionXLPipeline.from_pretrained(str(args.data_root / "models" / inference_setup.XL_MODEL), torch_dtype=dtype,
-                variant="fp16", use_safetensors=True, local_files_only=True, add_watermarker=False)
-            if source:
-                pipe = (StableDiffusionXLInpaintPipeline if painted else StableDiffusionXLImg2ImgPipeline).from_pipe(pipe)
-            checker = safety_checker(args.data_root, torch)  # SDXL has none of its own.
-        elif added:
-            pipe = load_added(args.data_root, payload, torch, dtype)
-            if pipeline_class is not StableDiffusionPipeline:
-                pipe = pipeline_class.from_pipe(pipe)
-        else:
-            pipe = pipeline_class.from_pretrained(str(model), torch_dtype=dtype,
-                variant="fp16", use_safetensors=True, local_files_only=True)
-        place(pipe, settings["offload"])
-        pipe.enable_vae_slicing()
-        if xl:
-            pipe.enable_vae_tiling()  # Decoding 1024 pixels in full precision would not fit 6 GB in one piece.
-        pipe.set_progress_bar_config(disable=True)
-        loaded = round(time.monotonic() - loading, 2)
-        request = payload if args.operation in ("generate", "verify-xl") else dict(
-            prompt="A small red ceramic house beside a green tree, watercolor illustration, daylight",
-            negativePrompt="", seed=20261017, steps=4, width=512, height=512)
-        # The coordinator validated the sampler; the model's own PNDM scheduler is the default.
-        sampler = request.get("sampler", "pndm")
-        if sampler == "dpmpp-2m":
-            pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config,
-                algorithm_type="dpmsolver++", use_karras_sigmas=True)
-        elif sampler == "euler-a":
-            pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
-        elif sampler != "pndm":
-            raise ValueError("Unknown sampler: " + str(sampler)[:40])
-        width, height = request.get("width", 512), request.get("height", 512)
-        extra = {}
-        if painted:
-            picture, mask, box, (width, height) = painted
-            # A slightly grown mask lets the model redraw the edge it will be blended across.
-            region_mask = mask.crop(box).resize((width, height), Image.Resampling.BILINEAR).filter(ImageFilter.MaxFilter(9))
-            extra = dict(image=picture.crop(box).resize((width, height), Image.Resampling.LANCZOS), mask_image=region_mask,
-                         width=width, height=height, strength=request["strength"])
-        elif source:
-            with Image.open(source) as opened:
-                picture = ImageOps.exif_transpose(opened).convert("RGB")
-            width, height = inference_setup.shape_for(*picture.size, xl=xl)
-            extra = dict(image=ImageOps.fit(picture, (width, height), Image.Resampling.LANCZOS), strength=request["strength"])
-        else:
-            extra = dict(width=width, height=height)
-        def step_end(pipeline, step, timestep, callback_kwargs):
-            progress("Generating image", step + 1, getattr(pipeline, "num_timesteps", None) or len(pipeline.scheduler.timesteps))
-            return callback_kwargs
-        started = time.monotonic()
-        output = pipe(prompt=request["prompt"], negative_prompt=request["negativePrompt"],
-            num_inference_steps=request["steps"], **extra,
-            guidance_scale=request.get("guidanceScale", 7.5), generator=torch.Generator(device="cpu").manual_seed(request["seed"]),
-            callback_on_step_end=step_end)
-        image = output.images[0]
-        if checker is not None:
-            progress("Checking the picture")
-        blocked = flagged(*checker, [image.convert("RGB")], torch) if checker is not None \
-            else bool(output.nsfw_content_detected and output.nsfw_content_detected[0])
-        # The SDXL setup test only proves the runtime; its 4-step picture is unfinished and can be misread.
-        if blocked and args.operation != "verify-xl":
-            raise RuntimeError("The model safety checker rejected the result. Try a different prompt.")
-        if image.size != (width, height) or max(ImageStat.Stat(image).stddev) < 1:
-            raise RuntimeError("Inference produced an empty or invalid image; the installation is not verified.")
-        if painted:
-            image = blend_change(picture, mask, box, image)
-            width, height = image.size
-        if args.operation == "verify":
-            # The upscaler shares this runtime; a small real enlargement proves it loads and runs here.
-            progress("Testing the picture upscaler")
-            model = upscaler.load(upscaler_weights, "cuda")
-            enlarged = upscaler.upscale(model, image.crop((0, 0, 64, 64)), "cuda")
-            if enlarged.size != (256, 256) or max(ImageStat.Stat(enlarged).stddev) < 1:
-                raise RuntimeError("The upscaler produced an invalid image; the installation is not verified.")
-            del model
-        result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda,
-            precision=settings["precision"], offload=settings["offload"], runtime=runtime,
-            seconds=round(time.monotonic() - started, 2), loadSeconds=loaded, startupSeconds=startup,
-            width=width, height=height, sampler=sampler,
-            peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2),
-            python=sys.version.split()[0], isolated=bool(sys.flags.isolated), userSiteDisabled=bool(sys.flags.no_user_site))
-        if args.operation == "generate":
-            save_artifact(args.data_root, payload["jobId"], image, result)
-        emit("result", result)
+        emit("result", make_picture(session, args, args.operation, payload))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,23 @@
 # Initial alpha validation
 
+## Kept-loaded picture model (0.3.0-alpha.5)
+
+18 October 2026, Windows 11, GTX 1660 Ti (6 GB), development data folder verified with `fp32-offload`. `runtime/python/python.exe tests/gpu_kept_model_check.py <data>` (12-step 512 × 512 watercolor house, seed 20261017):
+
+| Observation | Result |
+| --- | --- |
+| One-shot coordinator (fresh child) | 25.8 s wall: 16.2 s inference, 4.1 s model load, 2.1 s runtime start |
+| Kept coordinator, first picture | 24.4 s (fresh child, same phases) |
+| Kept pictures 2 and 3 | 15.6 s and 15.9 s wall; load and runtime start 0; `keptLoaded` |
+| Pictures from the same settings | All three kept pictures byte-identical (SHA-256) to the one-shot picture |
+| Another process taking the data folder while the model is loaded | Refused as busy |
+| Euler-a picture, then an image-to-image picture (fresh load for the new mode), then the original settings | The original settings made the identical picture again: no sampler or mode state carried over |
+| After the coordinator ended | Data folder free, no `temp/` left |
+
+An earlier run that emptied PyTorch's CUDA cache after every kept picture measured 19.2–19.3 s per repeat (inference about 4 s slower); without it, three repeats took 15.5, 15.4 s. The final code does not empty the cache. The image-to-image picture took about 49 s of inference at strength 0.6 with a fresh load in both runs, unrelated to keeping the model loaded; not investigated yet.
+
+Headless: `scripts/check.ps1` passed 38 Rust tests, 207 Python tests (five new kept-model tests with a fake serving child: reuse, folder ownership against another process, discard on failure and cancellation, replacement after exit and for another folder, routing of other work) and 265 C# checks (new: jobs share one kept coordinator, reads leave it, folder-exclusive work releases it, another folder gets its own, idle and explicit release, and Create's wording).
+
 ## Real GPU generation with the contained environment
 
 18 October 2026, Windows 11, GTX 1660 Ti (6 GB), development data folder already verified with `fp32-offload`. Debug CLI from `d730511`: `MediaWorkbench.Cli <python> <repo> generate <data> "A red ceramic house beside a green tree, watercolor illustration, daylight" 12`.
