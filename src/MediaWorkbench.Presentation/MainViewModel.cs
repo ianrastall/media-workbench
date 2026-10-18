@@ -39,6 +39,7 @@ public partial class MainViewModel : ObservableObject
         InstallCommand = new AsyncRelayCommand(InstallAsync, () => !IsBusy && !NeedsDriveChoice);
         UseDriveCommand = new RelayCommand<DriveChoice?>(UseDrive, drive => drive is not null && !IsBusy);
         KeepDataDriveCommand = new RelayCommand(KeepDataDrive, () => !IsBusy);
+        RemoveOldCopyCommand = new AsyncRelayCommand(RemoveOldCopyAsync, () => !IsBusy && HasOldCopy);
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
         GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
@@ -78,6 +79,8 @@ public partial class MainViewModel : ObservableObject
             CheckForUpdates = saved.CheckForUpdates;
             KeepDownloadCaches = saved.KeepDownloadCaches;
             _pendingMove = saved.PendingMove;
+            _movedFrom = saved.MovedFrom;
+            ShowOldCopy();
             // Earlier versions did not record the choice; a folder other than the default was chosen on purpose.
             _dataRootChosen = saved.DataRootChosen || !string.Equals(saved.DataRoot, DefaultDataRoot, StringComparison.OrdinalIgnoreCase);
         }
@@ -242,7 +245,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CheckMoveCommand), nameof(MoveDataCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CheckMoveCommand), nameof(MoveDataCommand), nameof(RemoveOldCopyCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -291,6 +294,11 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand CheckMoveCommand { get; }
     public IRelayCommand<DriveChoice?> UseDriveCommand { get; }
     public IRelayCommand KeepDataDriveCommand { get; }
+    public IAsyncRelayCommand RemoveOldCopyCommand { get; }
+    private string? _movedFrom;
+    /// <summary>After a move, the old data folder is kept until the user removes it here.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasOldCopy))] public partial string OldCopyText { get; private set; } = "";
+    public bool HasOldCopy => OldCopyText.Length > 0;
     /// <summary>Drives the data folder could go on, for Settings.</summary>
     public ObservableCollection<DriveChoice> Drives { get; } = [];
     public bool HasDrives => Drives.Count > 0;
@@ -1099,10 +1107,12 @@ public partial class MainViewModel : ObservableObject
         {
             if (!Path.IsPathFullyQualified(DataRootDraft)) throw new InvalidDataException("Choose an absolute data folder.");
             _dataRootChosen = true; // Saving a folder is choosing where Media Workbench works.
+            _movedFrom = null; // An old copy relates only to the folder it was moved to.
             var value = CurrentSettings(Path.GetFullPath(DataRootDraft));
             _settings.Save(value);
             DataRoot = DataRootDraft = value.DataRoot;
             DriveChoiceText = "";
+            ShowOldCopy();
             Notice = "Settings saved. Models, generation, and Library now use this data folder.";
             Record("Storage settings saved");
         }
@@ -1110,7 +1120,30 @@ public partial class MainViewModel : ObservableObject
     }
 
     private AppSettings CurrentSettings(string? dataRoot = null) =>
-        new(1, dataRoot ?? DataRoot, SearchQuery, CheckForUpdates, KeepDownloadCaches, _pendingMove, _dataRootChosen);
+        new(1, dataRoot ?? DataRoot, SearchQuery, CheckForUpdates, KeepDownloadCaches, _pendingMove, _dataRootChosen, _movedFrom);
+
+    private void ShowOldCopy()
+    {
+        OldCopyText = _movedFrom is { } old && Directory.Exists(old)
+            ? $"Your previous data folder is still at {old}. Once pictures and models work from the new folder, remove the old copy to free its space. " +
+              "Only files the new folder holds unchanged are deleted; anything else stays."
+            : "";
+        RemoveOldCopyCommand?.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Deletes the old folder's files that the new data folder holds unchanged, after the user confirmed.</summary>
+    private Task RemoveOldCopyAsync() => RunAsync("Removing the old copy…", async token =>
+    {
+        if (_movedFrom is not { } old) return;
+        var removal = await _service.RemoveMovedDataAsync(old, DataRoot, token);
+        _movedFrom = null;
+        _settings.Save(CurrentSettings());
+        ShowOldCopy();
+        Notice = $"Removed {removal.RemovedFiles:N0} files ({StorageSnapshot.Format(removal.RemovedBytes)}) from the old folder." +
+            (removal.FolderRemoved ? " The old folder is gone."
+                : $" {removal.KeptFiles:N0} {(removal.KeptFiles == 1 ? "file was" : "files were")} kept in {old} because the new folder has no identical copy; check them in File Explorer.");
+        Record(Notice);
+    }, longRunning: true);
 
     /// <summary>Puts a drive's suggested folder in the data folder box; saving or moving is still the user's choice.</summary>
     private void UseDrive(DriveChoice? drive)
@@ -1182,11 +1215,13 @@ public partial class MainViewModel : ObservableObject
         }
         _pendingMove = null;
         _dataRootChosen = true;
+        _movedFrom = source;
         _settings.Save(CurrentSettings(target));
         DataRoot = DataRootDraft = target;
         ClearMovePlan();
+        ShowOldCopy();
         Notice = $"Moved {StorageSnapshot.Format(plan.Bytes)} to {target} and checked every file. Media Workbench now uses the new folder. " +
-            $"The old folder ({source}) was not changed: once you have checked the new one, you can delete the old folder in File Explorer. " +
+            $"The old folder ({source}) was not changed: once you have checked the new one, select Remove the old copy in Settings. " +
             "If you use the local MCP host, update its --data-root.";
         Record("Data folder moved to " + target);
         await UpdateInstallation(token);

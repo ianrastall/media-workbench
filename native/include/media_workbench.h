@@ -124,6 +124,18 @@ MW_API int32_t mw_plan_data_move(const uint8_t *input, size_t length,
 MW_API int32_t mw_move_data_folder(const uint8_t *input, size_t length,
     mw_export_progress progress, void *context,
     uint8_t *output, size_t capacity, size_t *required);
+/* Additive ABI 1 removal of a moved data folder's old copy. JSON: {source, destination} where
+   destination is the folder the data was moved to (it must exist; neither may contain the other).
+   Under the source's data-folder lock (status 7 while held), deletes each source file whose copy
+   in the destination has the same size and modification time, plus the source's own temp/,
+   library/ and .removing/; then empty folders, the lock file, and the folder itself if empty.
+   Anything else is kept. Never follows links (status 1 if the source contains one).
+   Returns JSON {removedFiles,removedBytes,keptFiles,folderRemoved}. The optional cancellation
+   callback is polled between files (status 5).
+   output=NULL or capacity<4096 returns 2, required=4096, without filesystem work or callbacks. */
+MW_API int32_t mw_remove_moved_data(const uint8_t *input, size_t length,
+    mw_should_cancel cancel, void *context,
+    uint8_t *output, size_t capacity, size_t *required);
 MW_API int32_t mw_drive_info(const uint8_t *input, size_t length,
     uint8_t *output, size_t capacity, size_t *required);
 /* Additive ABI 1 automatic clean-up. JSON: {dataRoot, runtimeProfileId, modelIds,

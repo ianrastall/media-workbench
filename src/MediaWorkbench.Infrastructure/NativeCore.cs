@@ -43,6 +43,10 @@ public static unsafe partial class NativeCore
     private static partial int MoveFolder(byte* input, nuint length,
         delegate* unmanaged[Cdecl]<ulong, ulong, nint, int> progress, nint context,
         byte* output, nuint capacity, out nuint required);
+    [LibraryImport(Library, EntryPoint = "mw_remove_moved_data")]
+    private static partial int RemoveMoved(byte* input, nuint length,
+        delegate* unmanaged[Cdecl]<nint, int> cancel, nint context,
+        byte* output, nuint capacity, out nuint required);
     [LibraryImport(Library, EntryPoint = "mw_drive_info")]
     private static partial int Drive(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
     [LibraryImport(Library, EntryPoint = "mw_plan_hub_model")]
@@ -274,6 +278,31 @@ public static unsafe partial class NativeCore
                 if (code != 0 || written > (nuint)output.Length)
                     throw new IOException($"The move could not finish ({code}): the new drive may be full, disconnected, or read-only, or a file is open in another program. " +
                         "The data folder was not changed, and the partial copy was removed.");
+            }
+        }
+        finally { handle.Free(); }
+    }
+
+    /// <summary>After a move, Rust deletes the old folder's files that the new folder holds with the same size and time.</summary>
+    public static MovedDataRemoval RemoveMovedData(string source, string destination, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { source, destination }, Wire.Json);
+        var output = new byte[4096];
+        var handle = GCHandle.Alloc(cancellationToken);
+        try
+        {
+            fixed (byte* pointer = input)
+            fixed (byte* result = output)
+            {
+                int code = RemoveMoved(pointer, (nuint)input.Length, &OnStorageCancel, GCHandle.ToIntPtr(handle), result, (nuint)output.Length, out nuint written);
+                if (code == 5) throw new OperationCanceledException("Removing the old copy was stopped; what is left is still there.", cancellationToken);
+                if (code == DataFolderBusy) throw new InvalidOperationException("Another program is using the old data folder. Close it, then try again.");
+                if (code == 1) throw new InvalidDataException("The old copy could not be removed safely: the folders overlap, the new folder is missing, or the old one contains a link or junction.");
+                if (code != 0 || written > (nuint)output.Length) throw new IOException($"The old copy could not be read ({code}). If it is on a removable or network drive, reconnect it.");
+                return JsonSerializer.Deserialize<MovedDataRemoval>(output.AsSpan(0, (int)written), Wire.Json)
+                    ?? throw new InvalidDataException("The native removal report was empty.");
             }
         }
         finally { handle.Free(); }

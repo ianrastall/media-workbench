@@ -623,6 +623,44 @@ pub unsafe extern "C" fn mw_move_data_folder(
     .unwrap_or(INTERNAL)
 }
 
+/// After a move, remove the old data folder's files that the new folder holds unchanged.
+/// # Safety
+/// Input/output follow the header contract. The optional callback/context must remain live;
+/// no callback may unwind across the ABI. Size queries do no filesystem work.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_remove_moved_data(
+    input: *const u8,
+    length: usize,
+    cancel: storage::Cancel,
+    context: *mut std::ffi::c_void,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: caller supplies writable size_t storage.
+        unsafe { *required = relocate::OUTPUT_CAPACITY };
+        if output.is_null() || capacity < relocate::OUTPUT_CAPACITY {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: caller supplies readable input memory.
+        let input = match unsafe { input_bytes(input, length) } {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        let result = match relocate::remove_moved(input, cancel, context) {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        // SAFETY: caller supplies capacity writable bytes; result is live through this copy.
+        unsafe { copy_output(&result, output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
 /// Encode a short clip's raw RGB frames into an MP4 with Windows' own H.264 encoder.
 /// # Safety
 /// Input/output follow the header contract. The optional callback/context must remain live;

@@ -204,6 +204,13 @@ sealed class RecordingWorkbench : IWorkbenchService
         Moves.Add((dataRoot, destination));
         return MoveFailure is { } failure ? Task.FromException(failure) : Task.CompletedTask;
     }
+    public MovedDataRemoval Removal { get; set; } = new(3, 3L << 30, 0, true);
+    public List<(string Old, string Current)> Removals { get; } = [];
+    public Task<MovedDataRemoval> RemoveMovedDataAsync(string oldRoot, string dataRoot, CancellationToken cancellationToken)
+    {
+        Removals.Add((oldRoot, dataRoot));
+        return Task.FromResult(Removal);
+    }
     public Task AbandonDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken)
     {
         Abandoned.Add((dataRoot, destination));

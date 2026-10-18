@@ -141,6 +141,8 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         Task.Run(() => NativeCore.PlanDataMove(dataRoot, destination), cancellationToken);
     public Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.MoveDataFolder(dataRoot, destination, progress, cancellationToken), cancellationToken);
+    public Task<MovedDataRemoval> RemoveMovedDataAsync(string oldRoot, string dataRoot, CancellationToken cancellationToken) =>
+        Task.Run(() => NativeCore.RemoveMovedData(oldRoot, dataRoot, cancellationToken), cancellationToken);
     public Task AbandonDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.MoveDataFolder(dataRoot, destination, new Progress<OperationProgress>(), cancellationToken, abandon: true), cancellationToken);
     public Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken) =>

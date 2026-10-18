@@ -385,6 +385,83 @@ pub(crate) fn relocate(
     .map_err(|_| crate::INTERNAL)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Removed {
+    removed_files: u64,
+    removed_bytes: u64,
+    /// Files kept because the new folder has no identical copy of them (or they could not be removed).
+    kept_files: u64,
+    /// The old folder itself is gone.
+    folder_removed: bool,
+}
+
+/// After a move, removes the old data folder's files that the new folder holds with the same size
+/// and modification time (the move verified their bytes and kept their times). The temporary-work
+/// folder, Library index and lock are the application's own and go too. Anything else is kept, and
+/// so are the folders that still hold something. Runs under the old folder's lock.
+pub(crate) fn remove_moved(
+    input: &[u8],
+    cancel: crate::storage::Cancel,
+    context: *mut c_void,
+) -> Result<Vec<u8>, i32> {
+    let request: Request = serde_json::from_slice(input).map_err(|_| INVALID)?;
+    let places = locations(&request)?;
+    if places.destination == places.source
+        || places.destination.starts_with(&places.source)
+        || places.source.starts_with(&places.destination)
+        || !places.destination.is_dir()
+    {
+        return Err(INVALID);
+    }
+    no_links(&places.destination)?;
+    let mut report = Removed {
+        removed_files: 0,
+        removed_bytes: 0,
+        kept_files: 0,
+        folder_removed: false,
+    };
+    {
+        let _lock = Lock::acquire(&places.source)?;
+        let found = inventory(&places.source)?;
+        if found.link.is_some() {
+            return Err(INVALID); // Never follow or remove through a link.
+        }
+        for entry in &found.files {
+            crate::storage::cancelled(cancel, context)?;
+            let copy = places.destination.join(&entry.relative);
+            let same = fs::symlink_metadata(&copy).is_ok_and(|metadata| {
+                metadata.is_file()
+                    && !is_link(&metadata)
+                    && metadata.len() == entry.bytes
+                    && metadata.modified().ok() == Some(entry.modified)
+            });
+            if same && fs::remove_file(places.source.join(&entry.relative)).is_ok() {
+                report.removed_files += 1;
+                report.removed_bytes += entry.bytes;
+            } else {
+                report.kept_files += 1;
+            }
+        }
+        for owned in ["temp", "library", ".removing"] {
+            let path = places.source.join(owned);
+            let owned_folder = fs::symlink_metadata(&path)
+                .is_ok_and(|metadata| metadata.is_dir() && !is_link(&metadata));
+            if owned_folder && fs::remove_dir_all(&path).is_err() {
+                report.kept_files += 1;
+            }
+        }
+        // Deepest folders first; a folder that still holds something stays.
+        for folder in found.folders.iter().rev() {
+            let _ = fs::remove_dir(places.source.join(folder));
+        }
+    }
+    // The lock is released; its file goes last, then the folder if nothing else is left.
+    let _ = fs::remove_file(places.source.join(".operation.lock"));
+    report.folder_removed = fs::remove_dir(&places.source).is_ok();
+    serde_json::to_vec(&report).map_err(|_| crate::INTERNAL)
+}
+
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
@@ -494,6 +571,69 @@ mod tests {
                 .unwrap()
                 .contains("already has files")
         );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn removing_the_old_copy_keeps_files_that_differ_or_were_never_copied() {
+        let root = folder("remove");
+        let source = data(&root);
+        let destination = root.join("new");
+        relocate(&request(&source, &destination), None, std::ptr::null_mut()).unwrap();
+        // Changed after the move in the new folder, and added to the old one after the move.
+        write(
+            &destination,
+            "jobs/install-sd15.json",
+            br#"{"status":"changed"}"#,
+        );
+        write(&source, "artifacts/late/image.png", b"late");
+        let report: serde_json::Value = serde_json::from_slice(
+            &remove_moved(&request(&source, &destination), None, std::ptr::null_mut()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["removedFiles"], 2);
+        assert_eq!(report["keptFiles"], 2);
+        assert_eq!(report["folderRemoved"], false);
+        assert!(source.join("jobs/install-sd15.json").exists());
+        assert!(source.join("artifacts/late/image.png").exists());
+        assert!(
+            !source.join("models").exists()
+                && !source.join("temp").exists()
+                && !source.join("library").exists()
+        );
+        assert_eq!(
+            snapshot(&destination).len(),
+            3,
+            "the new folder is untouched"
+        );
+        // Nested or identical folders are refused.
+        assert_eq!(
+            remove_moved(&request(&source, &source), None, std::ptr::null_mut()),
+            Err(INVALID)
+        );
+        // Once only copied files remain, the old folder goes completely.
+        fs::remove_file(source.join("artifacts/late/image.png")).unwrap();
+        fs::copy(
+            destination.join("jobs/install-sd15.json"),
+            source.join("jobs/install-sd15.json"),
+        )
+        .unwrap();
+        let modified = fs::metadata(destination.join("jobs/install-sd15.json"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        File::options()
+            .write(true)
+            .open(source.join("jobs/install-sd15.json"))
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        let report: serde_json::Value = serde_json::from_slice(
+            &remove_moved(&request(&source, &destination), None, std::ptr::null_mut()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["folderRemoved"], true);
+        assert!(!source.exists());
         fs::remove_dir_all(&root).unwrap();
     }
 

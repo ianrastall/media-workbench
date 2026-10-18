@@ -32,6 +32,13 @@ static class MoveChecks
         await vm.MoveDataCommand.ExecuteAsync(null);
         check(workbench.Moves[^1] == (oldRoot, newRoot) && vm.DataRoot == newRoot && store.Load() is { DataRoot: var movedRoot, PendingMove: null } && movedRoot == newRoot
             && vm.Notice.Contains("was not changed") && !vm.HasMovePlan, "A verified move switches to the new folder and says the old one is kept");
+        Directory.CreateDirectory(oldRoot);
+        var reopened = new MainViewModel(workbench, store, new FakeUpdates(null));
+        check(reopened.HasOldCopy && reopened.OldCopyText.Contains(oldRoot) && store.Load().MovedFrom == oldRoot, "The old copy is offered for removal after a restart too");
+        workbench.Removal = new(2, 1L << 30, 1, false);
+        await reopened.RemoveOldCopyCommand.ExecuteAsync(null);
+        check(workbench.Removals[^1] == (oldRoot, newRoot) && !reopened.HasOldCopy && store.Load().MovedFrom is null && reopened.Notice.Contains("1 file was kept"),
+            "Removing the old copy compares against the new folder, reports what was kept, and is not offered again");
         workbench.MovePlan = workbench.MovePlan with { Blocker = "The new folder already has files in it. Choose an empty or new folder." };
         vm.DataRootDraft = oldRoot;
         await vm.CheckMoveCommand.ExecuteAsync(null);
@@ -104,6 +111,12 @@ static class MoveChecks
         await service.ExportImageAsync(destination, new(jobId, exported), new Progress<OperationProgress>(), token);
         check(File.ReadAllBytes(exported).SequenceEqual(picture), "A moved image still passes its recorded checksum when saved as a copy");
         check(!(await service.PlanDataMoveAsync(source, destination, token)).CanMove, "Moving into a folder that already has files is refused");
+        string late = Path.Combine(source, "artifacts", "added-later.png");
+        await File.WriteAllBytesAsync(late, [5], token);
+        var removed = await service.RemoveMovedDataAsync(source, destination, token);
+        check(removed is { RemovedFiles: 2, KeptFiles: 1, FolderRemoved: false } && File.Exists(late) && !File.Exists(Path.Combine(source, "artifacts", jobId, "image.png"))
+            && File.ReadAllBytes(Path.Combine(destination, "artifacts", jobId, "image.png")).SequenceEqual(picture),
+            "The real removal deletes only files the new folder holds unchanged and keeps a file added later");
     }
 
     /// <summary>Reports on the calling thread, so the last value is known when the move returns.</summary>

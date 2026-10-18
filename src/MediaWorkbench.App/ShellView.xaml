@@ -381,6 +381,20 @@
                         </StackPanel>
                         <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                             Text="Save settings starts using the new folder as it is. Move my data there copies your pictures, videos, models and setup into it first and checks every file, so nothing has to download again." />
+                        <InfoBar Title="The old copy of your data" Severity="Informational" IsClosable="False" IsOpen="{x:Bind ViewModel.HasOldCopy, Mode=OneWay}" Message="{x:Bind ViewModel.OldCopyText, Mode=OneWay}">
+                            <InfoBar.ActionButton>
+                                <Button Content="Remove the old copy…">
+                                    <Button.Flyout>
+                                        <Flyout>
+                                            <StackPanel Spacing="12" MaxWidth="320">
+                                                <TextBlock TextWrapping="Wrap" Text="Deletes the files in the old folder that the new data folder holds unchanged. This cannot be undone. Files that differ, or that were added later, are kept." />
+                                                <Button Content="Remove" Command="{x:Bind ViewModel.RemoveOldCopyCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </InfoBar.ActionButton>
+                        </InfoBar>
                         <InfoBar Title="Move your data" Severity="Informational" IsClosable="False" IsOpen="{x:Bind ViewModel.HasMovePlan, Mode=OneWay}" Message="{x:Bind ViewModel.MovePlanText, Mode=OneWay}">
                             <InfoBar.ActionButton>
                                 <Button Content="Move now" Command="{x:Bind ViewModel.MoveDataCommand}" Style="{ThemeResource AccentButtonStyle}" />

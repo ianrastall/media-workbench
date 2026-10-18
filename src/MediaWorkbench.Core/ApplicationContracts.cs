@@ -5,7 +5,7 @@ namespace MediaWorkbench.Core;
 /// <summary>PendingMove names the destination of a data-folder move in progress, so a crash's half-made copy is removed at the next start.</summary>
 /// <summary>DataRootChosen records that the user picked (or kept) the data folder's location, so setup does not ask again.</summary>
 public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true, bool KeepDownloadCaches = false,
-    string? PendingMove = null, bool DataRootChosen = false)
+    string? PendingMove = null, bool DataRootChosen = false, string? MovedFrom = null)
 {
     public static AppSettings Default(string stateRoot) => new(1, Path.Combine(stateRoot, "Data"), "stable-diffusion");
 }
@@ -164,6 +164,9 @@ public sealed record DriveChoice(string Root, string Label, long FreeBytes, long
     public string Detail => $"{StorageSnapshot.Format(FreeBytes)} free of {StorageSnapshot.Format(TotalBytes)} · " +
         new DriveStatus(FreeBytes, TotalBytes, DriveKind).KindText + (IsSystem ? " · Windows is on this drive" : "");
 }
+
+/// <summary>What removing a moved folder's old copy did; kept files had no identical copy in the new folder.</summary>
+public sealed record MovedDataRemoval(long RemovedFiles, long RemovedBytes, long KeptFiles, bool FolderRemoved);
 
 /// <summary>What moving the data folder would copy, and the plain reason it cannot start (empty when it can).</summary>
 public sealed record DataMovePlan(long Files, long Bytes, long FreeBytes, long NeededBytes, bool SameVolume, bool Leftover, string Blocker)
@@ -324,6 +327,8 @@ public interface IWorkbenchService
     Task<DataMovePlan> PlanDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken);
     /// <summary>Copies the data folder to an empty or new folder and verifies every file; the current folder is never changed.</summary>
     Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>After a move, deletes the old folder's files that <paramref name="dataRoot"/> holds unchanged; anything else is kept.</summary>
+    Task<MovedDataRemoval> RemoveMovedDataAsync(string oldRoot, string dataRoot, CancellationToken cancellationToken);
     /// <summary>Removes the half-made copy an interrupted move left beside <paramref name="destination"/>; never touches anything else.</summary>
     Task AbandonDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken);
     /// <summary>The drives a data folder could go on (fixed, removable and network drives that are ready), with free space and type.</summary>

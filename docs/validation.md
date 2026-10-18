@@ -1,5 +1,17 @@
 # Initial alpha validation
 
+## Drive choice before setup and removing the old copy (unreleased)
+
+18 October 2026, Windows 11, development machine. `scripts/check.ps1` passed: 38 Rust tests, 202 Python tests, 253 C# checks; `scripts/build.ps1` passed with zero warnings.
+
+| Check | Result |
+| --- | --- |
+| Rust | Removing the old copy deletes only files the new folder holds with the same size and time plus the old `temp/` and `library/`, keeps a file changed in the new folder and one added to the old folder later, leaves the new folder untouched, refuses identical folders, and removes the old folder completely once only copied files remain |
+| C# view model | Setup asks where to work when the default folder is on a drive with less room than another, blocks Install / verify until the user keeps the drive, remembers that, does not ask for a folder saved by an earlier version; Use this drive fills in the folder without saving; the old copy is offered after a move and after a restart, removal reports kept files and is not offered again |
+| C# real | The drive list includes the checks' drive with free space; the real removal after a real move deletes the moved files, keeps a file added later, and leaves the new folder's image intact |
+
+Not checked: the interactive Settings and Create flows, removable/network drives in the list, or removal of a multi-gigabyte installation.
+
 ## Move existing data (0.3.0-alpha.3)
 
 18 October 2026, Windows 11, development machine.
