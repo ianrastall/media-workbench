@@ -66,6 +66,32 @@ static class BatchChecks
         await restarted.RemoveQueuedCommand.ExecuteAsync(restarted.Queue[0]);
         check(workbench.Waiting.Count == 0 && !restarted.HasQueue, "A waiting picture can be removed");
 
+        // While the queue runs, more pictures can be added, and the running queue makes them too.
+        restarted.PictureCountIndex = 0;
+        string firstPrompt = restarted.Prompt;
+        await restarted.AddToQueueCommand.ExecuteAsync(null);
+        workbench.Generations.Clear();
+        var hold = new TaskCompletionSource();
+        workbench.GenerationGate = hold.Task;
+        var draining = restarted.RunQueueCommand.ExecuteAsync(null);
+        restarted.Prompt = "added while running";
+        bool allowed = restarted.AddToQueueCommand.CanExecute(null);
+        await restarted.AddToQueueCommand.ExecuteAsync(null);
+        workbench.GenerationGate = null;
+        hold.SetResult();
+        await draining;
+        check(allowed && workbench.Generations.Select(item => item.Prompt).SequenceEqual([firstPrompt, "added while running"]) && workbench.Waiting.Count == 0
+            && restarted.Notice.StartsWith("Made 2 of 2"), "Pictures added while the queue runs are made by it too");
+        var moving = new TaskCompletionSource();
+        workbench.MoveGate = moving.Task;
+        restarted.DataRootDraft = Path.Combine(output, "queue-moved");
+        await restarted.CheckMoveCommand.ExecuteAsync(null);
+        var move = restarted.MoveDataCommand.ExecuteAsync(null);
+        check(!restarted.AddToQueueCommand.CanExecute(null), "Nothing is added to the queue while the data folder is being moved");
+        workbench.MoveGate = null;
+        moving.SetResult();
+        await move;
+
         // The real worker keeps its own copy of a starting picture for a waiting picture.
         string data = Path.Combine(output, "queue-real-data");
         string picture = Path.Combine(output, "queue-start.png");

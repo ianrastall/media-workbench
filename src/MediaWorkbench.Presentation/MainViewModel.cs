@@ -43,7 +43,8 @@ public partial class MainViewModel : ObservableObject
         ToggleDriveCommand = new RelayCommand<DriveChoice?>(ToggleDrive, drive => drive is not null && !IsBusy);
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
         GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
-        AddToQueueCommand = new AsyncRelayCommand(AddToQueueAsync, () => !IsBusy && ModelReady);
+        // Adding waits in its own folder, so it is allowed while pictures are being made, but not during setup, moves or removals.
+        AddToQueueCommand = new AsyncRelayCommand(AddToQueueAsync, () => ModelReady && !_queueing && (!IsBusy || _makingPictures));
         RunQueueCommand = new AsyncRelayCommand(RunQueueAsync, () => !IsBusy && ModelReady && HasQueue);
         RemoveQueuedCommand = new AsyncRelayCommand<QueuedPicture?>(RemoveQueuedAsync, item => !IsBusy && item is not null);
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
@@ -471,11 +472,16 @@ public partial class MainViewModel : ObservableObject
         _ => "Discover local generation models, understand their requirements, and prepare a dependable creative setup."
     };
 
-    private async Task RunAsync(string description, Func<CancellationToken, Task> action, bool longRunning = false)
+    /// <summary>A picture or the queue is being made: Add to queue stays available meanwhile.</summary>
+    private bool _makingPictures;
+    private bool _queueing;
+
+    private async Task RunAsync(string description, Func<CancellationToken, Task> action, bool longRunning = false, bool makingPictures = false)
     {
         if (IsBusy) return;
         using var cancellation = new CancellationTokenSource(longRunning ? TimeSpan.FromHours(4) : TimeSpan.FromSeconds(45));
         _operation = cancellation;
+        _makingPictures = makingPictures;
         IsBusy = true;
         Status = description;
         ProgressIndeterminate = true;
@@ -483,7 +489,7 @@ public partial class MainViewModel : ObservableObject
         try { await action(cancellation.Token); Status = "Ready"; }
         catch (OperationCanceledException) { Status = "Cancelled"; Record("Operation cancelled"); }
         catch (Exception ex) { Notice = ex.Message; Status = "Operation could not finish"; Record(ex.Message); }
-        finally { _operation = null; IsBusy = false; ProgressIndeterminate = false; }
+        finally { _operation = null; _makingPictures = false; IsBusy = false; ProgressIndeterminate = false; }
     }
 
     private IProgress<OperationProgress> ObserveProgress(string prefix) => new Progress<OperationProgress>(value =>
@@ -799,9 +805,23 @@ public partial class MainViewModel : ObservableObject
             Notice = $"Made {made} of {count} versions; the others were not saved. " + string.Join(" ", problems);
         }
         else if (count > 1) Notice = $"Made {count} versions with seeds {(long)Seed} to {((long)Seed + count - 1) % (1L + uint.MaxValue)}; see Library for all of them. " + LatestImage!.SavedNotice;
-    }, longRunning: true);
+    }, longRunning: true, makingPictures: true);
     /// <summary>Saves the picture Create describes (each version, with How many) to make later.</summary>
-    private Task AddToQueueAsync() => RunAsync("Adding to the queue…", async token =>
+    private async Task AddToQueueAsync()
+    {
+        if (_queueing) return;
+        _queueing = true;
+        AddToQueueCommand.NotifyCanExecuteChanged();
+        try { await AddToQueueCore(CancellationToken.None); }
+        catch (Exception ex) { Notice = "The picture was not added to the queue: " + ex.Message; Record(Notice); }
+        finally
+        {
+            _queueing = false;
+            AddToQueueCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private async Task AddToQueueCore(CancellationToken token)
     {
         var (picture, painted) = CurrentPicture();
         int count = PictureCounts[Math.Clamp(PictureCountIndex, 0, PictureCounts.Length - 1)];
@@ -816,29 +836,37 @@ public partial class MainViewModel : ObservableObject
             if (mask is not null) try { File.Delete(mask); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         ShowQueue(await _service.GetQueueAsync(DataRoot, token));
-        Notice = $"Added {(count == 1 ? "the picture" : $"{count} versions")} to the queue ({QueueText}). Select Run queue to make them; they wait until you do, even after closing the app.";
+        Notice = $"Added {(count == 1 ? "the picture" : $"{count} versions")} to the queue ({QueueText}). "
+            + (_makingPictures && Status.StartsWith("Queue", StringComparison.Ordinal) ? "The running queue will make it too."
+                : "Select Run queue to make them; they wait until you do, even after closing the app.");
         Record(Notice);
-    });
+    }
 
     /// <summary>Makes the waiting pictures oldest first. Cancel stops the current one, which stays waiting with the rest.</summary>
     private Task RunQueueAsync() => RunAsync("Making the waiting pictures…", async token =>
     {
-        var items = await _service.GetQueueAsync(DataRoot, token);
-        ShowQueue(items);
-        int made = 0;
+        int made = 0, attempted = 0;
         List<string> problems = [];
-        for (int index = 0; index < items.Count; index++)
+        HashSet<string> tried = [];
+        while (true)
         {
-            var item = items[index];
+            // Read the queue again each time: pictures added while it runs are made too, oldest first.
+            var waiting = await _service.GetQueueAsync(DataRoot, token);
+            ShowQueue(waiting);
+            var item = waiting.FirstOrDefault(candidate => !tried.Contains(candidate.Id));
+            if (item is null) break;
+            tried.Add(item.Id);
+            attempted++;
+            int total = attempted + waiting.Count(candidate => !tried.Contains(candidate.Id));
             try
             {
-                var image = await _service.GenerateAsync(DataRoot, item.Settings, ObserveProgress($"Queue {index + 1} of {items.Count}"), token);
+                var image = await _service.GenerateAsync(DataRoot, item.Settings, ObserveProgress($"Queue {attempted} of {total}"), token);
                 made++;
                 PreviewPath = image.ImagePath;
                 LatestImage = image;
                 ImageDescription = image.Description;
                 await ShowNewImageAsync(image, token);
-                Notice = $"Queue {index + 1} of {items.Count} saved. " + image.SavedNotice;
+                Notice = $"Queue {attempted} of {total} saved. " + image.SavedNotice;
             }
             catch (InvalidOperationException ex)
             {
@@ -849,8 +877,8 @@ public partial class MainViewModel : ObservableObject
             ShowQueue(await _service.RemoveQueuedAsync(DataRoot, item.Id, token));
         }
         _ = RefreshDriveAsync();
-        Notice = $"Made {made} of {items.Count} waiting pictures." + (problems.Count == 0 ? " See Library for all of them." : " Not made: " + string.Join(" ", problems));
-    }, longRunning: true);
+        Notice = $"Made {made} of {attempted} waiting pictures." + (problems.Count == 0 ? " See Library for all of them." : " Not made: " + string.Join(" ", problems));
+    }, longRunning: true, makingPictures: true);
 
     private static string Shorten(string text) => text.Length <= 40 ? text : text[..39] + "…";
 

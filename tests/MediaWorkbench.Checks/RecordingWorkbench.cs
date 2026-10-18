@@ -218,10 +218,12 @@ sealed class RecordingWorkbench : IWorkbenchService
     public List<(string Source, string Destination)> Moves { get; } = [];
     public List<(string Source, string Destination)> Abandoned { get; } = [];
     public Task<DataMovePlan> PlanDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken) => Task.FromResult(MovePlan);
-    public Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    public Task? MoveGate { get; set; }
+    public async Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {
         Moves.Add((dataRoot, destination));
-        return MoveFailure is { } failure ? Task.FromException(failure) : Task.CompletedTask;
+        if (MoveGate is { } gate) await gate.WaitAsync(cancellationToken);
+        if (MoveFailure is { } failure) throw failure;
     }
     public MovedDataRemoval Removal { get; set; } = new(3, 3L << 30, 0, true);
     public List<(string Old, string Current)> Removals { get; } = [];

@@ -1,5 +1,9 @@
 # Initial alpha validation
 
+## Adding to the queue while pictures are made (unreleased)
+
+`scripts/check.ps1` passed with 280 C# checks; two new view-model checks: a picture added while the queue runs is made by the same run, and nothing can be added while the data folder is being moved.
+
 ## Waiting pictures (0.3.0-alpha.8)
 
 18 October 2026. `scripts/check.ps1` passed 39 Rust tests, 219 Python tests (six new queue tests: own input copies survive deleting the originals, oldest-first listing, removal with copies, invalid settings write nothing, damaged records skipped and abandoned adds cleaned up, the 200-item limit and missing copies reported) and 278 C# checks (seven new: Add to queue saves each version without generating, waiting pictures listed after a restart without running, Run queue oldest first with one failure, Cancel leaves the current picture waiting, Remove, and the real worker's own input copy and its removal); `scripts/build.ps1` passed with zero warnings. Not run interactively or with real GPU pictures; each item runs through the same generation path checked above.
