@@ -1,6 +1,6 @@
 # Development direction after 0.2.0-alpha.11
 
-This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
+This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, adding SD 1.5-family models the user already downloaded, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 
 ## Purpose and next feature priority
 
@@ -8,9 +8,25 @@ Media Workbench moves image and video generation onto the user's own computer: i
 
 The next user-facing priorities are:
 
-1. **Add your own downloaded models.** Let a user point at a model they already have (for example an SD 1.5-family single-file `.safetensors` checkpoint or a Diffusers folder), record its own SHA-256 and size, identify a supported architecture without executing model code, and make it runnable only after the same real GPU inference check the bundled model passes. Unrecognized or unsupported files are explained, not run.
+1. **Add your own downloaded models.** Done for SD 1.5-family single files and Diffusers folders in 0.2.0-alpha.11; other architectures follow with their own verified profiles.
 2. **Refresh the model list from Hugging Face.** Discover already searches live metadata. It should also say which results this computer can actually install and run (supported architecture, safetensors files, license shown, VRAM fit), and offer a pinned install with the same verification gate.
 3. Then newer image models that fit 6 GB, and short video, as optional verified profiles.
+
+Alongside these, every feature follows the product principles in `AGENTS.md`: easy to use, stable, aware of the computer it runs on, clean, and mindful of drive space. The section below says what that still requires.
+
+## Standing principles: system awareness, clean-up, and drive space
+
+`AGENTS.md` lists these as product principles for every feature. This is where the app stands against them (0.2.0-alpha.11) and what to build.
+
+**Already in place.** Setup checks the NVIDIA driver and the GPU's memory against the recipe's minimum, on the same device inference uses. Setup and adding a model check free space first. Settings → Storage shows free space and what each part of the data folder uses. Interrupted generations lose their partial image, unfinished record writes are removed, failed or interrupted model imports are deleted, painted-area hand-over files are deleted after use, and a failed update download is discarded. Download caches and logs can be cleared by hand.
+
+**System awareness — missing.** Every computer gets one conservative profile chosen for 6 GB GTX 16-series cards: FP32 computation, model CPU offload, and VAE slicing, plus a fixed 256-pixel upscaler tile. Nothing checks system RAM, which offloading and single-file loading depend on. Build a small hardware profile (GPU name, compute capability, VRAM, system RAM, data-drive free space and type), detect it once per session, and show it in plain words in Diagnostics and on Create's setup card. Use it to choose settings: half precision without offloading on GPUs that handle it and have the memory, offloading only when needed, upscaler tile size from free VRAM, and a plain refusal or warning when RAM or VRAM is too small. Each distinct runtime choice is a verified profile: it changes the readiness stamp and must pass the real GPU test before it is used, and the conservative profile remains the fallback.
+
+**Clean-up — missing.** Verified update installers stay in `%TEMP%\MediaWorkbench-update` after updating; delete them once the new version starts. Painted-area hand-over files can be left in `%TEMP%\MediaWorkbench\painted` if the app crashes mid-generation; sweep stale ones at startup. Logs grow by one file per job forever; keep them bounded (for example the most recent few hundred, or 30 days, never the log of a job still listed as unfinished). Retained setup `.partial` downloads, the `bootstrap/` archives, and the `cache/` wheel and Hub caches (about 4 GiB) are kept indefinitely; once an installation is verified, offer or perform their removal, and expire stale partials. Failed and cancelled job records accumulate; keep a bounded recent set. Every automatic removal runs under the data-folder lock, never touches images, job records still listed, private inputs that **Use settings** needs, or the user's own files, and is covered by tests.
+
+**Drive space and speed — missing.** Generation and upscaling do not check free space (a 4× upscale of a large picture writes a large PNG). Nothing warns before space runs low. Nothing notices a slow or busy data drive, although loading the model from a hard disk under load measured about four times slower in validation. Check space before every write-heavy operation with a plain message, warn in Create and Settings below a threshold (for example 5 GiB), detect whether the data folder is on a hard disk, and say so where it matters ("Models load faster from an SSD; you can move the data folder in Settings").
+
+Acceptance: routine tests cover profile selection from fake hardware descriptions, each clean-up rule including what it must keep, crash leftovers, and low-space refusal before any write; opt-in GPU checks verify each runtime choice on real hardware.
 
 ## Immediate validation
 
