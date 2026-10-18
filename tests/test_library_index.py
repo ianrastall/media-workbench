@@ -129,6 +129,15 @@ class LibraryIndexTests(unittest.TestCase):
         write_job(self.root, 9, "Repaired record")
         self.assertEqual(self.list()["total"], 2)
 
+    def test_records_name_their_model_or_leave_it_unset(self):
+        write_job(self.root, 1, settings=dict(prompt="older", seed=1, steps=10, model=None))
+        write_job(self.root, 2, settings=dict(prompt="added", seed=2, steps=10, model="e" * 32), modelName="Dreamy")
+        write_job(self.root, 3, settings=dict(prompt="bad", seed=3, steps=10, model=7))
+        write_job(self.root, 4, modelName=["not", "a", "name"])
+        listed = {image["settings"]["prompt"]: image for image in self.list()["artifacts"]}
+        self.assertEqual(sorted(listed), ["added", "older"])
+        self.assertEqual((listed["added"]["settings"]["model"], listed["added"]["modelName"]), ("e" * 32, "Dreamy"))
+
     def test_live_jobs_are_preserved_and_orphans_recovered_with_filters(self):
         record = write_job(self.root, 1, status="running", message="")
         with setup.exclusive(self.root):

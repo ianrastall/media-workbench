@@ -1,6 +1,6 @@
 # Current implementation status
 
-Version: **0.2.0-alpha.10**. Development started 17 October 2026.
+Version: **0.2.0-alpha.11**. Development started 17 October 2026.
 
 ## Technology decisions
 
@@ -33,12 +33,14 @@ Install / verify calls the native pinned-file verifier through a thin Python ada
 
 **Paint the part to change** turns a starting picture into a painting surface (three brush sizes, erase, clear). The painted area is a UI-free Core grid with the picture's EXIF-oriented proportions (at most 512 cells a side), handed to the worker as a grayscale PNG and kept as the job's private `mask.png`. The ML child redraws a box around the paint with added context at the nearest supported shape using Diffusers' inpainting pipeline on the same verified SD 1.5 weights, then blends it back with a softened edge into the full-size picture (up to 4096 pixels on the longest side); unpainted pixels keep their values. **Use settings** restores the picture, painted area, and change level. MCP clients can describe a rectangular change area instead of painting.
 
+**Add a model you already downloaded** (Create, once the bundled model is ready) accepts an SD 1.5-family single-file `.safetensors` checkpoint or a Diffusers folder. A standard-library worker module identifies it from safetensors headers alone (UNet input/output and cross-attention shapes, CLIP text width, VAE shapes, weight types, and that the header describes the whole file) and refuses other architectures, add-ons, damaged or incomplete files, quantized weights, and pickle files with a plain reason; model code and the user's configuration files are never used. Rust's new `mw_import_file` copies each file into `models/imported/<id>/` in one hashing pass with read-only source sharing; the copy is then verified natively, re-identified, checked for duplicates, and tested with the same 512 × 512 GPU inference check as the bundled model, reusing its runtime, tokenizer, scheduler, safety checker, and configuration (and its VAE when the model has none). Copying keeps the verified bytes in the managed, link-free folder, so the original can move or be deleted without breaking a ready model; nothing is kept when any step fails. A ready model needs its own unchanged stamps, the current adapter version and profile stamp, and a ready bundled installation. Create's **Model** chooser appears only when an added model is ready; job records store `settings.model`, `model`, `modelName`, and a local source description, Library names the model, and **Use settings** restores it (falling back to the bundled model with a note). Painted changes, image-to-image, and upscaling work with either. Settings → Storage measures added models separately, lists each with **Test again** and confirmed **Remove…** (images, jobs, and originals kept). MCP lists models (`workbench_models`) and generation can name a ready one; adding or removing models stays in the app.
+
 Normal source builds also copy the console host beside the GUI for Settings-generated MCP configuration; published builds already bundle it with the runtime.
 
 ## Still planned
 
 
-Authenticated remote/cloud MCP access, protected Hugging Face account access, arbitrary model installation, additional hardware/runtime profiles, a dedicated inpainting model, video generation, queues, more enhancement tools, automatic cache pruning, and signed application updates. Tools supports Real-ESRGAN upscaling; Home supports checksum-verified application updates. The SD 1.5 recipe remains experimental and each installation must pass its own inference test; discovery results do not imply runnable pipelines.
+Authenticated remote/cloud MCP access, protected Hugging Face account access, installing models from Discover, added models of other architectures (SDXL and newer), LoRAs and embeddings, arbitrary model installation, additional hardware/runtime profiles, a dedicated inpainting model, video generation, queues, more enhancement tools, automatic cache pruning, and signed application updates. Tools supports Real-ESRGAN upscaling; Home supports checksum-verified application updates. The SD 1.5 recipe remains experimental and each installation must pass its own inference test; discovery results do not imply runnable pipelines.
 
 ## Verification
 
@@ -46,6 +48,7 @@ Authenticated remote/cloud MCP access, protected Hugging Face account access, ar
 - File-verifier checks use real Python/C# ABI calls for correct bytes, Unicode paths, size and checksum failures, invalid declarations, missing files/core, streaming cancellation, callback exception containment, Windows file sharing/junctions, retained downloads, and unchanged readiness-stamp shape. Published self-tests exercise the bundled verifier too.
 - Storage checks cover real native C#/Python calls, operation without a Python executable, profile-specific counts, Unicode roots, cancellation before/during traversal, buffer queries without folder creation, Windows junction containment, and the published app/MCP payload.
 - Python unit tests cover request validation, cancellation, search normalization, input rejection, and repository metadata.
+- Model-import tests craft sparse safetensors files with real SD 1.5 tensor shapes: single files with and without a VAE, Diffusers folders (including Hugging Face cache snapshots), and refusals for SDXL, SD 2, FLUX, inpainting and InstructPix2Pix UNets, LoRAs, embeddings, ControlNets, lone parts, quantized weights, incomplete or damaged headers, pickle files, and unsupported folders. Real native copies cover hashing, untouched originals, bundled configs for Diffusers parts, cancellation and failed GPU tests leaving nothing, readiness gating (changed copies, adapter changes, missing runtime, a missing bundled installation), re-testing, duplicates, crash recovery, model-named generation records, unready or removed models writing no job, removal keeping images, and the separate storage measurement. Rust tests cover the copy's declarations, refusal to replace, and cancellation. C# checks cover the chooser, adding/refusing a model, model-named generation, Use settings restore and fallback, Settings listing/counting, re-testing, removal, and MCP model listing and model-named generation. `tests/gpu_model_import_check.py` is the opt-in real GPU check.
 - Python tests also cover recovery of orphaned generation jobs, preserving jobs whose owner is alive, and skipping damaged records.
 - Export tests cover byte-identical copies, changed or missing originals, malformed records, moved folders, cancellation, failed replacement, managed-folder protection, and existing-destination preservation. C# checks cover routing through the saved data folder and the real native ABI boundary.
 - Library tests cover paging past 200 images with deterministic ties, Unicode/literal search and image-type filters, incremental JSON reads, moved folders, file removal/restoration, index deletion/corruption/version rebuild, invalid record types, and cancellation rollback. C# checks exercise paging and settings reuse in the view model and search through a real Python/SQLite child. Published-app self-test also opens the bundled SQLite Library.
@@ -62,7 +65,7 @@ Windows 11 is the current test host. The installer targets Windows 10 22H2 and W
 
 ## Next areas
 
-Product direction (see [development direction](next-steps.md)): importing models the user has already downloaded, and a Hugging Face model list that says what this computer can install and run, come first, each behind the same real inference verification.
+Product direction (see [development direction](next-steps.md)): adding models the user already downloaded now works for SD 1.5-family models; a Hugging Face model list that says what this computer can install and run comes next, behind the same real inference verification.
 
 1. Clean-machine Windows 10/11 and additional GPU/driver coverage.
 2. A warm inference worker and durable generation queue, retaining owned-process cancellation and crash recovery.

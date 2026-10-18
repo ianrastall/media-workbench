@@ -60,6 +60,21 @@ MW_API int32_t mw_storage_summary(const uint8_t *input, size_t length,
 MW_API int32_t mw_verify_file(const uint8_t *input, size_t length,
     mw_export_progress progress, void *context,
     uint8_t *output, size_t capacity, size_t *required);
+/* Additive ABI 1 model import copy. JSON: {source,dataRoot,relativePath}.
+   source is an absolute regular file anywhere; dataRoot an existing absolute non-drive-root
+   folder; relativePath safe forward-slash components whose ancestors contain no links.
+   The destination must not exist. Streams the source once into "<relativePath>.partial",
+   hashing as it copies, syncs, and renames it into place. On Windows the source is opened
+   with read sharing only, refusing concurrent writers/deletion. Status 6 means the source
+   changed while copying. Failure or cancellation (5) removes the partial copy. Output is
+   the copy's 64-byte SHA-256. The source is never modified. Does not decide readiness;
+   identification, verification, and GPU inference checks remain required.
+   output=NULL or capacity<64 returns 2, required=64, without filesystem work/callbacks.
+   The optional synchronous callback receives byte counts; nonzero cancels.
+   No pointers are retained; callbacks must not throw/unwind. */
+MW_API int32_t mw_import_file(const uint8_t *input, size_t length,
+    mw_export_progress progress, void *context,
+    uint8_t *output, size_t capacity, size_t *required);
 #ifdef __cplusplus
 }
 #endif

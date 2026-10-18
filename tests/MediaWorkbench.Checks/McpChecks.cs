@@ -45,8 +45,12 @@ static class McpChecks
                 check(!capabilities.GetProperty("videoGenerationSupported").GetBoolean() && capabilities.GetProperty("allowSetup").GetBoolean() == allowSetup,
                     "MCP reports unsupported video and actual launch permissions");
                 var storage = (await Call("storage", "workbench_storage", new { })).GetProperty("result");
-                check(!storage.GetProperty("isError").GetBoolean() && storage.GetProperty("structuredContent").GetProperty("items").GetArrayLength() == 7,
+                check(!storage.GetProperty("isError").GetBoolean() && storage.GetProperty("structuredContent").GetProperty("items").GetArrayLength() == 8,
                     "MCP inspects the scoped data folder through the Rust storage service");
+                var listedModels = (await Call("models", "workbench_models", new { })).GetProperty("result");
+                check(!listedModels.GetProperty("isError").GetBoolean() && listedModels.GetProperty("structuredContent").GetProperty("models")[0].GetProperty("id").GetString() == ModelChoice.BuiltInId
+                    && listedModels.GetProperty("structuredContent").GetProperty("models")[0].GetProperty("status").GetString() == "not_installed",
+                    "MCP lists the scoped folder's models and their actual tested state through the real worker");
                 var escape = await Call("escape", "workbench_library", new { dataRoot = output });
                 check(escape.GetProperty("error").GetProperty("code").GetInt32() == -32602, "An LLM cannot override the MCP data-folder scope");
                 if (!allowSetup)
@@ -62,6 +66,10 @@ static class McpChecks
                     var generation = (await Call("generate", "workbench_generate_image", new { prompt = "a house", seed = 4294967295L })).GetProperty("result");
                     check(generation.GetProperty("isError").GetBoolean() && generation.GetProperty("content")[0].GetProperty("text").GetString()!.Contains("Install / verify"),
                         "MCP inference still requires actual verified installation state");
+                    var unknownModel = await Call("model", "workbench_generate_image", new { prompt = "a house", model = "../models/other" });
+                    check(unknownModel.GetProperty("error").GetProperty("code").GetInt32() == -32602, "MCP accepts only listed model identifiers");
+                    var addedModel = (await Call("added", "workbench_generate_image", new { prompt = "a house", model = new string('a', 32) })).GetProperty("result");
+                    check(addedModel.GetProperty("isError").GetBoolean(), "MCP cannot generate with a model that is not added and tested");
                 }
                 await process.StandardInput.WriteLineAsync("{broken");
                 await process.StandardInput.FlushAsync(token);
@@ -103,7 +111,11 @@ static class McpChecks
         var generated = await Read();
         check(!generated.GetProperty("result").GetProperty("isError").GetBoolean()
             && workbench.LastGeneration is { Prompt: "café forest", Seed: 4294967295L, Steps: 5, Width: 768, Height: 512, GuidanceScale: 4.5, Sampler: "euler-a" }
+            && workbench.LastGeneration.Model == ModelChoice.BuiltInId
             && workbench.DataRoots[^1] == root, "MCP passes generation settings and large seeds to the scoped service without alteration");
+        Send(new { jsonrpc = "2.0", id = "with-model", method = "tools/call", @params = new { name = "workbench_generate_image", arguments = new { prompt = "café forest", model = new string('e', 32) } } });
+        check(!(await Read()).GetProperty("result").GetProperty("isError").GetBoolean() && workbench.LastGeneration?.Model == new string('e', 32),
+            "MCP generation can name an added model");
         string sourcePicture = Path.Combine(root, "mcp source.png");
         await File.WriteAllBytesAsync(sourcePicture, new MaskCanvas(300, 200).EncodePng(), token);
         workbench.LibraryImage = RecordingWorkbench.Image(root) with { Id = new string('b', 32), ImagePath = sourcePicture };

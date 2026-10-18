@@ -35,6 +35,7 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             Define("workbench_installation_plan", "Read the native installation plan for the bundled SD 1.5 profile; this does not install anything.", Schema(new { })),
             Define("workbench_model_status", "Read the saved folder's actual model readiness and recover interrupted work when idle.", Schema(new { })),
             Define("workbench_storage", "Inspect storage usage in the selected data folder. No deletion is offered.", Schema(new { })),
+            Define("workbench_models", "List the models in the selected data folder: the bundled Stable Diffusion 1.5 (id sd15-baseline) and SD 1.5-family models the user added, with their test status. Only models with status ready can generate; adding or removing models is done by the user in the app.", Schema(new { })),
             Define("workbench_library", "Search completed images by prompt, seed or job ID and inspect recent unfinished jobs. Returns paths/settings, not image bytes.",
                 Schema(new { query = Text(), kind = Choice("all", "generate", "upscale"), offset = Integer(0, int.MaxValue), limit = Integer(1, 48) })),
             Define("workbench_search_models", "Search public Hugging Face metadata. Results do not imply runnable model support.",
@@ -46,8 +47,10 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
         if (allowInference)
         {
             tools.Add(Define("workbench_generate_image", "Generate a local SD 1.5 image using an already verified installation. Optional sourceJobId starts from a completed Library image; arbitrary input paths are not accepted. "
-                + "With sourceJobId, changeLeft/changeTop/changeWidth/changeHeight (fractions 0-1 of the picture, all four together) change only that rectangle and keep the rest of the picture at its full size; strength 1 replaces the area completely.",
+                + "With sourceJobId, changeLeft/changeTop/changeWidth/changeHeight (fractions 0-1 of the picture, all four together) change only that rectangle and keep the rest of the picture at its full size; strength 1 replaces the area completely. "
+                + "Optional model is an id from workbench_models whose status is ready; the bundled sd15-baseline is the default.",
                 Schema(new { prompt = Text(), negativePrompt = Text(), seed = Integer(0, uint.MaxValue), steps = Integer(1, 50), guidanceScale = Number(1, 20), width = IntegerChoice(512, 768, 512, 768), height = IntegerChoice(512, 768, 512, 768), sampler = Choice("pndm", "dpmpp-2m", "euler-a"), sourceJobId = Text(32, "^[a-f0-9]{32}$"), strength = Number(0.05, 1),
+                    model = Text(32, "^(sd15-baseline|[a-f0-9]{32})$"),
                     changeLeft = Number(0, 1), changeTop = Number(0, 1), changeWidth = Number(0, 1), changeHeight = Number(0, 1) }, ["prompt"]), false));
             tools.Add(Define("workbench_upscale_image", "Upscale a completed Library image 2× or 4× with the verified Real-ESRGAN profile. The result is another Library image.",
                 Schema(new { sourceJobId = Text(32, "^[a-f0-9]{32}$"), scale = IntegerChoice(2, 4, 2, 4) }, ["sourceJobId"]), false));
@@ -231,7 +234,7 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             return await service.GenerateAsync(dataRoot,
                 new(GetString(args, "prompt"), GetString(args, "negativePrompt"), args.TryGetProperty("seed", out var seed) ? seed.GetInt64() : 20261017,
                     GetInt(args, "steps", 20), GetNumber(args, "guidanceScale", 7.5), GetInt(args, "width", 512), GetInt(args, "height", 512), GetString(args, "sampler", "pndm"),
-                    source, GetNumber(args, "strength", mask is null ? 0.6 : 1.0), MaskImage: mask), progress, cancellationToken);
+                    source, GetNumber(args, "strength", mask is null ? 0.6 : 1.0), MaskImage: mask, Model: GetString(args, "model", ModelChoice.BuiltInId)), progress, cancellationToken);
         }
         finally
         {
@@ -261,7 +264,8 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             cancellationToken.ThrowIfCancellationRequested();
             object result = name switch
             {
-                "workbench_capabilities" => new { dataRoot, allowSetup, allowInference, model = "sd15-baseline", imageGenerationSupported = true, partialImageChangesSupported = true, upscalingSupported = true, videoGenerationSupported = false, requiresVerifiedInstallation = true },
+                "workbench_models" => new { models = await service.GetModelsAsync(dataRoot, cancellationToken) },
+                "workbench_capabilities" => new { dataRoot, allowSetup, allowInference, model = ModelChoice.BuiltInId, addedModelsSupported = true, imageGenerationSupported = true, partialImageChangesSupported = true, upscalingSupported = true, videoGenerationSupported = false, requiresVerifiedInstallation = true },
                 "workbench_health" => new { summary = await service.GetHealthAsync(cancellationToken) },
                 "workbench_installation_plan" => service.GetBaselinePlan(),
                 "workbench_model_status" => await service.GetInstallationAsync(dataRoot, cancellationToken),

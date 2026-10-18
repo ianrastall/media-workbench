@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0-alpha.11 — 2026-10-17
+
+- Add a model you already downloaded: once Stable Diffusion 1.5 is ready, open **Add a model you already downloaded** in Create and choose a Stable Diffusion 1.5-family `.safetensors` file or a Diffusers model folder. Media Workbench checks it from its file headers alone, without running any model code, and explains plainly when it cannot be used (SDXL, SD 2, LoRAs, embeddings, inpainting-only models, damaged or incomplete files, and `.ckpt` files, which can run hidden code).
+- The model is copied into your data folder, hashed while copying, verified, and tested with a small picture on your GPU, the same check the bundled model passes. Your original is never changed, and nothing is kept if a step fails. It reuses the installed runtime, so nothing downloads.
+- Create shows a **Model** choice once an added model passes its test. Image-to-image, painted changes, and upscaling keep working. Library notes which model made each image, and **Use settings** chooses that model again.
+- Settings → Storage measures models you added separately and lists each one, with **Test again** and **Remove…** (your images and original files are kept). Removing Stable Diffusion 1.5 keeps added models for when it is set up again.
+- MCP: `workbench_models` lists models and their tested state; `workbench_generate_image` can name a ready added model. Adding and removing models stays in the app.
+
 ## 0.2.0-alpha.10 — 2026-10-17
 
 - Change part of a picture: after choosing a starting picture in Create, select **Paint the part to change**, paint over it (small, medium, or large brush; erase; clear), describe what should be there, and choose how much to change it (a little, moderately, or completely). Only the painted part is redrawn; everything else keeps its pixels and the picture keeps its full size, up to 4096 pixels on the longest side.

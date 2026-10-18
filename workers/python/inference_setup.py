@@ -319,6 +319,8 @@ def recover_interrupted(root, job_paths=None):
                       message="Generation stopped before it finished; no image was added to Library.")
         atomic_json(path, record)
         recovered += 1
+    from model_library import recover as recover_imports  # Local import: model_library imports this module.
+    recover_imports(root)  # First imports never passed their test; they are removed, not listed as jobs.
     return recovered
 
 
@@ -541,6 +543,7 @@ def validate_generation(payload):
     source = payload.get("sourceImage") or None
     strength = payload.get("strength", 0.6)
     mask = payload.get("maskImage") or None
+    model = payload.get("model") or RECIPE
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 2000:
         raise ValueError("Enter a prompt of 1–2000 characters")
     if not isinstance(negative, str) or len(negative) > 2000:
@@ -555,8 +558,11 @@ def validate_generation(payload):
         raise ValueError("Size must be 512 × 512, 512 × 768, or 768 × 512")
     if sampler not in SAMPLERS:
         raise ValueError("Sampler must be one of: " + ", ".join(SAMPLERS))
+    if model != RECIPE and not job_id_valid(model):
+        raise ValueError("Choose one of the listed models")
     settings = {"prompt": prompt.strip(), "negativePrompt": negative, "seed": seed, "steps": steps,
-                "width": size[0], "height": size[1], "guidanceScale": round(float(guidance), 2), "sampler": sampler}
+                "width": size[0], "height": size[1], "guidanceScale": round(float(guidance), 2), "sampler": sampler,
+                "model": model}
     if source is not None:
         path = validate_picture(source, "starting picture")
         if type(strength) not in (int, float) or not 0.05 <= strength <= 1:
@@ -665,13 +671,21 @@ def run_job(app, root, kind, settings, cancel, progress):
             raise SetupError("Model files changed since they were verified. Install / verify again.")
         job_id = uuid.uuid4().hex
         manifest = json.loads((app / "profiles/sd15-files.json").read_text())
+        source = dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"])
+        model, model_name, extra = RECIPE, "Stable Diffusion 1.5", {}
+        if settings.get("model", RECIPE) != RECIPE:
+            import model_library
+            added = model_library.ready_model(app, root, settings["model"])
+            model, model_name, extra = added["id"], added["name"], model_library.child_payload(added)
+            source = dict(provider="local", name=added.get("sourceName", ""), sha256=added["files"][0]["sha256"])
         record = dict(schemaVersion=1, id=job_id, kind=kind, status="running", settings=settings,
                       startedUtc=datetime.now(timezone.utc).isoformat(), recipeId=RECIPE,
-                      profileStamp=ready["profileStamp"], runtimeProfileId=PROFILE,
-                      source=dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"]),
+                      profileStamp=ready["profileStamp"], runtimeProfileId=PROFILE, source=source,
                       log=f"{kind}-{job_id}.log")
+        if kind == "generate":
+            record.update(model=model, modelName=model_name)
         job = owned(root, f"jobs/{job_id}.json")
-        child = dict(settings, jobId=job_id)
+        child = dict(settings, jobId=job_id, **extra)
         for key, stem in (("sourceImage", "source"), ("maskImage", "mask")):
             if key in settings:
                 # Work from private copies so the job stays reproducible if the originals move or change.

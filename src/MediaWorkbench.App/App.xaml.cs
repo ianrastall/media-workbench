@@ -61,8 +61,11 @@ public partial class App : Application
                     var library = await service.GetLibraryAsync(libraryCheck, deadline.Token);
                     if (library.Total != 0 || library.Images.Count != 0) throw new InvalidDataException("The bundled Library index check failed.");
                     var storage = await service.GetStorageAsync(libraryCheck, deadline.Token);
-                    if (storage.Items.Count != 7 || storage.FreeBytes <= 0 || storage.InstallationBytes != 0)
+                    if (storage.Items.Count != 8 || storage.FreeBytes <= 0 || storage.InstallationBytes != 0)
                         throw new InvalidDataException("The bundled native storage check failed.");
+                    var models = await service.GetModelsAsync(libraryCheck, deadline.Token);
+                    if (models.Count != 1 || !models[0].BuiltIn || models[0].IsReady)
+                        throw new InvalidDataException("The bundled model listing check failed.");
                 }
                 finally { if (Directory.Exists(libraryCheck)) Directory.Delete(libraryCheck, recursive: true); }
                 await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash, libraryIndex = true, nativeVerification = true }));

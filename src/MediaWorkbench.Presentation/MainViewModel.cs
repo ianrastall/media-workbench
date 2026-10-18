@@ -52,6 +52,11 @@ public partial class MainViewModel : ObservableObject
         ClearPaintingCommand = new RelayCommand(() => { Mask?.Clear(); MaskVersion++; }, () => IsPainting);
         StopPaintingCommand = new RelayCommand(StopPainting, () => IsPainting);
         ClearStorageCommand = new AsyncRelayCommand<string?>(ClearStorageAsync, area => !IsBusy && !string.IsNullOrEmpty(area));
+        ImportModelCommand = new AsyncRelayCommand(ImportModelAsync, () => !IsBusy && ModelReady && HasImportCandidate);
+        CancelImportCommand = new RelayCommand(ClearImportCandidate);
+        RetestModelCommand = new AsyncRelayCommand<ModelChoice?>(RetestModelAsync, model => !IsBusy && model is { BuiltIn: false });
+        RemoveModelCommand = new AsyncRelayCommand<ModelChoice?>(RemoveModelAsync, model => !IsBusy && model is { BuiltIn: false });
+        ModelChoices.Add(BuiltInChoice);
         DataRootDraft = DataRoot;
         try
         {
@@ -83,8 +88,25 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string Status { get; set; } = "Ready";
     [ObservableProperty] public partial string Notice { get; set; } = "Start in Create to install and verify Stable Diffusion 1.5. Requires an NVIDIA GPU with 6 GB VRAM and 20 GiB free space.";
     [ObservableProperty] public partial string InstallationText { get; set; } = "Check model status, or install / verify to prepare image generation.";
-    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand)), NotifyPropertyChangedFor(nameof(NeedsSetup))] public partial bool ModelReady { get; set; }
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand), nameof(ImportModelCommand)), NotifyPropertyChangedFor(nameof(NeedsSetup))] public partial bool ModelReady { get; set; }
     public bool NeedsSetup => !ModelReady;
+    private static readonly ModelChoice BuiltInChoice = new(ModelChoice.BuiltInId, "Stable Diffusion 1.5", "ready", "", "bundled", BuiltIn: true);
+    /// <summary>Models Create can use now: the bundled model, then added models that passed their test.</summary>
+    public ObservableCollection<ModelChoice> ModelChoices { get; } = [];
+    /// <summary>Every added model with its tested state, for Settings.</summary>
+    public ObservableCollection<ModelChoice> AddedModels { get; } = [];
+    /// <summary>Index into <see cref="ModelChoices"/>; the chooser is hidden while only the bundled model exists.</summary>
+    [ObservableProperty] public partial int ModelIndex { get; set; }
+    [ObservableProperty] public partial bool HasModelChoice { get; private set; }
+    [ObservableProperty] public partial bool HasAddedModels { get; private set; }
+    public string SelectedModelId => ModelChoices.ElementAtOrDefault(Math.Max(0, ModelIndex))?.Id ?? ModelChoice.BuiltInId;
+    /// <summary>A file or folder the user chose to add, identified but not yet copied.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasImportCandidate), nameof(HasNoImportCandidate)), NotifyCanExecuteChangedFor(nameof(ImportModelCommand))]
+    public partial string ImportPath { get; private set; } = "";
+    public bool HasImportCandidate => ImportPath.Length > 0;
+    public bool HasNoImportCandidate => !HasImportCandidate;
+    [ObservableProperty] public partial string ImportName { get; set; } = "";
+    [ObservableProperty] public partial string ImportText { get; set; } = "Choose a .safetensors file or a Diffusers model folder you downloaded.";
     [ObservableProperty] public partial string Prompt { get; set; } = "A small red ceramic house beside a green tree, watercolor illustration, daylight";
     [ObservableProperty] public partial string NegativePrompt { get; set; } = "";
     [ObservableProperty] public partial double Seed { get; set; } = 20261017;
@@ -143,7 +165,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -219,6 +241,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial bool CheckForUpdates { get; set; } = true;
     private UpdateInfo? _update;
     public IAsyncRelayCommand<string?> ClearStorageCommand { get; }
+    public IAsyncRelayCommand ImportModelCommand { get; }
+    public IRelayCommand CancelImportCommand { get; }
+    public IAsyncRelayCommand<ModelChoice?> RetestModelCommand { get; }
+    public IAsyncRelayCommand<ModelChoice?> RemoveModelCommand { get; }
     public ObservableCollection<StorageItem> StorageItems { get; } = [];
     [ObservableProperty] public partial string StorageText { get; set; } = "Open Settings to measure what the data folder uses.";
 
@@ -238,7 +264,7 @@ public partial class MainViewModel : ObservableObject
     public string PageDescription => SelectedPage switch
     {
         "discover" => "Search public Hugging Face models and inspect their metadata before choosing a local pipeline.",
-        "create" => "Generate images locally with Stable Diffusion 1.5. The first setup downloads a private runtime and model, then tests your GPU.",
+        "create" => "Generate images locally with Stable Diffusion 1.5, or a compatible model you already downloaded. The first setup downloads a private runtime and model, then tests your GPU.",
         "library" => "Images and their prompts, seeds, and runtime evidence are saved in your data folder.",
         "tools" => "Make a picture bigger and sharper, offline. Works on your own pictures and on images from Library.",
         "settings" => "Choose where models, private environments, and media are stored.",
@@ -275,7 +301,97 @@ public partial class MainViewModel : ObservableObject
         var state = await _service.GetInstallationAsync(DataRoot, token);
         InstallationText = state.Message;
         ModelReady = state.Status == "ready";
+        await UpdateModels(token);
     }
+
+    /// <summary>Reloads added models, keeping the chosen model when it is still ready.</summary>
+    private async Task UpdateModels(CancellationToken token, string? select = null)
+    {
+        ShowModels(await _service.GetModelsAsync(DataRoot, token), select);
+    }
+
+    private void ShowModels(IReadOnlyList<ModelChoice> models, string? select = null)
+    {
+        string chosen = select ?? SelectedModelId;
+        AddedModels.Clear();
+        foreach (var model in models.Where(model => !model.BuiltIn)) AddedModels.Add(model);
+        HasAddedModels = AddedModels.Count > 0;
+        ModelChoices.Clear();
+        ModelChoices.Add(BuiltInChoice);
+        foreach (var model in AddedModels.Where(model => model.IsReady)) ModelChoices.Add(model);
+        ModelIndex = Math.Max(0, ModelChoices.ToList().FindIndex(model => model.Id == chosen));
+        HasModelChoice = ModelChoices.Count > 1;
+    }
+
+    /// <summary>Identifies a model file or folder the user chose, without copying it.</summary>
+    public Task ChooseModelToImportAsync(string? path) => RunAsync("Reading the model…", async token =>
+    {
+        ClearImportCandidate();
+        if (string.IsNullOrEmpty(path) || !Path.IsPathFullyQualified(path)) return;
+        try
+        {
+            var found = await _service.InspectModelAsync(path, token);
+            ImportName = found.SuggestedName;
+            ImportText = found.Summary;
+            ImportPath = path;
+            Notice = "Give the model a name, then select Add and test. Testing makes a small picture on your GPU.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            ImportText = ex.Message;
+            Notice = "That model cannot be added: " + ex.Message;
+        }
+    });
+
+    private void ClearImportCandidate()
+    {
+        ImportPath = "";
+        ImportName = "";
+        ImportText = "Choose a .safetensors file or a Diffusers model folder you downloaded.";
+    }
+
+    private Task ImportModelAsync() => RunAsync("Adding your model…", async token =>
+    {
+        if (!HasImportCandidate) return;
+        if (!File.Exists(ImportPath) && !Directory.Exists(ImportPath)) throw new InvalidDataException("That model is no longer there. Choose it again.");
+        var added = await _service.ImportModelAsync(DataRoot, ImportPath, ImportName, ObserveProgress(), token);
+        ClearImportCandidate();
+        await UpdateModels(token, added.IsReady ? added.Id : null);
+        Notice = added.IsReady ? $"“{added.Name}” passed its test and is selected under Model. Your original file was not changed; you may delete it to save space."
+            : $"“{added.Name}” was added but is not ready: {added.Message}";
+        Record($"Added model {added.Name}");
+    }, longRunning: true);
+
+    private Task RetestModelAsync(ModelChoice? model) => model is null ? Task.CompletedTask : RunAsync($"Testing {model.Name}…", async token =>
+    {
+        try
+        {
+            var tested = await _service.RetestModelAsync(DataRoot, model.Id, ObserveProgress(), token);
+            Notice = $"“{tested.Name}” passed its test and can be chosen in Create.";
+        }
+        finally { await UpdateModels(token); }
+        Record($"Tested model {model.Name}");
+    }, longRunning: true);
+
+    private Task RemoveModelAsync(ModelChoice? model) => model is null ? Task.CompletedTask : RunAsync($"Removing {model.Name}…", async token =>
+    {
+        ShowModels(await _service.RemoveModelAsync(DataRoot, model.Id, token));
+        ShowStorage(await _service.GetStorageAsync(DataRoot, token));
+        Notice = $"Removed “{model.Name}” from the data folder. Your images and your original file were kept.";
+        Record(Notice);
+    });
+
+    /// <summary>Chooses the model a reused image or job was made with; returns a note when it is no longer available.</summary>
+    private string SelectModel(string? id)
+    {
+        int index = ModelChoices.ToList().FindIndex(model => model.Id == (id ?? ModelChoice.BuiltInId));
+        ModelIndex = Math.Max(0, index);
+        if (index >= 0) return "";
+        var added = AddedModels.FirstOrDefault(model => model.Id == id);
+        return added is null ? " The model that made it is no longer added, so Stable Diffusion 1.5 is selected."
+            : $" “{added.Name}” needs a new test in Settings, so Stable Diffusion 1.5 is selected.";
+    }
+    private string _restoreNote = "";
     private Task RefreshInstallationAsync() => RunAsync("Checking model state…", UpdateInstallation);
     private Task InstallAsync() => RunAsync("Preparing Stable Diffusion 1.5…", async token =>
     {
@@ -315,7 +431,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps,
-                Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source, change.Strength, MaskImage: mask), ObserveProgress(), token);
+                Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source, change.Strength, MaskImage: mask, Model: SelectedModelId), ObserveProgress(), token);
         }
         finally
         {
@@ -423,6 +539,8 @@ public partial class MainViewModel : ObservableObject
         LibraryText = "Open Library to browse images in the new data folder.";
         OnPropertyChanged(nameof(McpConfiguration));
         StorageItems.Clear(); StorageText = "Select Measure storage to see what the new data folder uses.";
+        ShowModels([], ModelChoice.BuiltInId);
+        ClearImportCandidate();
     }
 
     private void ShowStorage(StorageSnapshot storage)
@@ -430,16 +548,22 @@ public partial class MainViewModel : ObservableObject
         StorageItems.Clear();
         foreach (var item in storage.Items) StorageItems.Add(item);
         StorageText = $"{StorageSnapshot.Format(storage.FreeBytes)} free of {StorageSnapshot.Format(storage.TotalBytes)} on this drive. " +
-            $"The Stable Diffusion 1.5 installation and its caches use {StorageSnapshot.Format(storage.InstallationBytes)}.";
+            $"The Stable Diffusion 1.5 installation and its caches use {StorageSnapshot.Format(storage.InstallationBytes)}." +
+            (AddedModels.Count == 0 ? "" : $" You added {AddedModels.Count} {(AddedModels.Count == 1 ? "model" : "models")} of your own.");
     }
     private Task RefreshStorageAsync() => RunAsync("Measuring the data folder…", async token =>
-        ShowStorage(await _service.GetStorageAsync(DataRoot, token)));
+    {
+        await UpdateModels(token);
+        ShowStorage(await _service.GetStorageAsync(DataRoot, token));
+    });
     private Task ClearStorageAsync(string? area) => RunAsync(area == "installation" ? "Removing Stable Diffusion 1.5…" : "Clearing storage…", async token =>
     {
         if (area == "installation") ModelReady = false;
-        ShowStorage(await _service.ClearStorageAsync(DataRoot, area!, ObserveProgress(), token));
+        var storage = await _service.ClearStorageAsync(DataRoot, area!, ObserveProgress(), token);
+        if (area == "installation") await UpdateModels(token);
+        ShowStorage(storage);
         Notice = area == "installation"
-            ? "Stable Diffusion 1.5 was removed. Your images and their records were kept; Install / verify sets it up again."
+            ? "Stable Diffusion 1.5 was removed. Your images, their records, and models you added were kept; Install / verify sets it up again."
             : "Storage cleared.";
         Record(Notice);
     }, longRunning: true);
@@ -447,13 +571,13 @@ public partial class MainViewModel : ObservableObject
     private void RetryJob(JobSummary? job)
     {
         if (job?.Settings is not { } settings || !job.CanRetry) return;
-        if (ApplySettings(settings)) Notice = $"Loaded the settings of a {job.Status} job. Select {(settings.IsUpscale ? "Make it bigger" : "Generate image")} to try again.";
+        if (ApplySettings(settings)) Notice = $"Loaded the settings of a {job.Status} job. Select {(settings.IsUpscale ? "Make it bigger" : "Generate image")} to try again.{_restoreNote}";
     }
 
     private void UseImageSettings(GeneratedImage? image)
     {
         if (image?.Settings is not { } settings || !image.CanReuseSettings) return;
-        if (ApplySettings(settings)) Notice = "Loaded this image's settings. You can repeat it or change them for a variation.";
+        if (ApplySettings(settings)) Notice = "Loaded this image's settings. You can repeat it or change them for a variation." + _restoreNote;
     }
 
     private Task ExportImageAsync(ImageExportRequest? request) => RunAsync("Saving an image copy…", async token =>
@@ -477,6 +601,7 @@ public partial class MainViewModel : ObservableObject
 
     private bool ApplySettings(GenerationSettings settings)
     {
+        _restoreNote = "";
         if (settings.IsUpscale)
         {
             if (settings.SourceImage is not { } picture || !File.Exists(picture))
@@ -496,6 +621,7 @@ public partial class MainViewModel : ObservableObject
         GuidanceScale = Math.Clamp(settings.GuidanceScale, 1, 20);
         SizeIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Sizes, size => size.Width == settings.Width && size.Height == settings.Height));
         SamplerIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Samplers, sampler => sampler.Id == settings.Sampler));
+        _restoreNote = SelectModel(settings.Model);
         if (IsPainting) StopPainting();
         SourceImagePath = settings.SourceImage is { } source && File.Exists(source) ? source : "";
         if (HasSourceImage && settings.MaskImage is { } painted && File.Exists(painted))

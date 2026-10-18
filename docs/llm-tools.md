@@ -40,14 +40,15 @@ For source development, `scripts/build.ps1` also copies the console host beside 
 | `workbench_installation_plan` | Default | Rust plan for the bundled model; no download |
 | `workbench_model_status` | Default | Actual ready/not-installed/needs-verification state; normal idle crash recovery |
 | `workbench_storage` | Default | Storage inventory, with no deletion |
+| `workbench_models` | Default | The bundled SD 1.5 (`sd15-baseline`) and SD 1.5-family models the user added in the app, each with its actual tested status; only `ready` models can generate |
 | `workbench_library` | Default | Literal prompt/seed/job-ID search, image-type filter, offset and 1–48-image pages, unfinished-job diagnostics |
 | `workbench_search_models` | Default, online | Public Hub metadata; results do not imply installation support |
 | `workbench_model_details` | Default, online | Public repository/revision/license/files |
 | `workbench_install_model` | `--allow-setup` | Bundled SD 1.5/Real-ESRGAN only, through native planning and file/runtime/GPU verification |
-| `workbench_generate_image` | `--allow-inference` | Prompt/negative prompt/seed/steps/size/guidance/sampler; optional `sourceJobId` and strength for image-to-image; with `sourceJobId`, `changeLeft`/`changeTop`/`changeWidth`/`changeHeight` (fractions of the picture, all four together) change only that rectangle, strength 1 by default |
+| `workbench_generate_image` | `--allow-inference` | Prompt/negative prompt/seed/steps/size/guidance/sampler; optional `sourceJobId` and strength for image-to-image; with `sourceJobId`, `changeLeft`/`changeTop`/`changeWidth`/`changeHeight` (fractions of the picture, all four together) change only that rectangle, strength 1 by default; optional `model` names a ready model from `workbench_models` |
 | `workbench_upscale_image` | `--allow-inference` | Completed `sourceJobId`, scale 2 or 4; saves a new Library result |
 
-Image inputs come from completed jobs in the selected folder, with normal containment checks. Arbitrary source paths, arbitrary model/runtime installation, shell commands, deletion, credentials, and app updates are not exposed as tools. Export remains available in the GUI. Results contain metadata/settings and local image paths, not image bytes. A client may use its own separately authorized file tools to display a result.
+Image inputs come from completed jobs in the selected folder, with normal containment checks. Models are added and removed by the user in the app; a client can only list them and choose a ready one. Arbitrary source paths, adding or removing models, arbitrary model/runtime installation, shell commands, deletion, credentials, and app updates are not exposed as tools. Export remains available in the GUI. Results contain metadata/settings and local image paths, not image bytes. A client may use its own separately authorized file tools to display a result.
 
 Start by reading capabilities, the installation plan/model license, and model status. A model is ready only after ordinary file/runtime/inference checks succeed. Setup and generation retain data-folder locking, job records, owned-process cancellation, and crash recovery. GUI operations can contend for the same folder; the active operation owns it until completion or cancellation.
 

@@ -202,7 +202,40 @@ public sealed partial class ShellView : UserControl
     // Confirm buttons live in flyouts; close them before the long-running removal starts.
     private void ClearStorage(object sender, RoutedEventArgs args)
     {
-        foreach (var popup in Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot)) popup.IsOpen = false;
+        ClosePopups();
         ViewModel.ClearStorageCommand.Execute((sender as FrameworkElement)?.Tag as string);
+    }
+    private void ClosePopups()
+    {
+        foreach (var popup in Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot)) popup.IsOpen = false;
+    }
+    private void RemoveModel(object sender, RoutedEventArgs args)
+    {
+        ClosePopups();
+        ViewModel.RemoveModelCommand.Execute((sender as FrameworkElement)?.Tag as ModelChoice);
+    }
+    private void RetestModel(object sender, RoutedEventArgs args) => ViewModel.RetestModelCommand.Execute((sender as FrameworkElement)?.Tag as ModelChoice);
+    private async void ChooseModelFile(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads };
+            // .ckpt is listed so choosing one explains why it cannot be added, instead of hiding it.
+            foreach (string extension in new[] { ".safetensors", ".ckpt" }) picker.FileTypeFilter.Add(extension);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowHandle);
+            if (await picker.PickSingleFileAsync() is { } file) await ViewModel.ChooseModelToImportAsync(file.Path);
+        }
+        catch (Exception ex) { ViewModel.Notice = "That model could not be chosen: " + ex.Message; }
+    }
+    private async void ChooseModelFolder(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads };
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowHandle);
+            if (await picker.PickSingleFolderAsync() is { } folder) await ViewModel.ChooseModelToImportAsync(folder.Path);
+        }
+        catch (Exception ex) { ViewModel.Notice = "That model folder could not be chosen: " + ex.Message; }
     }
 }

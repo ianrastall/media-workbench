@@ -2,7 +2,7 @@
 
 The Windows shell uses C# 14 / .NET 10. Native internals are implemented in Rust 2024 edition and exported as a C ABI. The canonical declarations are in `native/include/media_workbench.h`.
 
-The current core implements installation planning, Windows-aware lexical validation for relative artifact paths, streaming SHA-256 file hashing, complete verified artifact export (job record parsing, filesystem containment, cancellation, streamed copying/hashing, and atomic destination replacement), and storage inventory. Python workers own public Hub discovery, runtime provisioning, and isolated inference-library integration. C# owns the UI, presentation state, worker coordination, and Windows integration.
+The current core implements installation planning, Windows-aware lexical validation for relative artifact paths, streaming SHA-256 file hashing, complete verified artifact export (job record parsing, filesystem containment, cancellation, streamed copying/hashing, and atomic destination replacement), storage inventory, pinned-file verification, and the one-pass copy/hash used when adding a model the user already downloaded. Python workers own public Hub discovery, runtime provisioning, and isolated inference-library integration. C# owns the UI, presentation state, worker coordination, and Windows integration.
 
 ## Ownership and errors
 
@@ -36,7 +36,7 @@ The GUI calls this native service directly through `NativeCore.cs` on a backgrou
 
 ## Storage inventory
 
-`mw_storage_summary` accepts bounded UTF-8 JSON with `dataRoot`, `runtimeProfileId`, and distinct `modelIds`. The desktop and worker adapter read the supported IDs from `profiles/storage-layout.json`; tool clients cannot supply their own layout. Rust validates each ID as a single safe relative-path component, validates the absolute non-drive-root data folder, and creates it if missing. It measures the configured runtime/models, download caches, images, logs, job records, and Library index, preserving the existing storage response shape.
+`mw_storage_summary` accepts bounded UTF-8 JSON with `dataRoot`, `runtimeProfileId`, and distinct `modelIds`. The desktop and worker adapter read the supported IDs from `profiles/storage-layout.json`; tool clients cannot supply their own layout. Rust validates each ID as a single safe relative-path component, validates the absolute non-drive-root data folder, and creates it if missing. It measures the configured runtime/models, models the user added (`models/imported`, reported separately and not counted as the installation), download caches, images, logs, job records, and Library index, preserving the existing storage response shape.
 
 Root/managed-area ancestors must not contain links or reparse points. Links/reparse points inside each tree are skipped. Missing files/directories during traversal are tolerated; other access/I/O failures return an error with no partial snapshot. Byte counts are logical file sizes, rather than allocated/compressed sizes; hard-linked entries are counted individually. Windows available/total space comes from [GetDiskFreeSpaceExW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexw), including the caller's disk quotas.
 
@@ -49,6 +49,12 @@ A null output or capacity below 8192 returns status 2 with `required=8192`, a fi
 A null/short output buffer returns status 2 and `required=64` without reading input, touching files, or invoking callbacks. The synchronous optional progress callback reports bytes initially and after each block; returning nonzero cancels with status 5. Status 6 reports a size/hash mismatch or a file changed during reading. Errors leave the output buffer untouched. No state or file is written and no pointer is retained; callbacks must contain foreign exceptions.
 
 The setup worker's `file_verification.py` adapter forwards the pinned manifest entry, throttles visible byte progress, and contains callback exceptions. The coordinator keeps its pre/post size/mtime stamps and still requires the separate runtime and GPU inference checks before committing ready state. C# provides a matching binding with cancellation and exception containment; published-app self-tests call the shipped verifier. This moves the existing file-proof work into Rust without changing the inference profile or existing readiness-stamp format.
+
+## Model import copy
+
+`mw_import_file` accepts bounded UTF-8 JSON with an absolute `source` file, an existing absolute non-drive-root `dataRoot`, and a safe `relativePath` for the copy. It refuses links/reparse points in the destination's ancestors, creates its parent folders, checks they resolve inside the data folder, and refuses an existing destination, so a verified file is never replaced. The source is opened with read-only sharing on Windows, which refuses a source another program is writing and blocks writes/deletion during the copy. Rust streams it once in 1 MiB blocks into `<relativePath>.partial`, hashing as it copies, checks that the source's size and modification time did not change (status 6 otherwise), syncs the copy, and renames it into place. Cancellation (status 5) or any failure removes the partial copy. The output is the copy's 64-byte SHA-256; the source is never modified.
+
+Buffer-size queries behave as for verification: a null/short output returns status 2 and `required=64` without filesystem work or callbacks. The optional synchronous progress callback receives byte counts before the first block and after each block; nonzero cancels. The worker's `model_library.py` calls it through the same ctypes loading as the verifier, then verifies each copy with `mw_verify_file` before the GPU test. Copying never decides readiness; identification, verification, and inference checks remain required.
 
 ## Future additions
 

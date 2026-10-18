@@ -18,6 +18,7 @@ sys.stderr.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hub_catalog
 import inference_setup
+import model_library
 import storage
 import artifact_export
 
@@ -89,6 +90,18 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
         elif operation == "upscale.image":
             result = inference_setup.upscale(root, payload, cancellation,
                 lambda value: emit(request_id, "progress", value))
+        elif operation == "models.list":
+            result = model_library.listing(root, payload)
+        elif operation == "models.inspect":
+            result = model_library.inspect(payload)
+        elif operation == "models.import":
+            result = model_library.import_model(root, payload, cancellation,
+                lambda value: emit(request_id, "progress", value))
+        elif operation == "models.retest":
+            result = model_library.retest(root, payload, cancellation,
+                lambda value: emit(request_id, "progress", value))
+        elif operation == "models.remove":
+            result = model_library.remove(root, payload)
         elif operation == "library.list":
             result = inference_setup.library(payload, cancellation)
         elif operation == "library.export":
@@ -155,7 +168,7 @@ def main() -> int:
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
                          "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "demo.run",
-                                        "installation.status", "installation.run", "generate.image", "upscale.image", "library.list", "library.export", "storage.summary", "storage.clear"],
+                                        "installation.status", "installation.run", "generate.image", "upscale.image", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear"],
                          "generationAvailable": False, "installationAvailable": True})
     while True:
         raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)

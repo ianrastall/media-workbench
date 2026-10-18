@@ -66,6 +66,40 @@ sealed class RecordingWorkbench : IWorkbenchService
     private static StorageSnapshot Storage(long caches) => new(100L << 30, 500L << 30, caches,
         [new("caches", "Download caches", caches, 3, true, "Kept for repairs."), new("images", "Images", 1L << 20, 1, false, "")]);
 
+    /// <summary>Models the user added, as the fake lists them after the bundled model.</summary>
+    public List<ModelChoice> Models { get; } = [];
+    public List<string> ModelRoots { get; } = [];
+    public (string Path, string Name)? LastImport { get; private set; }
+    public List<string> Retested { get; } = [];
+    public static readonly ModelChoice BuiltIn = new(ModelChoice.BuiltInId, "Stable Diffusion 1.5", "ready", "Ready", "bundled", BuiltIn: true);
+    public Task<IReadOnlyList<ModelChoice>> GetModelsAsync(string dataRoot, CancellationToken cancellationToken)
+    {
+        ModelRoots.Add(dataRoot);
+        return Task.FromResult<IReadOnlyList<ModelChoice>>([BuiltIn, .. Models]);
+    }
+    public Task<ModelInspection> InspectModelAsync(string path, CancellationToken cancellationToken) => path.EndsWith(".ckpt", StringComparison.OrdinalIgnoreCase)
+        ? throw new InvalidOperationException(".ckpt files can run hidden code when they are opened.")
+        : Task.FromResult(new ModelInspection("single-file", "dreamy style", 2L << 30, "Stable Diffusion 1.5-family model file · 2.00 GiB.", true));
+    public Task<ModelChoice> ImportModelAsync(string dataRoot, string path, string name, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        LastImport = (path, name);
+        var added = new ModelChoice(new string('e', 32), name, "ready", "Ready", "single-file", 2L << 30, SourceName: Path.GetFileName(path));
+        Models.Add(added);
+        return Record(dataRoot, added);
+    }
+    public Task<ModelChoice> RetestModelAsync(string dataRoot, string modelId, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        Retested.Add(modelId);
+        int index = Models.FindIndex(model => model.Id == modelId);
+        Models[index] = Models[index] with { Status = "ready", Message = "Ready" };
+        return Record(dataRoot, Models[index]);
+    }
+    public Task<IReadOnlyList<ModelChoice>> RemoveModelAsync(string dataRoot, string modelId, CancellationToken cancellationToken)
+    {
+        Models.RemoveAll(model => model.Id == modelId);
+        return Record<IReadOnlyList<ModelChoice>>(dataRoot, [BuiltIn, .. Models]);
+    }
+
     public static GeneratedImage Image(string dataRoot) => new(Guid.NewGuid().ToString("N"),
         Path.Combine(dataRoot, "artifacts", "image.png"), "", new("house", "", 1, 1), "", 1, "Test GPU");
     private Task<T> Record<T>(string dataRoot, T value)

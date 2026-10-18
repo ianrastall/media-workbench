@@ -1,4 +1,4 @@
-"""Private Python 3.12 ML child. Only the bundled recipe is executable.
+"""Private Python 3.12 ML child. Runs the bundled recipe, and added SD 1.5 models with its components.
 
 Changes to what a verified installation means must bump inference_setup.ADAPTER_VERSION.
 """
@@ -114,11 +114,43 @@ def blend_change(picture, mask, box, drawn):
     return result
 
 
+def load_added(data_root, payload, torch):
+    """An added SD 1.5 model with the bundled tokenizer, scheduler, and safety checker (and VAE if it has none).
+
+    Weights load only from safetensors in the app's own copy; every configuration comes from the
+    bundled Stable Diffusion 1.5 files, never from the user's model, and nothing is fetched online.
+    """
+    from diffusers import AutoencoderKL, PNDMScheduler, StableDiffusionPipeline, UNet2DConditionModel
+    from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
+    from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
+    model_id = payload["model"]
+    if len(model_id) != 32 or any(c not in "0123456789abcdef" for c in model_id):
+        raise ValueError("Invalid model identifier")
+    bundled = str(data_root / "models" / inference_setup.RECIPE)
+    folder = data_root / "models" / "imported" / model_id
+    weights = dict(torch_dtype=torch.float32, use_safetensors=True, local_files_only=True)
+    parts = dict(tokenizer=CLIPTokenizer.from_pretrained(bundled, subfolder="tokenizer", local_files_only=True),
+                 scheduler=PNDMScheduler.from_pretrained(bundled, subfolder="scheduler", local_files_only=True),
+                 feature_extractor=CLIPImageProcessor.from_pretrained(bundled, subfolder="feature_extractor", local_files_only=True),
+                 safety_checker=StableDiffusionSafetyChecker.from_pretrained(bundled, subfolder="safety_checker", variant="fp16", **weights))
+    if not payload["ownVae"]:
+        parts["vae"] = AutoencoderKL.from_pretrained(bundled, subfolder="vae", variant="fp16", **weights)
+    if payload["modelFormat"] == "single-file":
+        return StableDiffusionPipeline.from_single_file(str(folder / "model.safetensors"), config=bundled,
+            torch_dtype=torch.float32, local_files_only=True, **parts)
+    if payload["modelFormat"] != "diffusers":
+        raise ValueError("Unknown model format")
+    if payload["ownVae"]:
+        parts["vae"] = AutoencoderKL.from_pretrained(str(folder / "vae"), **weights)
+    return StableDiffusionPipeline(unet=UNet2DConditionModel.from_pretrained(str(folder / "unet"), **weights),
+        text_encoder=CLIPTextModel.from_pretrained(str(folder / "text_encoder"), **weights), **parts)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--data-root", type=Path, required=True)
-    parser.add_argument("--operation", choices=["download", "verify", "generate", "upscale"], required=True)
+    parser.add_argument("--operation", choices=["download", "verify", "verify-model", "generate", "upscale"], required=True)
     parser.add_argument("--payload", required=True)
     args = parser.parse_args()
     if not sys.flags.isolated or not sys.flags.no_user_site:
@@ -160,12 +192,18 @@ def main():
             return
         source = payload.get("sourceImage") if args.operation == "generate" else None
         painted = painted_change(payload) if source and payload.get("maskImage") else None  # Checked before the slow load.
-        progress("Loading Stable Diffusion 1.5")
+        added = payload.get("model", inference_setup.RECIPE) != inference_setup.RECIPE
+        progress("Loading your model" if added else "Loading Stable Diffusion 1.5")
         # The same weights serve every mode: image-to-image starts from the user's picture, and a painted
         # change redraws only the painted region (Diffusers blends the standard 4-channel UNet's latents).
         pipeline_class = (StableDiffusionInpaintPipeline if painted else StableDiffusionImg2ImgPipeline) if source else StableDiffusionPipeline
-        pipe = pipeline_class.from_pretrained(str(model), torch_dtype=torch.float32,
-            variant="fp16", use_safetensors=True, local_files_only=True)
+        if added:
+            pipe = load_added(args.data_root, payload, torch)
+            if pipeline_class is not StableDiffusionPipeline:
+                pipe = pipeline_class.from_pipe(pipe)
+        else:
+            pipe = pipeline_class.from_pretrained(str(model), torch_dtype=torch.float32,
+                variant="fp16", use_safetensors=True, local_files_only=True)
         pipe.enable_model_cpu_offload()
         pipe.enable_vae_slicing()
         pipe.set_progress_bar_config(disable=True)

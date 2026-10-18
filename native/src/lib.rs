@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, panic::catch_unwind, slice, str};
 mod artifact;
+mod model_import;
 mod path_policy;
 mod storage;
 mod verification;
@@ -353,6 +354,44 @@ pub unsafe extern "C" fn mw_verify_file(
             Err(code) => return code,
         };
         let hash = match verification::verify(input, progress, context) {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        // SAFETY: output has sufficient writable capacity and hash remains live.
+        unsafe { copy_output(hash.as_bytes(), output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
+/// Copy a user's model file into the data folder while hashing it once.
+/// # Safety
+/// Input/output follow the header contract. Callback/context remain live for this call;
+/// callbacks must not unwind. Size queries do no filesystem work or callbacks.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_import_file(
+    input: *const u8,
+    length: usize,
+    progress: artifact::Progress,
+    context: *mut std::ffi::c_void,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: required is caller-owned writable memory.
+        unsafe { *required = 64 };
+        if output.is_null() || capacity < 64 {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: caller supplies readable input.
+        let input = match unsafe { input_bytes(input, length) } {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        let hash = match model_import::copy(input, progress, context) {
             Ok(value) => value,
             Err(code) => return code,
         };

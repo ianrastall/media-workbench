@@ -17,7 +17,7 @@ public sealed record OperationProgress(string Stage, long Completed = 0, long To
 /// <summary>Defaults match records written before guidance, size, and sampler were selectable.</summary>
 public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps,
     double GuidanceScale = 7.5, int Width = 512, int Height = 512, string Sampler = "pndm",
-    string? SourceImage = null, double Strength = 0.6, int Scale = 0, string? MaskImage = null)
+    string? SourceImage = null, double Strength = 0.6, int Scale = 0, string? MaskImage = null, string? Model = null)
 {
     /// <summary>Upscale jobs carry a scale and a source picture instead of a prompt.</summary>
     public bool IsUpscale => Scale > 0;
@@ -39,14 +39,34 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
         "dpmpp-2m" => " · crisp detail sampling", "euler-a" => " · softer sampling", _ => ""
     };
 }
+/// <summary>ModelName records which model made the image; null in records made before models could be added.</summary>
 public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha256, GenerationSettings Settings,
-    string CompletedUtc, double Seconds, string Gpu, string Kind = "generate", int Width = 0, int Height = 0)
+    string CompletedUtc, double Seconds, string Gpu, string Kind = "generate", int Width = 0, int Height = 0, string? ModelName = null)
 {
     public bool CanReuseSettings => Settings.IsUpscale ? !string.IsNullOrEmpty(Settings.SourceImage) : !string.IsNullOrWhiteSpace(Settings.Prompt);
+    /// <summary>Names an added model; images from the bundled model keep their familiar description.</summary>
+    public string ModelLabel => Settings.Model is { } model && model != ModelChoice.BuiltInId && !string.IsNullOrEmpty(ModelName) ? $"Made with {ModelName} · " : "";
     public string Description => Kind == "upscale"
         ? $"Upscaled {Settings.Scale}× to {Width} × {Height} · {Seconds:N1}s · {Gpu}"
-        : $"{Settings.Prompt}\n{Settings.Summary} · {Seconds:N1}s · {Gpu}";
+        : $"{Settings.Prompt}\n{ModelLabel}{Settings.Summary} · {Seconds:N1}s · {Gpu}";
 }
+/// <summary>The bundled Stable Diffusion 1.5 or a model the user added; only ready models can generate.</summary>
+public sealed record ModelChoice(string Id, string Name, string Status, string Message, string Format = "", long Bytes = 0,
+    bool BuiltIn = false, bool OwnVae = true, string VerifiedUtc = "", string SourceName = "")
+{
+    public const string BuiltInId = "sd15-baseline";
+    public bool IsReady => Status == "ready";
+    public bool NeedsTest => !BuiltIn && !IsReady;
+    public string StatusText => Status switch
+    {
+        "ready" => "Ready", "needs_verification" => "Needs a new test", "failed" => "Did not pass its test", _ => Status
+    };
+    public string Summary => (Format == "diffusers" ? "Model folder" : "Single model file") + $" · {StorageSnapshot.Format(Bytes)} · {StatusText}"
+        + (OwnVae ? "" : " · uses Stable Diffusion 1.5's picture decoder");
+    public string Detail => IsReady ? (SourceName.Length > 0 ? "Added from " + SourceName : "") : Message;
+}
+/// <summary>What adding a file or folder would copy, found from its headers without loading it.</summary>
+public sealed record ModelInspection(string Format, string SuggestedName, long Bytes, string Summary, bool OwnVae);
 /// <summary>A generation that failed, was cancelled, or was interrupted, with its reason and its own child log.</summary>
 public sealed record JobSummary(string Id, string Status, string Message, string StartedUtc, GenerationSettings? Settings, string? LogPath)
 {
@@ -105,6 +125,16 @@ public interface IWorkbenchService
     /// <summary>Enlarges a picture 2× or 4× with the verified upscaler; the result is a Library image.</summary>
     Task<GeneratedImage> UpscaleAsync(string dataRoot, string sourceImage, int scale, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>The bundled model first, then models the user added, each with its tested state.</summary>
+    Task<IReadOnlyList<ModelChoice>> GetModelsAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>Identifies a .safetensors file or Diffusers folder from its headers; throws with a plain reason when it cannot be added.</summary>
+    Task<ModelInspection> InspectModelAsync(string path, CancellationToken cancellationToken);
+    /// <summary>Copies the model into the data folder, verifies the copy, and tests it on the GPU; nothing is kept if a step fails.</summary>
+    Task<ModelChoice> ImportModelAsync(string dataRoot, string path, string name, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Verifies an added model's copied files and tests it on the GPU again.</summary>
+    Task<ModelChoice> RetestModelAsync(string dataRoot, string modelId, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Removes an added model's copy; images, job records, and the user's original files are kept.</summary>
+    Task<IReadOnlyList<ModelChoice>> RemoveModelAsync(string dataRoot, string modelId, CancellationToken cancellationToken);
     /// <summary>Removes "caches", "logs", or the whole "installation"; images and job records are never removed.</summary>
     Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
 }

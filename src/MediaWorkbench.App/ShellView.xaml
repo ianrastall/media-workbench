@@ -121,6 +121,35 @@
                             <TextBlock Text="Stable Diffusion 1.5 is installed and verified on this computer." VerticalAlignment="Center" TextWrapping="Wrap" />
                             <HyperlinkButton Content="Check again" Command="{x:Bind ViewModel.RefreshInstallationCommand}" />
                         </StackPanel>
+                        <!-- The chooser appears only once a model the user added has passed its test. -->
+                        <ComboBox Header="Model" ItemsSource="{x:Bind ViewModel.ModelChoices}" SelectedIndex="{x:Bind ViewModel.ModelIndex, Mode=TwoWay}" Width="360"
+                            Visibility="{x:Bind ViewModel.HasModelChoice, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="core:ModelChoice">
+                                    <TextBlock Text="{x:Bind Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Expander Header="Add a model you already downloaded" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                            Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                            <StackPanel Spacing="12">
+                                <TextBlock TextWrapping="Wrap" Text="Use a Stable Diffusion 1.5-family model you downloaded elsewhere: one .safetensors file, or a Diffusers model folder. Media Workbench copies it into your data folder (your original stays where it is), checks the copy, and tests it on your GPU before you can choose it. Nothing is downloaded." />
+                                <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind ViewModel.HasNoImportCandidate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                                    <Button Content="Choose a model file…" Click="ChooseModelFile" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                    <Button Content="Choose a model folder…" Click="ChooseModelFolder" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                </StackPanel>
+                                <TextBlock Text="{x:Bind ViewModel.ImportText, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.HasImportCandidate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                                    <TextBox Header="Name" Text="{x:Bind ViewModel.ImportName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" Width="360" HorizontalAlignment="Left" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <Button Content="Add and test" Command="{x:Bind ViewModel.ImportModelCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                        <Button Content="Choose another" Command="{x:Bind ViewModel.CancelImportCommand}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Text="Only .safetensors files are accepted: older .ckpt files can run hidden code when opened. Follow the license on the page you downloaded the model from. Remove added models in Settings." />
+                            </StackPanel>
+                        </Expander>
                         <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" Visibility="{x:Bind ViewModel.NeedsSetup, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                             <StackPanel Spacing="12">
                                 <TextBlock Text="Set up Stable Diffusion 1.5" Style="{ThemeResource SubtitleTextBlockStyle}" />
@@ -306,13 +335,43 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.HasAddedModels, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                            <TextBlock Text="Models you added" FontWeight="SemiBold" />
+                            <ItemsControl ItemsSource="{x:Bind ViewModel.AddedModels}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="core:ModelChoice">
+                                        <Grid Padding="16,12" Margin="0,0,0,8" CornerRadius="10" ColumnSpacing="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                <TextBlock Text="{x:Bind Summary}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" IsTextSelectionEnabled="True" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <Button Content="Test again" Tag="{x:Bind}" Click="RetestModel" Visibility="{x:Bind NeedsTest, Converter={StaticResource VisibleWhenTrue}}" />
+                                                <Button Content="Remove…">
+                                                    <Button.Flyout>
+                                                        <Flyout>
+                                                            <StackPanel Spacing="12" MaxWidth="320">
+                                                                <TextBlock TextWrapping="Wrap" Text="Removes this model's copy from the data folder. Your images, their records, and your original file are kept." />
+                                                                <Button Content="Remove" Tag="{x:Bind}" Click="RemoveModel" Style="{ThemeResource AccentButtonStyle}" />
+                                                            </StackPanel>
+                                                        </Flyout>
+                                                    </Button.Flyout>
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Button Content="Measure storage" Command="{x:Bind ViewModel.RefreshStorageCommand}" />
                             <Button Content="Remove Stable Diffusion 1.5…" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
                                 <Button.Flyout>
                                     <Flyout>
                                         <StackPanel Spacing="12" MaxWidth="360">
-                                            <TextBlock TextWrapping="Wrap" Text="Removes the private runtime, the model files, and download caches from the saved data folder. Your images and their records are kept. Setting it up again downloads about 5 GiB." />
+                                            <TextBlock TextWrapping="Wrap" Text="Removes the private runtime, the model files, and download caches from the saved data folder. Your images, their records, and models you added are kept; added models work again after setup. Setting it up again downloads about 5 GiB." />
                                             <Button Content="Remove" Tag="installation" Click="ClearStorage" Style="{ThemeResource AccentButtonStyle}" />
                                         </StackPanel>
                                     </Flyout>

@@ -6,15 +6,21 @@ import time
 from inference_setup import Cancelled, SetupError, check_cancel, native_core_path
 
 
-def verify(app, root, path, entry, cancel, progress, label):
-    check_cancel(cancel)
+def load_core(app, export):
+    """The Rust core with ABI 1 and the named export, or a plain setup error."""
     library = native_core_path(app)
     if library is None:
         raise SetupError("The native file verifier is missing. Reinstall Media Workbench.")
     core = ctypes.CDLL(str(library))
     core.mw_abi_version.restype = ctypes.c_uint32
-    if core.mw_abi_version() != 1 or not hasattr(core, "mw_verify_file"):
+    if core.mw_abi_version() != 1 or not hasattr(core, export):
         raise SetupError("The native file verifier is incompatible. Reinstall Media Workbench.")
+    return core
+
+
+def verify(app, root, path, entry, cancel, progress, label):
+    check_cancel(cancel)
+    core = load_core(app, "mw_verify_file")
     callback_type = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_void_p)
     failures = []
     last_report = 0.0

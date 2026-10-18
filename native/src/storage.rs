@@ -204,6 +204,12 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
             vec!["cache".into(), "bootstrap".into()],
             "Packages and archives kept so a repair need not download them again. Install / verify downloads them again if needed.",
         ),
+        (
+            "imported",
+            "Models you added",
+            vec!["models/imported".into()],
+            "",
+        ),
         ("images", "Images", vec!["artifacts".into()], ""),
         (
             "logs",

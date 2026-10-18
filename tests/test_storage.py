@@ -19,6 +19,7 @@ FILES = {
     f"runtimes/{setup.PROFILE}/python/python.exe": 10,
     f"models/{setup.RECIPE}/unet/weights.bin": 100,
     f"models/{setup.UPSCALER}/RealESRGAN_x4plus.pth": 6,
+    "models/imported/" + "b" * 32 + "/model.safetensors": 7,
     "cache/uv/wheel.whl": 40,
     "cache/huggingface/token-free.json": 2,
     "bootstrap/python.zip": 8,
@@ -34,6 +35,7 @@ def populate(root):
         path.write_bytes(b"x" * size)
     setup.atomic_json(setup.state_path(root), {"status": "ready"})
     setup.atomic_json(root / "jobs" / ("a" * 32 + ".json"), {"id": "a" * 32, "status": "succeeded"})
+    setup.atomic_json(root / "models/imported" / ("b" * 32) / "model.json", {"id": "b" * 32, "status": "ready"})
 
 
 def sizes(result):
@@ -57,7 +59,8 @@ class StorageTests(unittest.TestCase):
             clearable = {item["id"] for item in result["items"] if item["clearable"]}
             self.assertEqual(clearable, {"caches", "logs"})
             self.assertEqual({item["id"]: item["files"] for item in result["items"]},
-                             {"runtime": 1, "model": 2, "caches": 3, "images": 1, "logs": 1, "jobs": 2, "library": 0})
+                             {"runtime": 1, "model": 2, "caches": 3, "imported": 2, "images": 1, "logs": 1, "jobs": 2, "library": 0})
+            self.assertEqual(measured["imported"], 7 + (Path(folder) / "models/imported" / ("b" * 32) / "model.json").stat().st_size)
 
     def test_unicode_roots_and_only_managed_profiles_are_measured(self):
         with tempfile.TemporaryDirectory(prefix="MediaWorkbench-café-森林-") as folder:
@@ -148,6 +151,8 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(setup.status(ROOT, {"dataRoot": folder})["status"], "not_installed")
             self.assertTrue((root / "artifacts" / ("a" * 32) / "image.png").is_file())
             self.assertTrue((root / "jobs" / ("a" * 32 + ".json")).is_file())
+            # Added models are the user's own; they wait for Stable Diffusion 1.5 to be set up again.
+            self.assertTrue((root / "models/imported" / ("b" * 32) / "model.safetensors").is_file())
 
     def test_work_and_unknown_areas_cannot_be_removed(self):
         with tempfile.TemporaryDirectory() as folder:

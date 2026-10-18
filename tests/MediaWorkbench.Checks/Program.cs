@@ -209,6 +209,46 @@ vm.UseImageSettingsCommand.Execute(upscaled);
 Check(vm.SelectedPage == "tools" && vm.UpscaleIndex == 0 && vm.UpscaleSourcePath == picture, "Reusing an upscaled image restores Tools and its original scale");
 vm.RetryJobCommand.Execute(new JobSummary("a", "failed", "GPU busy", "", upscaled.Settings, null));
 Check(vm.SelectedPage == "tools" && vm.Notice.Contains("Make it bigger"), "An unfinished upscale can restore its settings too");
+
+// Adding a model the user already downloaded, and choosing it.
+Check(!vm.HasModelChoice && vm.SelectedModelId == ModelChoice.BuiltInId && vm.ModelChoices.Count == 1, "The model chooser stays hidden while only the bundled model exists");
+await vm.GenerateCommand.ExecuteAsync(null);
+Check(workbench.LastGeneration?.Model == ModelChoice.BuiltInId, "Generation names the bundled model by default");
+await vm.ChooseModelToImportAsync(Path.Combine(output, "classic.ckpt"));
+Check(!vm.HasImportCandidate && vm.ImportText.Contains("hidden code") && !vm.ImportModelCommand.CanExecute(null), "A refused model explains why and cannot be added");
+string modelFile = Path.Combine(output, "dreamy style.safetensors");
+await File.WriteAllBytesAsync(modelFile, [0]);
+await vm.ChooseModelToImportAsync(modelFile);
+Check(vm.HasImportCandidate && vm.ImportName == "dreamy style" && vm.ImportModelCommand.CanExecute(null), "A recognized model is offered for adding with a suggested name");
+vm.ImportName = "Dreamy";
+await vm.ImportModelCommand.ExecuteAsync(null);
+string addedId = new('e', 32);
+Check(workbench.LastImport == (modelFile, "Dreamy") && vm.HasModelChoice && vm.SelectedModelId == addedId && !vm.HasImportCandidate && vm.Notice.Contains("passed its test"),
+    "Adding a model tests it, then shows the chooser with the new model selected");
+await vm.GenerateCommand.ExecuteAsync(null);
+Check(workbench.LastGeneration?.Model == addedId, "Generation sends the chosen model");
+var madeWithAdded = RecordingWorkbench.Image(nextRoot) with { Settings = new("lighthouse", "", 5, 20, Model: addedId), ModelName = "Dreamy" };
+Check(madeWithAdded.Description.Contains("Made with Dreamy") && !RecordingWorkbench.Image(nextRoot).Description.Contains("Made with"),
+    "Library descriptions name an added model and leave bundled images unchanged");
+vm.ModelIndex = 0;
+vm.UseImageSettingsCommand.Execute(madeWithAdded);
+Check(vm.SelectedModelId == addedId && vm.SelectedPage == "create", "Use settings restores the model that made the image");
+vm.UseImageSettingsCommand.Execute(madeWithAdded with { Settings = madeWithAdded.Settings with { Model = new string('f', 32) } });
+Check(vm.SelectedModelId == ModelChoice.BuiltInId && vm.Notice.Contains("no longer added"), "Use settings falls back to the bundled model, and says so, when its model was removed");
+workbench.Models.Add(new(new string('d', 32), "Needs work", "needs_verification", "This model's copied files changed. Test it again.", "diffusers", 1L << 30));
+await vm.RefreshStorageCommand.ExecuteAsync(null);
+Check(vm.AddedModels.Count == 2 && vm.ModelChoices.Count == 2 && vm.HasAddedModels && vm.StorageText.Contains("added 2 models"),
+    "Settings lists every added model and counts them, while Create offers only tested models");
+var untested = vm.AddedModels.Single(model => model.NeedsTest);
+await vm.RetestModelCommand.ExecuteAsync(untested);
+Check(workbench.Retested.SequenceEqual([untested.Id]) && vm.ModelChoices.Count == 3, "Testing an added model again makes it available in Create");
+vm.ModelIndex = vm.ModelChoices.ToList().FindIndex(model => model.Id == addedId);
+await vm.RemoveModelCommand.ExecuteAsync(vm.AddedModels.Single(model => model.Id == addedId));
+Check(vm.AddedModels.Count == 1 && vm.SelectedModelId == ModelChoice.BuiltInId && vm.Notice.Contains("images and your original file were kept"),
+    "Removing the chosen model returns Create to the bundled model");
+Check(!vm.RemoveModelCommand.CanExecute(RecordingWorkbench.BuiltIn) && !vm.RetestModelCommand.CanExecute(null), "The bundled model cannot be removed here");
+workbench.Models.Clear();
+await vm.RefreshStorageCommand.ExecuteAsync(null);
 vm.LibrarySearch = "matching only";
 vm.LibraryKindIndex = 2;
 await vm.RefreshLibraryCommand.ExecuteAsync(null);

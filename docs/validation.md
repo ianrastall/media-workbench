@@ -180,3 +180,16 @@ Validated on the same Windows 11 host (GTX 1660 Ti 6 GB, driver 610.60), 17 Octo
 | Published GUI driven through UI Automation | Library → Use as starting picture → Paint the part to change showed the painting editor, change-level choice, brush controls, and the translucent painted overlay; clicks painted at the pointer position and a dragged stroke painted continuously |
 
 Synthetic drags were unreliable on this multi-monitor desktop (the cursor sometimes did not move between button down and up), so stroke continuity was confirmed in one run plus event diagnostics showing moves extend the stroke while the button is held. Touch input currently scrolls the page rather than painting; mouse and pen are the supported painting inputs. The 768 × 512 timing reflects contention, not a benchmark.
+
+## Models you added (0.2.0-alpha.11)
+
+Validated on the same Windows 11 host (GTX 1660 Ti 6 GB), 17 October 2026, against the existing verified data folder; the bundled installation stayed ready without re-verification. Checks and Release builds ran from a temporary system-drive copy; the data folder is on the slower project drive.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1` | Passed: 14 Rust tests plus formatting/Clippy, 121 Python tests, 147 C# checks |
+| Release publish and `scripts/test-publish.ps1` (with UI self-test) | Passed, zero warnings/errors; published self-test lists models, storage reports 8 areas, MCP lists models |
+| `tests/gpu_model_import_check.py` with the installed SD 1.5 Diffusers folder (fp16 parts, 1.99 GiB) | Identified, copied, natively verified, and passed its GPU test; then text to image (512 × 512, 20 steps, 59.6 s, 4841 MiB peak), image to image, a painted change, and a 2× upscale succeeded; job records named the model; removal kept the four images |
+| Same with a single-file checkpoint reassembled locally from those installed weights (original key layout, own VAE, 1.99 GiB) | Same sequence passed through `from_single_file` with bundled configuration, offline; text to image 13.1 s. Its first image matched the Diffusers-folder result for the same seed |
+
+The single-file fixture was produced on this machine by renaming the pinned SD 1.5 tensors to the original checkpoint layout; it is not distributed. Both checks were run before a third-party fine-tune was available, so they show that the loading paths, gates, and records work, not that every community checkpoint will. The first real run exposed an over-strict type check (CLIP's integer `position_ids` buffer was treated as a quantized weight); it was fixed and the fixtures now include that buffer. Timings vary with drive contention and are single samples. In the painted-change check the model drew a tree where a moon was asked for; the unpainted area was unchanged.

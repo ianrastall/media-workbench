@@ -1,4 +1,4 @@
-# Development direction after 0.2.0-alpha.10
+# Development direction after 0.2.0-alpha.11
 
 This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 

@@ -39,7 +39,7 @@ def usable_record(record, name):
     settings = record.get("settings", {})
     if not isinstance(settings, dict):
         return False
-    for key in ("sourceImage", "maskImage"):
+    for key in ("sourceImage", "maskImage", "model"):
         if settings.get(key) is not None and not isinstance(settings[key], str):
             return False
     for key in ("prompt", "negativePrompt", "sampler"):
@@ -51,7 +51,7 @@ def usable_record(record, name):
     for key in ("guidanceScale", "strength"):
         if key in settings and (type(settings[key]) not in (int, float) or not 0 <= settings[key] <= 100):
             return False
-    for key in ("startedUtc", "completedUtc", "imageSha256", "gpu", "kind"):
+    for key in ("startedUtc", "completedUtc", "imageSha256", "gpu", "kind", "modelName"):
         if key in record and not isinstance(record[key], str):
             return False
     for key in ("width", "height"):

@@ -2,19 +2,20 @@
 
 A dark Windows desktop workspace for local image and video tools, built with **WinUI 3, MVVM, C# 14, .NET 10, a Rust core exposed through a C ABI, and out-of-process Python workers**.
 
-**Status: experimental alpha — local image creation, upscaling, and a searchable Library.** Discover public Hugging Face models, install an isolated Stable Diffusion 1.5 environment, verify your GPU, and generate images from prompts. Video generation remains planned.
+**Status: experimental alpha — local image creation, upscaling, and a searchable Library.** Discover public Hugging Face models, install an isolated Stable Diffusion 1.5 environment, verify your GPU, generate images from prompts, and add compatible SD 1.5-family models you already downloaded. Video generation remains planned.
 
 <!-- release-summary:start -->
 ## Current release
 
-**[0.2.0-alpha.10](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.10)** · 2026-10-17 · Pre-release · Windows x64
+**[0.2.0-alpha.11](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.11)** · 2026-10-17 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.10/MediaWorkbench-0.2.0-alpha.10-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.10/MediaWorkbench-0.2.0-alpha.10-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.10/MediaWorkbench-0.2.0-alpha.10-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.11/MediaWorkbench-0.2.0-alpha.11-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.11/MediaWorkbench-0.2.0-alpha.11-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.11/MediaWorkbench-0.2.0-alpha.11-README.md)
 
-- Change part of a picture: after choosing a starting picture in Create, select **Paint the part to change**, paint over it (small, medium, or large brush; erase; clear), describe what should be there, and choose how much to change it (a little, moderately, or completely). Only the painted part is redrawn; everything else keeps its pixels and the picture keeps its full size, up to 4096 pixels on the longest side.
-- The painted area is redrawn from a close-up with surrounding context, so small areas of large pictures get full detail, then blended in with a softened edge. It uses the installed Stable Diffusion 1.5 model, so nothing new downloads and existing verified installations stay ready.
-- Each job keeps private copies of its picture and painted area. **Use settings** in Library restores both, with the change level. Choosing another picture discards the painting; **Change the whole picture** returns to ordinary image-to-image.
-- MCP: `workbench_generate_image` accepts a rectangular change area (`changeLeft`, `changeTop`, `changeWidth`, `changeHeight` as fractions of a Library source image) for clients that cannot paint.
+- Add a model you already downloaded: once Stable Diffusion 1.5 is ready, open **Add a model you already downloaded** in Create and choose a Stable Diffusion 1.5-family `.safetensors` file or a Diffusers model folder. Media Workbench checks it from its file headers alone, without running any model code, and explains plainly when it cannot be used (SDXL, SD 2, LoRAs, embeddings, inpainting-only models, damaged or incomplete files, and `.ckpt` files, which can run hidden code).
+- The model is copied into your data folder, hashed while copying, verified, and tested with a small picture on your GPU, the same check the bundled model passes. Your original is never changed, and nothing is kept if a step fails. It reuses the installed runtime, so nothing downloads.
+- Create shows a **Model** choice once an added model passes its test. Image-to-image, painted changes, and upscaling keep working. Library notes which model made each image, and **Use settings** chooses that model again.
+- Settings → Storage measures models you added separately and lists each one, with **Test again** and **Remove…** (your images and original files are kept). Removing Stable Diffusion 1.5 keeps added models for when it is set up again.
+- MCP: `workbench_models` lists models and their tested state; `workbench_generate_image` can name a ready added model. Adding and removing models stays in the app.
 <!-- release-summary:end -->
 
 ## Install
@@ -34,13 +35,15 @@ For image generation, this first profile requires an **NVIDIA GPU with at least 
 
 **Library** searches prompts, things to avoid, seeds, and job IDs. Choose an image type and select **Search / refresh** (or press Enter in the search box), then browse with **Older images** / **Newer images**, 48 at a time. **Use settings** restores a saved image's original controls in Create or Tools, including its private starting picture and any painted area. Your JSON records and pictures remain authoritative; the local SQLite index rebuilds automatically if missing or damaged. Recent unfinished jobs are shown independently of your image filters. **Open image** uses your default PNG viewer; **Save a copy…** exports a checksum-verified copy through the Windows save picker (also available on the latest Create/Tools result). Choose a folder outside the managed data folder; prompts and job records stay with the original in Library.
 
+**Add a model you already downloaded:** once Stable Diffusion 1.5 is ready, open **Add a model you already downloaded** in Create and choose a Stable Diffusion 1.5-family `.safetensors` file (for example a fine-tuned checkpoint) or a Diffusers model folder. Media Workbench reads only the file headers to check that it is an SD 1.5-family model and explains plainly when it is not (SDXL, SD 2, LoRAs, embeddings, inpainting-only models, and older `.ckpt` files, which can run hidden code, are refused). It copies the model into your data folder — your original stays where it is, and you may delete it afterwards to save space — records its SHA-256, verifies the copy, and makes a small test picture on your GPU. Only a model that passes appears in Create's **Model** choice; it reuses the installed runtime, so nothing downloads. Library notes which model made each image and **Use settings** chooses it again. Follow the license on the page you downloaded the model from.
+
 **Tools** makes any picture 2× or 4× bigger and sharper, offline. Choose or drag a picture there, or select **Make it bigger** on a Library image.
 
 During **Install / verify**, Rust checks every pinned model file's size and SHA-256 with byte progress and cancellation during large-file hashing. Cancelling keeps downloaded files for retry. File checks alone never mark a model ready; runtime and GPU inference checks must also pass.
 
 **Updates:** when you're online, Media Workbench checks for a new version at startup and shows what changed on **Home**. Select **Update now** to download it, verify it against its published checksum, and reopen the updated app; nothing installs until you click. After setup, generating images needs no internet.
 
-**Settings → Storage** shows what the data folder uses. Rust measures logical file sizes and available space directly, without starting Python, and checks cancellation while traversing folders. You can clear the download caches (about 4 GiB that only speed up repairs) and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept.
+**Settings → Storage** shows what the data folder uses. Rust measures logical file sizes and available space directly, without starting Python, and checks cancellation while traversing folders. You can clear the download caches (about 4 GiB that only speed up repairs) and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept. Models you added are listed with their size and state; **Test again** re-checks one, and **Remove…** deletes its copy (never your original file or your images).
 
 Cancel stops the owned worker operation. Retrying setup reuses completed downloads and the Hub cache; an incomplete bootstrap archive restarts. A data folder typed in Settings takes effect only after **Save settings**. Changing data folders does not move existing models or images.
 
@@ -59,10 +62,11 @@ Cancel stops the owned worker operation. Retrying setup reuses completed downloa
 - Private runtime provisioning, persistent installation attempts, progress, retry, and a real GPU verification gate.
 - Worker process trees owned by a Windows Job Object: closing or crashing the app stops setup and inference children, and unfinished generations are recorded as interrupted.
 - Change only a painted part of a picture (inpainting) with the installed SD 1.5 model: the painted area is redrawn from a close-up and blended back into the full-size original.
+- Add SD 1.5-family models you already downloaded (single `.safetensors` files or Diffusers folders): identified from safetensors headers without running model code, copied and hashed by Rust, and usable only after the same real GPU test as the bundled model.
 - Prompt/negative prompt, deterministic seed, 1–50 inference steps, local PNG output, preview, and saved artifact history.
 - Per-user install/uninstall, Start menu shortcut, custom icon, taskbar identity, and single-instance behavior.
 
-Discovery results do not imply installation support: **only the bundled SD 1.5 recipe and Real-ESRGAN upscaler are currently executable**. Protected Hugging Face access, arbitrary model installation, additional enhancement tools, a dedicated inpainting model, and video pipelines remain in development. Model licensing is separate from the application license.
+Discovery results do not imply installation support: **only the bundled SD 1.5 recipe, SD 1.5-family models you add from your own files after they pass their GPU test, and the Real-ESRGAN upscaler are currently executable**. Installing from Discover, other model architectures (SDXL and newer), LoRAs, protected Hugging Face access, arbitrary model installation, additional enhancement tools, a dedicated inpainting model, and video pipelines remain in development. Model licensing is separate from the application license.
 
 ## LLM clients
 
@@ -80,7 +84,8 @@ WinUI 3 views → MVVM view models → Core contracts / Infrastructure
                    Rust DLL / C ABI          Python child workers
                    plans · path policy       Hugging Face metadata/setup
                    export · storage inventory isolated Diffusers/CUDA child
-                   pinned file verification
+                   pinned file verification   model header identification
+                   model import copy/hash
 ```
 
 The Rust ABI uses caller-owned UTF-8 buffers; allocation ownership never crosses language boundaries. Workers use versioned JSON lines over owned child-process streams. Native executable adapters can be added alongside Python workers.

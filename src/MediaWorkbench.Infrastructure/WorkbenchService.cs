@@ -52,7 +52,18 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
     }
     public async Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<GeneratedImage>(await Execute("generate.image", new { dataRoot, settings.Prompt, settings.NegativePrompt, settings.Seed, settings.Steps,
-            settings.GuidanceScale, settings.Width, settings.Height, settings.Sampler, sourceImage = settings.SourceImage ?? "", settings.Strength, maskImage = settings.MaskImage ?? "" }, cancellationToken, progress), Wire.Json)!;
+            settings.GuidanceScale, settings.Width, settings.Height, settings.Sampler, sourceImage = settings.SourceImage ?? "", settings.Strength, maskImage = settings.MaskImage ?? "",
+            model = settings.Model ?? "" }, cancellationToken, progress), Wire.Json)!;
+    public async Task<IReadOnlyList<ModelChoice>> GetModelsAsync(string dataRoot, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<ModelChoice[]>((await Execute("models.list", new { dataRoot }, cancellationToken)).GetProperty("models"), Wire.Json) ?? [];
+    public async Task<ModelInspection> InspectModelAsync(string path, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<ModelInspection>(await Execute("models.inspect", new { path }, cancellationToken), Wire.Json)!;
+    public async Task<ModelChoice> ImportModelAsync(string dataRoot, string path, string name, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<ModelChoice>(await Execute("models.import", new { dataRoot, path, name }, cancellationToken, progress), Wire.Json)!;
+    public async Task<ModelChoice> RetestModelAsync(string dataRoot, string modelId, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<ModelChoice>(await Execute("models.retest", new { dataRoot, modelId }, cancellationToken, progress), Wire.Json)!;
+    public async Task<IReadOnlyList<ModelChoice>> RemoveModelAsync(string dataRoot, string modelId, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<ModelChoice[]>((await Execute("models.remove", new { dataRoot, modelId }, cancellationToken)).GetProperty("models"), Wire.Json) ?? [];
     public async Task<GeneratedImage> UpscaleAsync(string dataRoot, string sourceImage, int scale, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<GeneratedImage>(await Execute("upscale.image", new { dataRoot, sourceImage, scale }, cancellationToken, progress), Wire.Json)!;
     public async Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null)
