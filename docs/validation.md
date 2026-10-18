@@ -1,5 +1,9 @@
 # Initial alpha validation
 
+## Waiting pictures (0.3.0-alpha.8)
+
+18 October 2026. `scripts/check.ps1` passed 39 Rust tests, 219 Python tests (six new queue tests: own input copies survive deleting the originals, oldest-first listing, removal with copies, invalid settings write nothing, damaged records skipped and abandoned adds cleaned up, the 200-item limit and missing copies reported) and 278 C# checks (seven new: Add to queue saves each version without generating, waiting pictures listed after a restart without running, Run queue oldest first with one failure, Cancel leaves the current picture waiting, Remove, and the real worker's own input copy and its removal); `scripts/build.ps1` passed with zero warnings. Not run interactively or with real GPU pictures; each item runs through the same generation path checked above.
+
 ## Added SDXL models and several versions per Generate (0.3.0-alpha.7)
 
 18 October 2026, Windows 11, GTX 1660 Ti (6 GB), development data folder with Stable Diffusion 1.5 (`fp32-offload`) and Stable Diffusion XL (`xl-fp32-sequential`) verified. `runtime/python/python.exe tests/gpu_model_import_check.py <data> hf:stabilityai/stable-diffusion-xl-base-1.0 --file sd_xl_base_1.0.safetensors --license-reviewed`, through the same coordinator the app uses (one-shot):

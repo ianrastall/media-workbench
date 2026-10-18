@@ -291,7 +291,32 @@
                             </StackPanel>
                         </StackPanel>
                         <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                        <Button Content="Generate image" Command="{x:Bind ViewModel.GenerateCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Generate image" Command="{x:Bind ViewModel.GenerateCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                            <Button Content="Add to queue" Command="{x:Bind ViewModel.AddToQueueCommand}" />
+                        </StackPanel>
+                        <Expander Header="{x:Bind ViewModel.QueueText, Mode=OneWay}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                            Visibility="{x:Bind ViewModel.HasQueue, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                            <StackPanel Spacing="8">
+                                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="These pictures wait, even after you close the app, until you select Run queue. Cancel stops only the picture being made; the rest keep waiting." />
+                                <Button Content="Run queue" Command="{x:Bind ViewModel.RunQueueCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Queue}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="core:QueuedPicture">
+                                            <Grid Padding="12,8" Margin="0,0,0,6" CornerRadius="8" ColumnSpacing="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="{x:Bind Title}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Remove" Tag="{x:Bind}" Click="RemoveQueued" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Expander>
                         <Image Source="{x:Bind ViewModel.PreviewPath, Mode=OneWay, Converter={StaticResource LocalImage}}" MaxWidth="512" MaxHeight="512" HorizontalAlignment="Left" Stretch="Uniform" AutomationProperties.Name="Generated image preview" />
                         <TextBlock Text="{x:Bind ViewModel.ImageDescription, Mode=OneWay}" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">

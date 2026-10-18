@@ -239,6 +239,7 @@ public sealed partial class ShellView : UserControl
         ClosePopups();
         ViewModel.RemoveModelCommand.Execute((sender as FrameworkElement)?.Tag as ModelChoice);
     }
+    private void RemoveQueued(object sender, RoutedEventArgs args) => ViewModel.RemoveQueuedCommand.Execute((sender as FrameworkElement)?.Tag as QueuedPicture);
     private void ToggleDrive(object sender, RoutedEventArgs args) => ViewModel.ToggleDriveCommand.Execute((sender as FrameworkElement)?.Tag as DriveChoice);
     private void UseDrive(object sender, RoutedEventArgs args) => ViewModel.UseDriveCommand.Execute((sender as FrameworkElement)?.Tag as DriveChoice);
     private void RetestModel(object sender, RoutedEventArgs args) => ViewModel.RetestModelCommand.Execute((sender as FrameworkElement)?.Tag as ModelChoice);

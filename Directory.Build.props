@@ -8,7 +8,7 @@
     <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
     <!-- Include both ordinary checks and the shipped x64 host in every restore graph. -->
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <Version>0.3.0-alpha.7</Version>
+    <Version>0.3.0-alpha.8</Version>
     <Authors>ianrastall</Authors>
     <RepositoryUrl>https://github.com/ianrastall/media-workbench</RepositoryUrl>
   </PropertyGroup>

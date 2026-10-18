@@ -43,6 +43,9 @@ public partial class MainViewModel : ObservableObject
         ToggleDriveCommand = new RelayCommand<DriveChoice?>(ToggleDrive, drive => drive is not null && !IsBusy);
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
         GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
+        AddToQueueCommand = new AsyncRelayCommand(AddToQueueAsync, () => !IsBusy && ModelReady);
+        RunQueueCommand = new AsyncRelayCommand(RunQueueAsync, () => !IsBusy && ModelReady && HasQueue);
+        RemoveQueuedCommand = new AsyncRelayCommand<QueuedPicture?>(RemoveQueuedAsync, item => !IsBusy && item is not null);
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
         PreviousLibraryPageCommand = new AsyncRelayCommand(() => LoadLibraryPageAsync(Math.Max(0, _libraryOffset - LibraryPageSize)), () => !IsBusy && _libraryOffset > 0);
         NextLibraryPageCommand = new AsyncRelayCommand(() => LoadLibraryPageAsync(_libraryOffset + LibraryPageSize), () => !IsBusy && LibraryHasMore);
@@ -146,6 +149,13 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial int SizeIndex { get; set; }
     /// <summary>How many pictures one Generate makes, with consecutive seeds; after the first, each reuses the loaded model.</summary>
     public static readonly int[] PictureCounts = [1, 2, 4];
+    public IAsyncRelayCommand AddToQueueCommand { get; }
+    public IAsyncRelayCommand RunQueueCommand { get; }
+    public IAsyncRelayCommand<QueuedPicture?> RemoveQueuedCommand { get; }
+    /// <summary>Pictures waiting to be made, oldest first; they run only when the user selects Run queue.</summary>
+    public ObservableCollection<QueuedPicture> Queue { get; } = [];
+    public bool HasQueue => Queue.Count > 0;
+    public string QueueText => Queue.Count switch { 0 => "No pictures are waiting", 1 => "1 picture waiting", int count => $"{count} pictures waiting" };
     public string[] PictureCountLabels { get; } = ["1 picture", "2 versions", "4 versions"];
     [ObservableProperty] public partial int PictureCountIndex { get; set; }
     /// <summary>Index into <see cref="GenerationSettings.Samplers"/>.</summary>
@@ -252,7 +262,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CheckMoveCommand), nameof(MoveDataCommand), nameof(RemoveOldCopyCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CheckMoveCommand), nameof(MoveDataCommand), nameof(RemoveOldCopyCommand), nameof(AddToQueueCommand), nameof(RunQueueCommand), nameof(RemoveQueuedCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -493,6 +503,8 @@ public partial class MainViewModel : ObservableObject
         var state = await _service.GetInstallationAsync(DataRoot, token);
         InstallationText = state.Message;
         ModelReady = state.Status == "ready";
+        try { ShowQueue(await _service.GetQueueAsync(DataRoot, token)); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { Record("The queue could not be read: " + ex.Message); }
         try { await UpdateDriveChoice(token); }
         catch (Exception ex) when (ex is not OperationCanceledException) { DriveChoiceText = ""; } // Drives unreadable: never block setup on the question.
         await UpdateModels(token);
@@ -722,7 +734,8 @@ public partial class MainViewModel : ObservableObject
         _ = RefreshDriveAsync();
     }, longRunning: true);
 
-    private Task GenerateAsync() => RunAsync("Preparing image generation…", async token =>
+    /// <summary>The picture Create describes now (without its seed), and whether a painted area goes with it.</summary>
+    private (GenerationSettings Settings, bool Painted) CurrentPicture()
     {
         CheckRefinement();
         var size = ActiveSizes[Math.Clamp(SizeIndex, 0, ActiveSizes.Length - 1)];
@@ -733,6 +746,15 @@ public partial class MainViewModel : ObservableObject
         if (painted && Mask?.HasPaint != true) throw new InvalidDataException("Paint over the part of the picture to change, or select Change the whole picture.");
         var change = painted ? GenerationSettings.PaintChangeLevels[Math.Clamp(PaintChangeIndex, 0, GenerationSettings.PaintChangeLevels.Length - 1)]
             : GenerationSettings.ChangeLevels[Math.Clamp(ChangeIndex, 0, GenerationSettings.ChangeLevels.Length - 1)];
+        return (new(Prompt, NegativePrompt, (long)Seed, (int)Steps, Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source,
+            change.Strength, Model: SelectedModelId), painted);
+    }
+
+    private static long NextSeed(double seed, int index) => ((long)seed + index) % (1L + uint.MaxValue);
+
+    private Task GenerateAsync() => RunAsync("Preparing image generation…", async token =>
+    {
+        var (picture, painted) = CurrentPicture();
         int count = PictureCounts[Math.Clamp(PictureCountIndex, 0, PictureCounts.Length - 1)];
         // The worker copies the painted area into each job; this temporary file is only the hand-over.
         string? mask = painted ? await WorkFolders.WritePaintedAsync(DataRoot, Mask!.EncodePng(), token) : null; // A crash leaves it; the next start sweeps it.
@@ -743,13 +765,12 @@ public partial class MainViewModel : ObservableObject
             for (int index = 0; index < count; index++)
             {
                 // Consecutive seeds: each version is reproducible on its own with Use settings.
-                long seed = ((long)Seed + index) % (1L + uint.MaxValue);
+                long seed = NextSeed(Seed, index);
                 var progress = count == 1 ? ObserveProgress() : ObserveProgress($"Picture {index + 1} of {count}");
                 GeneratedImage image;
                 try
                 {
-                    image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, seed, (int)Steps, Math.Round(GuidanceScale, 2),
-                        size.Width, size.Height, sampler.Id, source, change.Strength, MaskImage: mask, Model: SelectedModelId), progress, token);
+                    image = await _service.GenerateAsync(DataRoot, picture with { Seed = seed, MaskImage = mask }, progress, token);
                 }
                 catch (InvalidOperationException ex) when (count > 1)
                 {
@@ -779,6 +800,76 @@ public partial class MainViewModel : ObservableObject
         }
         else if (count > 1) Notice = $"Made {count} versions with seeds {(long)Seed} to {((long)Seed + count - 1) % (1L + uint.MaxValue)}; see Library for all of them. " + LatestImage!.SavedNotice;
     }, longRunning: true);
+    /// <summary>Saves the picture Create describes (each version, with How many) to make later.</summary>
+    private Task AddToQueueAsync() => RunAsync("Adding to the queue…", async token =>
+    {
+        var (picture, painted) = CurrentPicture();
+        int count = PictureCounts[Math.Clamp(PictureCountIndex, 0, PictureCounts.Length - 1)];
+        string? mask = painted ? await WorkFolders.WritePaintedAsync(DataRoot, Mask!.EncodePng(), token) : null;
+        try
+        {
+            for (int index = 0; index < count; index++)
+                await _service.QueuePictureAsync(DataRoot, picture with { Seed = NextSeed(Seed, index), MaskImage = mask }, token);
+        }
+        finally
+        {
+            if (mask is not null) try { File.Delete(mask); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        ShowQueue(await _service.GetQueueAsync(DataRoot, token));
+        Notice = $"Added {(count == 1 ? "the picture" : $"{count} versions")} to the queue ({QueueText}). Select Run queue to make them; they wait until you do, even after closing the app.";
+        Record(Notice);
+    });
+
+    /// <summary>Makes the waiting pictures oldest first. Cancel stops the current one, which stays waiting with the rest.</summary>
+    private Task RunQueueAsync() => RunAsync("Making the waiting pictures…", async token =>
+    {
+        var items = await _service.GetQueueAsync(DataRoot, token);
+        ShowQueue(items);
+        int made = 0;
+        List<string> problems = [];
+        for (int index = 0; index < items.Count; index++)
+        {
+            var item = items[index];
+            try
+            {
+                var image = await _service.GenerateAsync(DataRoot, item.Settings, ObserveProgress($"Queue {index + 1} of {items.Count}"), token);
+                made++;
+                PreviewPath = image.ImagePath;
+                LatestImage = image;
+                ImageDescription = image.Description;
+                await ShowNewImageAsync(image, token);
+                Notice = $"Queue {index + 1} of {items.Count} saved. " + image.SavedNotice;
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Its failed job is listed in Library with Retry; the rest of the queue still runs.
+                problems.Add($"“{Shorten(item.Title)}”: {ex.Message}");
+                Record(problems[^1]);
+            }
+            ShowQueue(await _service.RemoveQueuedAsync(DataRoot, item.Id, token));
+        }
+        _ = RefreshDriveAsync();
+        Notice = $"Made {made} of {items.Count} waiting pictures." + (problems.Count == 0 ? " See Library for all of them." : " Not made: " + string.Join(" ", problems));
+    }, longRunning: true);
+
+    private static string Shorten(string text) => text.Length <= 40 ? text : text[..39] + "…";
+
+    private Task RemoveQueuedAsync(QueuedPicture? item) => RunAsync("Removing the waiting picture…", async token =>
+    {
+        if (item is null) return;
+        ShowQueue(await _service.RemoveQueuedAsync(DataRoot, item.Id, token));
+        Notice = "Removed the waiting picture. " + QueueText + ".";
+    });
+
+    private void ShowQueue(IReadOnlyList<QueuedPicture> items)
+    {
+        Queue.Clear();
+        foreach (var item in items) Queue.Add(item);
+        OnPropertyChanged(nameof(HasQueue));
+        OnPropertyChanged(nameof(QueueText));
+        RunQueueCommand.NotifyCanExecuteChanged();
+    }
+
     private Task RefreshLibraryAsync() => LoadLibraryPageAsync(0, new(LibrarySearch,
         LibraryKindIndex switch { 1 => "generate", 2 => "upscale", 3 => "video", _ => "all" }, Limit: LibraryPageSize));
 
@@ -868,6 +959,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(McpConfiguration));
         StorageItems.Clear(); StorageText = "Select Measure storage to see what the new data folder uses.";
         Locations.Clear(); LocationsText = "";
+        ShowQueue([]);
         DriveWarning = DriveSpeedNote = "";
         if (!_loading) _ = RefreshDriveAsync();
         ShowModels([], ModelChoice.BuiltInId);

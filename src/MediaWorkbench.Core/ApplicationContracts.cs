@@ -124,6 +124,12 @@ public sealed record ModelChoice(string Id, string Name, string Status, string M
         + $" · {StorageSnapshot.Format(Bytes)} · {StatusText}" + (OwnVae ? "" : $" · uses {Family}'s picture decoder");
     public string Detail => IsReady ? (SourceName.Length > 0 ? "Added from " + SourceName : "") : Message;
 }
+/// <summary>A picture waiting in the queue, with its own copies of any starting picture and painted area.</summary>
+public sealed record QueuedPicture(string Id, string AddedUtc, GenerationSettings Settings, bool MissingInputs = false)
+{
+    public string Title => Settings.Prompt;
+    public string Detail => Settings.Summary + (MissingInputs ? " · its starting picture is missing, so it will be skipped" : "");
+}
 /// <summary>What adding a file or folder would copy, found from its headers without loading it.</summary>
 public sealed record ModelInspection(string Format, string SuggestedName, long Bytes, string Summary, bool OwnVae);
 /// <summary>A generation that failed, was cancelled, or was interrupted, with its reason and its own child log.</summary>
@@ -336,6 +342,12 @@ public interface IWorkbenchService
     Task<IReadOnlyList<ModelChoice>> RemoveModelAsync(string dataRoot, string modelId, CancellationToken cancellationToken);
     /// <summary>Removes "caches", "logs", or the whole "installation"; images and job records are never removed.</summary>
     Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Saves a picture to make later: its settings and copies of its inputs, kept until it is made or removed.</summary>
+    Task<QueuedPicture> QueuePictureAsync(string dataRoot, GenerationSettings settings, CancellationToken cancellationToken);
+    /// <summary>The waiting pictures, oldest first.</summary>
+    Task<IReadOnlyList<QueuedPicture>> GetQueueAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>Removes a waiting picture and its input copies; pictures already made are never touched.</summary>
+    Task<IReadOnlyList<QueuedPicture>> RemoveQueuedAsync(string dataRoot, string id, CancellationToken cancellationToken);
     /// <summary>What moving the data folder to <paramref name="destination"/> would copy, and whether it can start; reads only.</summary>
     Task<DataMovePlan> PlanDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken);
     /// <summary>Copies the data folder to an empty or new folder and verifies every file; the current folder is never changed.</summary>

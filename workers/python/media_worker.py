@@ -20,6 +20,7 @@ import hub_catalog
 import hub_models
 import inference_setup
 import model_library
+import picture_queue
 import storage
 import artifact_export
 import sdxl
@@ -71,7 +72,7 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
             cancellation: threading.Event) -> None:
     global active
     try:
-        if operation != "generate.image":
+        if operation not in ("generate.image", "queue.add", "queue.list", "queue.remove"):
             inference_setup.KEPT.release()  # Only pictures reuse a kept-loaded model; anything else runs without it.
         if operation == "health":
             result = {"python": platform.python_version(), "executable": sys.executable,
@@ -102,6 +103,12 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
         elif operation == "generate.image":
             result = inference_setup.generate(root, payload, cancellation,
                 lambda value: emit(request_id, "progress", value))
+        elif operation == "queue.add":
+            result = picture_queue.add(root, payload)
+        elif operation == "queue.list":
+            result = picture_queue.listing(root, payload)
+        elif operation == "queue.remove":
+            result = picture_queue.remove(root, payload)
         elif operation == "video.status":
             result = video.status(root, payload)
         elif operation == "video.install":
@@ -197,7 +204,7 @@ def main() -> int:
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
                          "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "catalog.plan", "models.download", "demo.run",
-                                        "system.profile", "installation.status", "installation.run", "generate.image", "upscale.image", "video.status", "video.install", "video.remove", "generate.video", "xl.status", "xl.install", "xl.remove", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear"],
+                                        "system.profile", "installation.status", "installation.run", "generate.image", "upscale.image", "video.status", "video.install", "video.remove", "generate.video", "xl.status", "xl.install", "xl.remove", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear", "queue.add", "queue.list", "queue.remove"],
                          "generationAvailable": False, "installationAvailable": True})
     while True:
         raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)

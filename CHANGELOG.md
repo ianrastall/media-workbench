@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0-alpha.8 — 2026-10-18
+
+- **A queue of pictures to make later.** Create's **Add to queue** saves the picture you described (or each version, with **How many**) without making it yet. Change the description and add more, then select **Run queue** and Media Workbench makes them one after another, reusing the loaded model. Waiting pictures keep their own copies of any starting picture or painted area, stay waiting after you close the app, and only run when you choose **Run queue**. **Cancel** stops the picture being made and leaves it and the rest waiting; a picture that fails is listed in Library with **Retry**, and the others are still made. **Remove** takes one out of the queue.
+
 ## 0.3.0-alpha.7 — 2026-10-18
 
 - **Add Stable Diffusion XL fine-tunes.** Once Stable Diffusion XL is set up, **Add a model you already downloaded** and Discover's **Download and test** accept single-file SDXL checkpoints (`.safetensors`), such as fine-tuned SDXL models. Media Workbench reads only the file's header to recognize it, copies it into your data folder, and makes a real 1024 × 1024 test picture on your graphics card; only a model that passes appears under **Model**, with SDXL's picture shapes. SDXL refiners, SDXL inpainting models and SDXL model folders are explained and refused.

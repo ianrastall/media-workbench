@@ -14,8 +14,10 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
     private static readonly HashSet<string> ReadOnly = ["health", "system.profile", "catalog.search", "catalog.details", "models.inspect"];
     /// <summary>Jobs that run in the kept coordinator, one after another.</summary>
     private static readonly HashSet<string> Jobs = ["generate.image", "upscale.image", "generate.video"];
-    /// <summary>Reads that never need the data folder to themselves, so a kept model may stay loaded meanwhile.</summary>
-    private static readonly HashSet<string> Reads = [.. ReadOnly, "catalog.plan", "installation.status", "video.status", "xl.status", "models.list", "library.list", "storage.summary"];
+    /// <summary>Work that never needs the data folder to itself, so a kept model may stay loaded meanwhile: reads, and the
+    /// queue of waiting pictures, which has its own folder and per-item atomic records.</summary>
+    private static readonly HashSet<string> Reads = [.. ReadOnly, "catalog.plan", "installation.status", "video.status", "xl.status", "models.list", "library.list", "storage.summary",
+        "queue.add", "queue.list", "queue.remove"];
 
     /// <summary>How long the picture model stays loaded after the last job. It holds system and graphics memory meanwhile.</summary>
     public TimeSpan KeepLoadedFor { get; init; } = TimeSpan.FromMinutes(2);
@@ -154,6 +156,17 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         JsonSerializer.Deserialize<GeneratedImage>(await Execute(dataRoot, "generate.image", new { dataRoot, settings.Prompt, settings.NegativePrompt, settings.Seed, settings.Steps,
             settings.GuidanceScale, settings.Width, settings.Height, settings.Sampler, sourceImage = settings.SourceImage ?? "", settings.Strength, maskImage = settings.MaskImage ?? "",
             model = settings.Model ?? "" }, cancellationToken, progress), Wire.Json)!;
+    public async Task<QueuedPicture> QueuePictureAsync(string dataRoot, GenerationSettings settings, CancellationToken cancellationToken) =>
+        Queued(await Execute(dataRoot, "queue.add", new { dataRoot, settings.Prompt, settings.NegativePrompt, settings.Seed, settings.Steps,
+            settings.GuidanceScale, settings.Width, settings.Height, settings.Sampler, sourceImage = settings.SourceImage ?? "", settings.Strength,
+            maskImage = settings.MaskImage ?? "", model = settings.Model ?? "" }, cancellationToken));
+    public async Task<IReadOnlyList<QueuedPicture>> GetQueueAsync(string dataRoot, CancellationToken cancellationToken) =>
+        QueueItems(await Execute(dataRoot, "queue.list", new { dataRoot }, cancellationToken));
+    public async Task<IReadOnlyList<QueuedPicture>> RemoveQueuedAsync(string dataRoot, string id, CancellationToken cancellationToken) =>
+        QueueItems(await Execute(dataRoot, "queue.remove", new { dataRoot, id }, cancellationToken));
+    private static QueuedPicture Queued(JsonElement item) => JsonSerializer.Deserialize<QueuedPicture>(item, Wire.Json)
+        ?? throw new InvalidDataException("The worker returned an empty waiting picture.");
+    private static IReadOnlyList<QueuedPicture> QueueItems(JsonElement data) => [.. data.GetProperty("items").EnumerateArray().Select(Queued)];
     public async Task<AddonState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<AddonState>(await Execute(dataRoot, "video.status", new { dataRoot }, cancellationToken), Wire.Json)!;
     public async Task<AddonState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
