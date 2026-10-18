@@ -43,6 +43,8 @@ Routine CI never installs this ML profile or downloads weights. Profile updates 
 
 Native API declarations are in `native/include/media_workbench.h`. Build with `cargo build --manifest-path native/Cargo.toml --target-dir artifacts/native --release --locked`; the .NET projects copy that library into executable outputs. The native Windows MSVC CRT is linked statically through the repository's Cargo configuration.
 
+Storage inventory and verified image export run directly in Rust on a background thread, without launching Python. Worker clients use thin ctypes adapters to those services. The shared `profiles/storage-layout.json` lists the supported runtime/model folders for inventory; its IDs are checked against the inference coordinator in tests. Storage sizes are logical file sizes. Removal remains an exclusive worker operation with its existing readiness invalidation and preservation of images/jobs.
+
 Run `scripts/check.ps1` for Rust formatting/tests/lints, Python tests, and C# boundary tests. `-Online` adds a small public-network search/detail check; routine unit tests do not need the Hub. `-Ffprobe <absolute-path>` enables the optional native-tool probe. Do not make tests depend on model downloads or a particular GPU.
 
 ## MCP host

@@ -94,9 +94,9 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
         elif operation == "library.export":
             result = artifact_export.export(root, payload, cancellation, lambda value: emit(request_id, "progress", value))
         elif operation == "storage.summary":
-            result = storage.summary(payload)
+            result = storage.summary(payload, cancellation, root)
         elif operation == "storage.clear":
-            result = storage.clear(payload, cancellation, lambda value: emit(request_id, "progress", value))
+            result = storage.clear(payload, cancellation, lambda value: emit(request_id, "progress", value), root)
         elif operation == "demo.run":
             steps = payload.get("steps", 5)
             delay_ms = payload.get("delayMs", 50)

@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 if (-not $ApplicationDirectory) { $ApplicationDirectory = Join-Path $taskRoot 'artifacts/publish/win-x64' }
 $taskRequired = @('MediaWorkbench.exe','MediaWorkbench.pri','App.xbf','MainWindow.xbf','ShellView.xbf','media_workbench_core.dll','runtime/python/python.exe','runtime/python/_sqlite3.pyd','runtime/python/sqlite3.dll','workers/python/media_worker.py','workers/python/hub_catalog.py','workers/python/inference_setup.py','workers/python/inference_worker.py','workers/python/library_index.py','workers/python/artifact_export.py','workers/python/storage.py','workers/python/upscaler.py','profiles/upscaler-files.json','profiles/sd15-cu126.json','profiles/sd15-cu126.lock','profiles/sd15-files.json','LICENSE.txt')
+$taskRequired += 'profiles/storage-layout.json'
 foreach ($taskFile in $taskRequired) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published application is incomplete: $taskFile" }
 }
@@ -48,6 +49,9 @@ try {
     $taskMcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"workbench_model_status","arguments":{}}}')
     $taskState = (Read-McpSmokeResponse).result
     if ($taskState.isError -or $taskState.structuredContent.status -ne 'not_installed') { throw 'Published MCP worker status check failed.' }
+    $taskMcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"workbench_storage","arguments":{}}}')
+    $taskStorage = (Read-McpSmokeResponse).result
+    if ($taskStorage.isError -or $taskStorage.structuredContent.items.Count -ne 7 -or $taskStorage.structuredContent.freeBytes -le 0) { throw 'Published MCP native storage check failed.' }
     $taskMcp.StandardInput.Close()
     if (-not $taskMcp.WaitForExit(30000) -or $taskMcp.ExitCode -ne 0) { throw 'Published MCP host did not exit cleanly.' }
     Write-Output 'PASS: published MCP host, permissions, and worker'

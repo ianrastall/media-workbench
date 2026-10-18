@@ -33,6 +33,19 @@ typedef int32_t (*mw_export_progress)(uint64_t completed, uint64_t total, void *
 MW_API int32_t mw_export_artifact(const uint8_t *input, size_t length,
     mw_export_progress progress, void *context,
     uint8_t *output, size_t capacity, size_t *required);
+/* Additive ABI 1 Windows storage inventory. JSON: {dataRoot, runtimeProfileId, modelIds}.
+   IDs are single safe path components; modelIds must be distinct. Creates a missing dataRoot.
+   Returns JSON {freeBytes,totalBytes,installationBytes,items:[{id,label,bytes,files,clearable,note}]}.
+   Refuses links/reparse points in root/managed area ancestors, skips links inside each tree,
+   tolerates files disappearing during traversal, and fails on other I/O errors (no partial totals).
+   output=NULL or capacity<8192 returns 2, required=8192 (a fixed upper bound), without
+   filesystem work. Success sets required to the actual JSON length. No pointers are retained.
+   The synchronous optional callback returns nonzero to cancel; it must not throw/unwind.
+   Available disk space accounts for the calling user's quotas. Counts are logical file sizes. */
+typedef int32_t (*mw_should_cancel)(void *context);
+MW_API int32_t mw_storage_summary(const uint8_t *input, size_t length,
+    mw_should_cancel cancel, void *context,
+    uint8_t *output, size_t capacity, size_t *required);
 #ifdef __cplusplus
 }
 #endif

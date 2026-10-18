@@ -7,13 +7,13 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.2.0-alpha.7](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.7)** · 2026-10-17 · Pre-release · Windows x64
+**[0.2.0-alpha.8](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.8)** · 2026-10-17 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.7/MediaWorkbench-0.2.0-alpha.7-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.7/MediaWorkbench-0.2.0-alpha.7-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.7/MediaWorkbench-0.2.0-alpha.7-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.8/MediaWorkbench-0.2.0-alpha.8-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.8/MediaWorkbench-0.2.0-alpha.8-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.8/MediaWorkbench-0.2.0-alpha.8-README.md)
 
-- Release documentation is generated from the version, changelog, and current README. Every release includes installation steps, runtime/hardware requirements, supported features, MCP setup guidance, limitations, license links, and checksum instructions in its release body and a downloadable README asset alongside the installer and checksum.
-- Builds refresh the main README's current-release summary and download links; checks block publication if it is stale. Documentation links in release notes are pinned to that release's source tag.
-- The public repository now has a descriptive summary and topics for Windows, Rust, local AI image generation/upscaling, WinUI 3, and MCP discovery.
+- Rust now owns storage inventory: folder traversal, per-area bytes/file counts, installation totals, and available disk space. Settings, the developer CLI, and MCP call it directly without starting Python; worker clients use a thin native adapter.
+- Storage measurement checks cancellation between entries, rejects linked/reparse-point managed roots, skips links inside trees, and reports an error rather than partial totals on access failures. Sizes are logical file sizes; only the bundled model/runtime profiles are counted as installation components.
+- Native artifact export and storage inventory share filesystem path checks. Published-payload tests now exercise native storage through both the app and the shipped MCP host. Existing model readiness and confirmed storage-removal behavior are preserved.
 <!-- release-summary:end -->
 
 ## Install
@@ -37,7 +37,7 @@ For image generation, this first profile requires an **NVIDIA GPU with at least 
 
 **Updates:** when you're online, Media Workbench checks for a new version at startup and shows what changed on **Home**. Select **Update now** to download it, verify it against its published checksum, and reopen the updated app; nothing installs until you click. After setup, generating images needs no internet.
 
-**Settings → Storage** shows what the data folder uses. You can clear the download caches (about 4 GiB that only speed up repairs) and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept.
+**Settings → Storage** shows what the data folder uses. Rust measures logical file sizes and available space directly, without starting Python, and checks cancellation while traversing folders. You can clear the download caches (about 4 GiB that only speed up repairs) and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept.
 
 Cancel stops the owned worker operation. Retrying setup reuses completed downloads and the Hub cache; an incomplete bootstrap archive restarts. A data folder typed in Settings takes effect only after **Save settings**. Changing data folders does not move existing models or images.
 
@@ -48,6 +48,7 @@ Cancel stops the owned worker operation. Retrying setup reuses completed downloa
 - Model details: publisher/repository, revision, task, library, license metadata, access state, and repository files.
 - Rust installation-plan validation, relative-path policy, and streaming SHA-256 through C ABI 1.
 - Rust-owned completed-job validation and cancellable, checksum-verified PNG export with atomic replacement.
+- Rust-owned cancellable storage inventory, shared by desktop, MCP, CLI, and worker clients.
 - Bundled Python worker diagnostics and read-only NVIDIA GPU detection.
 - Persistent storage settings, cancellation, and session activity.
 - Pinned SD 1.5 model files with SHA-256 checks and an exact, hash-locked inference dependency set.
@@ -73,7 +74,7 @@ WinUI 3 views → MVVM view models → Core contracts / Infrastructure
                          │                          │
                    Rust DLL / C ABI          Python child workers
                    plans · path policy       Hugging Face metadata/setup
-                   hashes · verified export  isolated Diffusers/CUDA child
+                   export · storage inventory isolated Diffusers/CUDA child
 ```
 
 The Rust ABI uses caller-owned UTF-8 buffers; allocation ownership never crosses language boundaries. Workers use versioned JSON lines over owned child-process streams. Native executable adapters can be added alongside Python workers.

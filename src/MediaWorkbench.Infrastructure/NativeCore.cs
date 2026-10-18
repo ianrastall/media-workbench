@@ -22,6 +22,44 @@ public static unsafe partial class NativeCore
     private static partial int Export(byte* input, nuint length,
         delegate* unmanaged[Cdecl]<ulong, ulong, nint, int> progress, nint context,
         byte* output, nuint capacity, out nuint required);
+    [LibraryImport(Library, EntryPoint = "mw_storage_summary")]
+    private static partial int Storage(byte* input, nuint length,
+        delegate* unmanaged[Cdecl]<nint, int> cancel, nint context,
+        byte* output, nuint capacity, out nuint required);
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int OnStorageCancel(nint context)
+    {
+        try { return ((CancellationToken)GCHandle.FromIntPtr(context).Target!).IsCancellationRequested ? 1 : 0; }
+        catch { return 1; } // No managed exception may unwind across the C ABI.
+    }
+
+    public static StorageSnapshot GetStorageSnapshot(string dataRoot, StorageLayout layout, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { dataRoot, layout.RuntimeProfileId, layout.ModelIds }, Wire.Json);
+        var handle = GCHandle.Alloc(cancellationToken);
+        try
+        {
+            fixed (byte* pointer = input)
+            {
+                int code = Storage(pointer, (nuint)input.Length, null, 0, null, 0, out nuint capacity);
+                if (code != 2 || capacity > 1_048_576) throw new InvalidDataException($"Native storage inventory failed ({code}).");
+                var output = new byte[(int)capacity];
+                fixed (byte* result = output)
+                {
+                    code = Storage(pointer, (nuint)input.Length, &OnStorageCancel, GCHandle.ToIntPtr(handle), result, capacity, out nuint written);
+                    if (code == 5) throw new OperationCanceledException("Storage measurement was cancelled.", cancellationToken);
+                    if (code == 1) throw new InvalidDataException("The data folder or storage layout is invalid, or a managed path passes through a link or junction.");
+                    if (code != 0 || written > capacity) throw new IOException($"The native storage inventory could not read the folder ({code}). Check folder access; no partial sizes were reported.");
+                    return JsonSerializer.Deserialize<StorageSnapshot>(output.AsSpan(0, (int)written), Wire.Json)
+                        ?? throw new InvalidDataException("The native storage inventory was empty.");
+                }
+            }
+        }
+        finally { handle.Free(); }
+    }
 
     private sealed class ExportState(IProgress<OperationProgress> progress, CancellationToken cancellation)
     {

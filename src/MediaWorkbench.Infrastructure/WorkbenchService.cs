@@ -64,8 +64,13 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         return new(images, result.TryGetProperty("recovered", out var recovered) ? recovered.GetInt32() : 0, problems,
             result.GetProperty("total").GetInt32(), result.GetProperty("offset").GetInt32(), result.GetProperty("hasMore").GetBoolean());
     }
-    public async Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken) =>
-        JsonSerializer.Deserialize<StorageSnapshot>(await Execute("storage.summary", new { dataRoot }, cancellationToken), Wire.Json)!;
+    public Task<StorageSnapshot> GetStorageAsync(string dataRoot, CancellationToken cancellationToken) =>
+        Task.Run(() =>
+        {
+            var layout = JsonSerializer.Deserialize<StorageLayout>(File.ReadAllText(Path.Combine(applicationRoot, "profiles", "storage-layout.json")), Wire.Json)
+                ?? throw new InvalidDataException("The bundled storage layout is missing.");
+            return NativeCore.GetStorageSnapshot(dataRoot, layout, cancellationToken);
+        }, cancellationToken);
     public Task<string> ExportImageAsync(string dataRoot, ImageExportRequest request, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.ExportArtifact(dataRoot, request, progress, cancellationToken), cancellationToken);
     public async Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>

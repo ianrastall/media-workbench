@@ -44,6 +44,9 @@ static class McpChecks
                 var capabilities = (await Call("caps", "workbench_capabilities", new { })).GetProperty("result").GetProperty("structuredContent");
                 check(!capabilities.GetProperty("videoGenerationSupported").GetBoolean() && capabilities.GetProperty("allowSetup").GetBoolean() == allowSetup,
                     "MCP reports unsupported video and actual launch permissions");
+                var storage = (await Call("storage", "workbench_storage", new { })).GetProperty("result");
+                check(!storage.GetProperty("isError").GetBoolean() && storage.GetProperty("structuredContent").GetProperty("items").GetArrayLength() == 7,
+                    "MCP inspects the scoped data folder through the Rust storage service");
                 var escape = await Call("escape", "workbench_library", new { dataRoot = output });
                 check(escape.GetProperty("error").GetProperty("code").GetInt32() == -32602, "An LLM cannot override the MCP data-folder scope");
                 if (!allowSetup)

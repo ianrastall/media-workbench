@@ -1,6 +1,6 @@
 # Current implementation status
 
-Version: **0.2.0-alpha.7**. Development started 17 October 2026.
+Version: **0.2.0-alpha.8**. Development started 17 October 2026.
 
 ## Technology decisions
 
@@ -27,13 +27,17 @@ The installer also includes a self-contained local MCP stdio console host. Setti
 
 Release builds generate the main README's version/date, release links, and changelog summary before committing; checks and the release job reject stale summaries. GitHub Actions publishes the checked installer, its SHA-256, and a generated release README. The release body includes current installation requirements, features, MCP guidance, licensing, and checksum steps from the public README with version-pinned documentation links. The public repository also has relevant GitHub topics and a descriptive summary.
 
+Rust now owns storage inventory as well as export: cancellable traversal, logical bytes/file counts, installation totals, and Windows available disk space. Desktop, MCP, and CLI inspection call it directly without Python; worker clients use a thin adapter. The supported profile/model IDs come from the bundled storage layout. Links/reparse points are rejected in managed area ancestors and skipped inside trees; access failures do not produce partial totals. Removal retains the existing confirmed, locked worker implementation and readiness invalidation.
+
 ## Still planned
+
 
 Authenticated remote/cloud MCP access, protected Hugging Face account access, arbitrary model installation, additional hardware/runtime profiles, masked image editing, video generation, queues, more enhancement tools, automatic cache pruning, and signed application updates. Tools supports Real-ESRGAN upscaling; Home supports checksum-verified application updates. The SD 1.5 recipe remains experimental and each installation must pass its own inference test; discovery results do not imply runnable pipelines.
 
 ## Verification
 
 - Rust unit tests, formatting, and Clippy are part of `scripts/check.ps1`.
+- Storage checks cover real native C#/Python calls, operation without a Python executable, profile-specific counts, Unicode roots, cancellation before/during traversal, buffer queries without folder creation, Windows junction containment, and the published app/MCP payload.
 - Python unit tests cover request validation, cancellation, search normalization, input rejection, and repository metadata.
 - Python tests also cover recovery of orphaned generation jobs, preserving jobs whose owner is alive, and skipping damaged records.
 - Export tests cover byte-identical copies, changed or missing originals, malformed records, moved folders, cancellation, failed replacement, managed-folder protection, and existing-destination preservation. C# checks cover routing through the saved data folder and the real native ABI boundary.

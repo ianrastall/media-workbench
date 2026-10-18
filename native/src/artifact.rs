@@ -1,4 +1,5 @@
 //! Completed-artifact validation, containment, and cancellable verified export.
+use crate::path_policy::no_links;
 use crate::{INVALID, IO_ERROR, MAX_INPUT, valid_relative_path};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -37,29 +38,6 @@ fn valid_id(value: &str) -> bool {
         && value
             .bytes()
             .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-}
-
-fn no_links(path: &Path) -> Result<(), i32> {
-    for ancestor in path.ancestors() {
-        match fs::symlink_metadata(ancestor) {
-            Ok(metadata) => {
-                #[cfg(windows)]
-                {
-                    use std::os::windows::fs::MetadataExt;
-                    // Includes junctions and other reparse points, not just symbolic links.
-                    if metadata.file_attributes() & 0x400 != 0 {
-                        return Err(INVALID);
-                    }
-                }
-                if metadata.is_symlink() {
-                    return Err(INVALID);
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(_) => return Err(IO_ERROR),
-        }
-    }
-    Ok(())
 }
 
 struct Temporary(PathBuf);

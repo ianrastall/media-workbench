@@ -148,3 +148,13 @@ Validated on the same Windows 11 machine, 17 October 2026.
 Local first-time filesystem/cache writes on the data drive intermittently exceeded the checks' timeouts. The full suite passed with fixture data on system temporary storage; Python tests already use temporary folders. Published self-tests now keep their disposable fixture data in the system temporary folder as well. No SQLite durability setting was relaxed. These observations do not establish the cause of the drive stalls.
 
 The protocol and service boundaries are tested; a complete provider-account/client workflow and successful GPU inference through an external MCP client remain to be exercised. Hosted authenticated remote access, video, clean-machine installation/update behavior, and additional GPU coverage are not claimed.
+
+## Release documentation (0.2.0-alpha.7)
+
+Validated on Windows 11, 17 October 2026. The full checks (7 Rust, 85 Python, 98 C#) and self-contained publish passed from a temporary source checkout. GitHub Actions then built, checked, and published the installer, checksum, and generated README. The downloaded README was compared with the published release body; installation, MCP, licensing, checksum instructions, and tag-pinned documentation links matched. The public repository description and 17 topics were read back from GitHub.
+
+## Native storage inventory (0.2.0-alpha.8)
+
+Validated on the same Windows 11 host, 17 October 2026: 9 Rust tests plus formatting/Clippy, 91 Python tests, 106 C# checks, a Release published build with no warnings/errors, and published core/GUI/MCP smoke tests passed. Builds/checks ran from a temporary system-drive source checkout after project-drive writes stalled. Automated checks use disposable temporary data, without model downloads or GPU inference. The C# service measured a fixture with a nonexistent Python executable, proving the direct native path. Python/ctypes and real worker/MCP clients returned the same per-area inventory. Tests covered Unicode paths, supported-profile selection, file counts, cancellation before/during traversal, buffer queries without folder creation, skipped internal Windows junctions, refused managed-area junctions, and unchanged preservation of images/jobs during confirmed removal. Native inventory and export share the reparse-point checks.
+
+The self-contained published app and MCP host also queried native storage using the bundled layout. Measurements are logical file sizes, not allocated disk usage; no additional GPU/driver compatibility or clean-machine claim follows from these checks.

@@ -57,6 +57,8 @@ public sealed record LibrarySnapshot(IReadOnlyList<GeneratedImage> Images, int R
 public sealed record LibraryQuery(string Query = "", string Kind = "all", int Offset = 0, int Limit = 48);
 public sealed record ImageExportRequest(string JobId, string Destination);
 /// <summary>One part of the data folder; clearable parts are reproducible and can be removed from the app.</summary>
+public sealed record StorageLayout(string RuntimeProfileId, string[] ModelIds);
+
 public sealed record StorageItem(string Id, string Label, long Bytes, long Files, bool Clearable, string Note)
 {
     public string SizeText => $"{StorageSnapshot.Format(Bytes)} · {Files:N0} {(Files == 1 ? "file" : "files")}";

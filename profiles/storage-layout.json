@@ -1,0 +1,4 @@
+{
+  "runtimeProfileId": "sd15-cu126-v1",
+  "modelIds": ["sd15-baseline", "realesrgan-x4plus"]
+}

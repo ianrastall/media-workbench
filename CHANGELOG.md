@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0-alpha.8 — 2026-10-17
+
+- Rust now owns storage inventory: folder traversal, per-area bytes/file counts, installation totals, and available disk space. Settings, the developer CLI, and MCP call it directly without starting Python; worker clients use a thin native adapter.
+- Storage measurement checks cancellation between entries, rejects linked/reparse-point managed roots, skips links inside trees, and reports an error rather than partial totals on access failures. Sizes are logical file sizes; only the bundled model/runtime profiles are counted as installation components.
+- Native artifact export and storage inventory share filesystem path checks. Published-payload tests now exercise native storage through both the app and the shipped MCP host. Existing model readiness and confirmed storage-removal behavior are preserved.
+
 ## 0.2.0-alpha.7 — 2026-10-17
 
 - Release documentation is generated from the version, changelog, and current README. Every release includes installation steps, runtime/hardware requirements, supported features, MCP setup guidance, limitations, license links, and checksum instructions in its release body and a downloadable README asset alongside the installer and checksum.
