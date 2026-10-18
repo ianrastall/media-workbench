@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0-alpha.10 — 2026-10-17
+
+- Change part of a picture: after choosing a starting picture in Create, select **Paint the part to change**, paint over it (small, medium, or large brush; erase; clear), describe what should be there, and choose how much to change it (a little, moderately, or completely). Only the painted part is redrawn; everything else keeps its pixels and the picture keeps its full size, up to 4096 pixels on the longest side.
+- The painted area is redrawn from a close-up with surrounding context, so small areas of large pictures get full detail, then blended in with a softened edge. It uses the installed Stable Diffusion 1.5 model, so nothing new downloads and existing verified installations stay ready.
+- Each job keeps private copies of its picture and painted area. **Use settings** in Library restores both, with the change level. Choosing another picture discards the painting; **Change the whole picture** returns to ordinary image-to-image.
+- MCP: `workbench_generate_image` accepts a rectangular change area (`changeLeft`, `changeTop`, `changeWidth`, `changeHeight` as fractions of a Library source image) for clients that cannot paint.
+
 ## 0.2.0-alpha.9 — 2026-10-17
 
 - Rust now verifies the pinned SD 1.5 and Real-ESRGAN files during Install / verify: safe contained paths, expected sizes, streamed SHA-256, unchanged metadata, and read-only file sharing on Windows. Hashing reports byte progress and checks cancellation every 64 KiB, so a large model file no longer has to finish hashing before cancellation is observed. Downloads are retained for retry.

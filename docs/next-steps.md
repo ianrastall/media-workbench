@@ -1,6 +1,16 @@
-# Development direction after 0.2.0-alpha.9
+# Development direction after 0.2.0-alpha.10
 
-This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
+This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
+
+## Purpose and next feature priority
+
+Media Workbench moves image and video generation onto the user's own computer: it saves people money, works offline once set up, and reduces load on online generation services. It stays free, MIT-licensed, and unlocked on the public repository. It must serve beginners as well as power users, so runtime, precision, and pipeline details stay under the hood behind plain choices.
+
+The next user-facing priorities are:
+
+1. **Add your own downloaded models.** Let a user point at a model they already have (for example an SD 1.5-family single-file `.safetensors` checkpoint or a Diffusers folder), record its own SHA-256 and size, identify a supported architecture without executing model code, and make it runnable only after the same real GPU inference check the bundled model passes. Unrecognized or unsupported files are explained, not run.
+2. **Refresh the model list from Hugging Face.** Discover already searches live metadata. It should also say which results this computer can actually install and run (supported architecture, safetensors files, license shown, VRAM fit), and offer a pinned install with the same verification gate.
+3. Then newer image models that fit 6 GB, and short video, as optional verified profiles.
 
 ## Immediate validation
 
@@ -38,4 +48,4 @@ Cancellation or protocol failure may discard the warm child and recreate it for 
 
 ## Later expansion
 
-Add Library organization and portable settings/provenance export before destructive artifact pruning. Any deletion needs precise image/job/source relationships so a reused private input is not removed accidentally. Extend model adapters, protected Hub access, masked editing, other hardware, and video only with explicit runtime/license/hardware validation. Discovery results must continue to describe metadata without implying installation support.
+Add Library organization and portable settings/provenance export before destructive artifact pruning. Any deletion needs precise image/job/source relationships so a reused private input is not removed accidentally. Extend model adapters (including a dedicated inpainting checkpoint if quality requires it), protected Hub access, other hardware, and video only with explicit runtime/license/hardware validation. Discovery results must continue to describe metadata without implying installation support.

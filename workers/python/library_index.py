@@ -39,8 +39,9 @@ def usable_record(record, name):
     settings = record.get("settings", {})
     if not isinstance(settings, dict):
         return False
-    if settings.get("sourceImage") is not None and not isinstance(settings["sourceImage"], str):
-        return False
+    for key in ("sourceImage", "maskImage"):
+        if settings.get(key) is not None and not isinstance(settings[key], str):
+            return False
     for key in ("prompt", "negativePrompt", "sampler"):
         if key in settings and not isinstance(settings[key], str):
             return False

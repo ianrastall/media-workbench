@@ -7,15 +7,14 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.2.0-alpha.9](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.9)** · 2026-10-17 · Pre-release · Windows x64
+**[0.2.0-alpha.10](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.10)** · 2026-10-17 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.9/MediaWorkbench-0.2.0-alpha.9-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.9/MediaWorkbench-0.2.0-alpha.9-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.9/MediaWorkbench-0.2.0-alpha.9-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.10/MediaWorkbench-0.2.0-alpha.10-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.10/MediaWorkbench-0.2.0-alpha.10-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.10/MediaWorkbench-0.2.0-alpha.10-README.md)
 
-- Rust now verifies the pinned SD 1.5 and Real-ESRGAN files during Install / verify: safe contained paths, expected sizes, streamed SHA-256, unchanged metadata, and read-only file sharing on Windows. Hashing reports byte progress and checks cancellation every 64 KiB, so a large model file no longer has to finish hashing before cancellation is observed. Downloads are retained for retry.
-- The setup worker uses a thin native adapter and keeps the existing readiness stamps. Files, runtime imports, and actual GPU inference must still pass before a model becomes ready; this release does not change the inference profile or invalidate existing verified installations.
-- Published-app self-tests now exercise the shipped file verifier. The smoke-test harness allows startup/report time beyond the application's operation deadline, avoids a process-exit race on timeout, and accepts a separate report folder.
-
-- Source builds copy the MCP console host beside the GUI, so Settings-generated LLM client configuration also works with the normal development build.
+- Change part of a picture: after choosing a starting picture in Create, select **Paint the part to change**, paint over it (small, medium, or large brush; erase; clear), describe what should be there, and choose how much to change it (a little, moderately, or completely). Only the painted part is redrawn; everything else keeps its pixels and the picture keeps its full size, up to 4096 pixels on the longest side.
+- The painted area is redrawn from a close-up with surrounding context, so small areas of large pictures get full detail, then blended in with a softened edge. It uses the installed Stable Diffusion 1.5 model, so nothing new downloads and existing verified installations stay ready.
+- Each job keeps private copies of its picture and painted area. **Use settings** in Library restores both, with the change level. Choosing another picture discards the painting; **Change the whole picture** returns to ordinary image-to-image.
+- MCP: `workbench_generate_image` accepts a rectangular change area (`changeLeft`, `changeTop`, `changeWidth`, `changeHeight` as fractions of a Library source image) for clients that cannot paint.
 <!-- release-summary:end -->
 
 ## Install
@@ -31,9 +30,9 @@ For image generation, this first profile requires an **NVIDIA GPU with at least 
 1. Open **Settings**, choose a data folder on a drive with enough space, and save.
 2. Open **Create**, review the linked model card/license, and select **Install / verify**.
 3. Setup downloads roughly 5 GiB plus dependencies and tests real inference. A model becomes ready only after the checks pass on your machine.
-4. Describe the picture, pick a shape, and select **Generate image**. To start from a picture of your own instead, choose or drag it onto Create (or select **Use as starting picture** on a Library image) and say how much to change it (seed, steps, prompt strength, and sampling method are under **Advanced options**). Your PNG and its settings appear in **Library** and remain in your data folder. Generations that fail, are cancelled, or are stopped by closing the app are listed under **Unfinished generations** with the reason; **Use settings** loads them back into Create and **Open log** shows the inference log.
+4. Describe the picture, pick a shape, and select **Generate image**. To start from a picture of your own instead, choose or drag it onto Create (or select **Use as starting picture** on a Library image) and say how much to change it. To change only one part of it, select **Paint the part to change**, paint over that part, and describe what should be there; everything you don't paint stays exactly as it was, at the picture's full size (seed, steps, prompt strength, and sampling method are under **Advanced options**). Your PNG and its settings appear in **Library** and remain in your data folder. Generations that fail, are cancelled, or are stopped by closing the app are listed under **Unfinished generations** with the reason; **Use settings** loads them back into Create and **Open log** shows the inference log.
 
-**Library** searches prompts, things to avoid, seeds, and job IDs. Choose an image type and select **Search / refresh** (or press Enter in the search box), then browse with **Older images** / **Newer images**, 48 at a time. **Use settings** restores a saved image's original controls in Create or Tools, including its private starting picture. Your JSON records and pictures remain authoritative; the local SQLite index rebuilds automatically if missing or damaged. Recent unfinished jobs are shown independently of your image filters. **Open image** uses your default PNG viewer; **Save a copy…** exports a checksum-verified copy through the Windows save picker (also available on the latest Create/Tools result). Choose a folder outside the managed data folder; prompts and job records stay with the original in Library.
+**Library** searches prompts, things to avoid, seeds, and job IDs. Choose an image type and select **Search / refresh** (or press Enter in the search box), then browse with **Older images** / **Newer images**, 48 at a time. **Use settings** restores a saved image's original controls in Create or Tools, including its private starting picture and any painted area. Your JSON records and pictures remain authoritative; the local SQLite index rebuilds automatically if missing or damaged. Recent unfinished jobs are shown independently of your image filters. **Open image** uses your default PNG viewer; **Save a copy…** exports a checksum-verified copy through the Windows save picker (also available on the latest Create/Tools result). Choose a folder outside the managed data folder; prompts and job records stay with the original in Library.
 
 **Tools** makes any picture 2× or 4× bigger and sharper, offline. Choose or drag a picture there, or select **Make it bigger** on a Library image.
 
@@ -59,10 +58,11 @@ Cancel stops the owned worker operation. Retrying setup reuses completed downloa
 - Pinned SD 1.5 model files with SHA-256 checks and an exact, hash-locked inference dependency set.
 - Private runtime provisioning, persistent installation attempts, progress, retry, and a real GPU verification gate.
 - Worker process trees owned by a Windows Job Object: closing or crashing the app stops setup and inference children, and unfinished generations are recorded as interrupted.
+- Change only a painted part of a picture (inpainting) with the installed SD 1.5 model: the painted area is redrawn from a close-up and blended back into the full-size original.
 - Prompt/negative prompt, deterministic seed, 1–50 inference steps, local PNG output, preview, and saved artifact history.
 - Per-user install/uninstall, Start menu shortcut, custom icon, taskbar identity, and single-instance behavior.
 
-Discovery results do not imply installation support: **only the bundled SD 1.5 recipe and Real-ESRGAN upscaler are currently executable**. Protected Hugging Face access, arbitrary model installation, additional enhancement tools, image editing beyond image-to-image, and video pipelines remain in development. Model licensing is separate from the application license.
+Discovery results do not imply installation support: **only the bundled SD 1.5 recipe and Real-ESRGAN upscaler are currently executable**. Protected Hugging Face access, arbitrary model installation, additional enhancement tools, a dedicated inpainting model, and video pipelines remain in development. Model licensing is separate from the application license.
 
 ## LLM clients
 

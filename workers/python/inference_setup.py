@@ -36,6 +36,8 @@ ADAPTER_VERSION = 2  # 2: verification also tests the Real-ESRGAN upscaler.
 STAMPED_FILES = ["profiles/sd15-cu126.json", "profiles/sd15-cu126.lock", "profiles/sd15-files.json",
                  "profiles/upscaler-files.json", "recipes/sd15-baseline.json"]
 UPSCALE_MAX_SIDE = 2048
+# Painted changes keep the picture's own size; larger pictures would make very large PNGs.
+EDIT_MAX_SIDE = 4096
 FRESH_SETUP_BYTES = 20 * 1024**3  # Runtime, wheel cache, model, and download temporaries.
 SETUP_HEADROOM_BYTES = 2 * 1024**3
 # Drivers report slightly less than nominal capacity (a 6 GB GTX 1660 Ti reports 6143.7 MiB to CUDA).
@@ -538,6 +540,7 @@ def validate_generation(payload):
     sampler = payload.get("sampler", "pndm")
     source = payload.get("sourceImage") or None
     strength = payload.get("strength", 0.6)
+    mask = payload.get("maskImage") or None
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 2000:
         raise ValueError("Enter a prompt of 1–2000 characters")
     if not isinstance(negative, str) or len(negative) > 2000:
@@ -559,6 +562,13 @@ def validate_generation(payload):
         if type(strength) not in (int, float) or not 0.05 <= strength <= 1:
             raise ValueError("How much to change must be from 0.05 to 1")
         settings.update(sourceImage=str(path), strength=round(float(strength), 2))
+    if mask is not None:
+        if source is None:
+            raise ValueError("Choose a starting picture before painting the part to change")
+        path = validate_picture(mask, "painted area")
+        if path.suffix.lower() != ".png":
+            raise ValueError("The painted area must be a PNG file")
+        settings["maskImage"] = str(path)
     return settings
 
 
@@ -588,17 +598,49 @@ def shape_for(width, height):
     return (768, 512) if ratio >= 1.25 else (512, 768) if ratio <= 0.8 else (512, 512)
 
 
+def mask_matches(mask_size, picture_size, maximum=512):
+    """Whether a painted-area grid has the cell size the app derives from this picture (within rounding)."""
+    scale = min(1, maximum / max(picture_size))
+    return all(abs(cells - max(1, round(side * scale))) <= 1 for cells, side in zip(mask_size, picture_size))
+
+
+def edit_region(bounds, size, minimum=384):
+    """The box around painted pixels that the model redraws, and the supported shape it is drawn at.
+
+    `bounds` is (left, top, right, bottom) of the painted pixels in a picture of `size`. The box adds
+    surrounding context, takes the nearest supported proportions, and stays inside the picture.
+    """
+    width, height = size
+    left, top, right, bottom = bounds
+    pad = max(32, round(0.25 * max(right - left, bottom - top)))
+    w, h = right - left + 2 * pad, bottom - top + 2 * pad
+    shape = shape_for(w, h)
+    ratio = shape[0] / shape[1]
+    w, h = max(w, h * ratio), max(h, w / ratio)
+    grow = max(1, min(minimum, max(width, height)) / max(w, h))
+    w, h = min(width, w * grow), min(height, h * grow)
+    cx, cy = (left + right) / 2, (top + bottom) / 2
+    x0 = min(max(0, cx - w / 2), width - w)
+    y0 = min(max(0, cy - h / 2), height - h)
+    box = (round(x0), round(y0), round(x0 + w), round(y0 + h))
+    return box, shape_for(box[2] - box[0], box[3] - box[1])
+
+
 def resolve_settings(root, record):
-    """Settings for clients: a stored starting picture becomes its absolute path, or is dropped if gone."""
+    """Settings for clients: a stored starting picture or painted area becomes its absolute path, or is dropped if gone."""
     settings = dict(record.get("settings") or {})
-    source = settings.get("sourceImage")
-    if isinstance(source, str) and job_id_valid(record.get("id")):
-        relative = Path(source)
-        path = (owned(root, "artifacts") / relative).resolve() if not relative.is_absolute() else None
+    for key in ("sourceImage", "maskImage"):
+        stored = settings.get(key)
+        if stored is None:
+            continue
+        relative = Path(stored) if isinstance(stored, str) else None
+        path = (owned(root, "artifacts") / relative).resolve() if relative and not relative.is_absolute() and job_id_valid(record.get("id")) else None
         if path and relative.parts[:1] == (record["id"],) and path.is_relative_to(owned(root, "artifacts").resolve() / record["id"]) and path.is_file():
-            settings["sourceImage"] = str(path)
+            settings[key] = str(path)
         else:
-            settings.pop("sourceImage", None)
+            settings.pop(key, None)
+    if "sourceImage" not in settings:
+        settings.pop("maskImage", None)  # A painted area means nothing without its picture.
     return settings
 
 
@@ -630,14 +672,15 @@ def run_job(app, root, kind, settings, cancel, progress):
                       log=f"{kind}-{job_id}.log")
         job = owned(root, f"jobs/{job_id}.json")
         child = dict(settings, jobId=job_id)
-        if "sourceImage" in settings:
-            # Work from a private copy so the job stays reproducible if the original moves or changes.
-            name = "source" + Path(settings["sourceImage"]).suffix.lower()
-            copy = owned(root, f"artifacts/{job_id}/{name}")
-            copy.parent.mkdir(parents=True, exist_ok=False)
-            shutil.copyfile(settings["sourceImage"], copy)
-            settings["sourceImage"] = f"{job_id}/{name}"
-            child["sourceImage"] = str(copy)
+        for key, stem in (("sourceImage", "source"), ("maskImage", "mask")):
+            if key in settings:
+                # Work from private copies so the job stays reproducible if the originals move or change.
+                name = stem + Path(settings[key]).suffix.lower()
+                copy = owned(root, f"artifacts/{job_id}/{name}")
+                copy.parent.mkdir(parents=True, exist_ok=key != "sourceImage")
+                shutil.copyfile(settings[key], copy)
+                settings[key] = f"{job_id}/{name}"
+                child[key] = str(copy)
         atomic_json(job, record)
         try:
             result = inference(app, root, kind, child, cancel, progress, log_id=job_id)

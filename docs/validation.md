@@ -166,3 +166,17 @@ The normal Debug GUI output also passed core, GUI initialization, and real MCP/w
 Validated on Windows 11, 17 October 2026: 11 Rust tests plus formatting/Clippy, 100 Python tests, and 111 C# integration checks passed. A self-contained Release publish completed with no warnings/errors; published core, GUI initialization, and MCP/worker smoke checks passed. These checks used disposable fixtures on system temporary storage, with no model downloads or GPU inference.
 
 Real ABI checks covered Unicode paths, correct bytes, size mismatch and same-size checksum corruption, missing files/core, unsafe declarations, short-buffer queries without filesystem work/callbacks, Windows junction refusal, blocked write/delete access while hashing, cancellation within a large file, retained downloads, and exception containment for Python and C# callbacks. Setup fixtures used Rust rather than Python model hashing and retained the existing size/mtime stamp shape. The shipped app verified a bundled file through the new native export. The inference profile and GPU verification requirements were unchanged; these checks do not add hardware compatibility evidence.
+
+## Painted partial changes (0.2.0-alpha.10)
+
+Validated on the same Windows 11 host (GTX 1660 Ti 6 GB, driver 610.60), 17 October 2026. Checks and Release builds ran from a temporary system-drive copy because the project drive was saturated by unrelated activity.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1` | Passed: 11 Rust tests plus formatting/Clippy, 103 Python tests, 129 C# checks |
+| Release publish and `scripts/test-publish.ps1` | Passed, zero warnings/errors; published core, GUI initialization, and MCP/worker checks passed |
+| Real painted change through the coordinator: 512 × 512 watercolor, ellipse painted over water, "a yellow rubber duck", strength 1, 20 PNDM steps | Succeeded on the existing verified installation (no re-verification): a coherent duck blended into the painted area; peak 5166 MiB allocated; pixels more than 15 pixels outside the painted area were byte-identical to the original |
+| Same on a 768 × 512 picture (768 × 512 region) while builds ran alongside | Ran at about 48 s per step and was stopped by the test harness timeout before finishing; the next check confirms the interrupted job was recovered rather than listed |
+| Published GUI driven through UI Automation | Library → Use as starting picture → Paint the part to change showed the painting editor, change-level choice, brush controls, and the translucent painted overlay; clicks painted at the pointer position and a dragged stroke painted continuously |
+
+Synthetic drags were unreliable on this multi-monitor desktop (the cursor sometimes did not move between button down and up), so stroke continuity was confirmed in one run plus event diagnostics showing moves extend the stroke while the button is held. Touch input currently scrolls the page rather than painting; mouse and pen are the supported painting inputs. The 768 × 512 timing reflects contention, not a benchmark.

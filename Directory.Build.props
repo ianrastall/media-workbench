@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <Deterministic>true</Deterministic>
     <LangVersion>14.0</LangVersion>
-    <Version>0.2.0-alpha.9</Version>
+    <Version>0.2.0-alpha.10</Version>
     <Authors>ianrastall</Authors>
     <RepositoryUrl>https://github.com/ianrastall/media-workbench</RepositoryUrl>
   </PropertyGroup>

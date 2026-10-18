@@ -17,17 +17,23 @@ public sealed record OperationProgress(string Stage, long Completed = 0, long To
 /// <summary>Defaults match records written before guidance, size, and sampler were selectable.</summary>
 public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps,
     double GuidanceScale = 7.5, int Width = 512, int Height = 512, string Sampler = "pndm",
-    string? SourceImage = null, double Strength = 0.6, int Scale = 0)
+    string? SourceImage = null, double Strength = 0.6, int Scale = 0, string? MaskImage = null)
 {
     /// <summary>Upscale jobs carry a scale and a source picture instead of a prompt.</summary>
     public bool IsUpscale => Scale > 0;
     public static readonly (int Scale, string Label)[] UpscaleChoices = [(2, "2× larger"), (4, "4× larger")];
     /// <summary>How far image-to-image moves from the starting picture, in plain words.</summary>
     public static readonly (double Strength, string Label)[] ChangeLevels = [(0.35, "A little"), (0.6, "Moderately"), (0.8, "A lot")];
+    /// <summary>How far a painted area moves from what was there; the rest of the picture is kept.</summary>
+    public static readonly (double Strength, string Label)[] PaintChangeLevels = [(0.5, "A little"), (0.75, "Moderately"), (1.0, "Completely")];
+    /// <summary>Only the painted part of the starting picture changes.</summary>
+    public bool IsPaintedChange => SourceImage is not null && MaskImage is not null;
     public static readonly string[] PictureExtensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp"];
     public static readonly (int Width, int Height, string Label)[] Sizes = [(512, 512, "Square · 512 × 512 (fastest)"), (512, 768, "Portrait · 512 × 768 (slower)"), (768, 512, "Landscape · 768 × 512 (slower)")];
     public static readonly (string Id, string Label)[] Samplers = [("pndm", "Balanced (model default, PNDM)"), ("dpmpp-2m", "Crisp detail (DPM++ 2M Karras)"), ("euler-a", "Softer and more varied (Euler ancestral)")];
-    public string Summary => (SourceImage is null ? "" : $"From your picture, changed {ChangeLevels.MinBy(level => Math.Abs(level.Strength - Strength)).Label.ToLowerInvariant()} · ")
+    public string Summary => (SourceImage is null ? "" : IsPaintedChange
+            ? $"Painted part of your picture changed {PaintChangeLevels.MinBy(level => Math.Abs(level.Strength - Strength)).Label.ToLowerInvariant()} · "
+            : $"From your picture, changed {ChangeLevels.MinBy(level => Math.Abs(level.Strength - Strength)).Label.ToLowerInvariant()} · ")
         + $"{Width} × {Height} · seed {Seed} · {Steps} steps · prompt strength {GuidanceScale:0.##}" + Sampler switch
     {
         "dpmpp-2m" => " · crisp detail sampling", "euler-a" => " · softer sampling", _ => ""

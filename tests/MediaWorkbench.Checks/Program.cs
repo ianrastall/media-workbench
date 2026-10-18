@@ -146,6 +146,53 @@ Check(vm.Prompt == "repeat this" && vm.Seed == 123 && vm.Steps == 12 && vm.Guida
     && vm.SamplerIndex == 1 && vm.SourceImagePath == picture && vm.ChangeIndex == 2 && vm.SelectedPage == "create",
     "A successful Library image's settings, including its private starting picture, can be reused");
 
+// Changing only a painted part of the starting picture.
+var cells = new MaskCanvas(64, 32);
+Check(!cells.HasPaint, "A new painted area is empty");
+cells.Stroke(0.1, 0.5, 0.4, 0.5, 0.05);
+Check(cells.HasPaint && cells.Cells[16 * 64 + 12] == 255 && cells.Cells[0] == 0 && cells.Cells[16 * 64 + 50] == 0, "A brush stroke paints only along its path");
+var decoded = MaskCanvas.DecodePng(cells.EncodePng());
+Check(decoded.Width == 64 && decoded.Height == 32 && decoded.Cells.SequenceEqual(cells.Cells), "A painted area survives a PNG round trip");
+bool damagedRejected = false;
+try { byte[] damaged = cells.EncodePng(); damaged[^10] ^= 1; MaskCanvas.DecodePng(damaged); } catch (InvalidDataException) { damagedRejected = true; }
+Check(damagedRejected, "A damaged painted-area PNG is rejected");
+cells.Stroke(0.1, 0.5, 0.4, 0.5, 0.05, erase: true);
+Check(!cells.HasPaint, "Erasing removes paint");
+Check(MaskCanvas.ForPicture(4000, 3000) is { Width: 512, Height: 384 } && MaskCanvas.ForPicture(300, 200) is { Width: 300, Height: 200 },
+    "A painted area keeps the picture's proportions at up to 512 cells a side");
+var rectangle = MaskCanvas.ForPicture(100, 100);
+rectangle.FillRectangle(0.5, 0.5, 0.5, 0.5);
+Check(rectangle.Cells.ToArray().Count(cell => cell != 0) == 2500 && rectangle.Cells[99 * 100 + 99] == 255 && rectangle.Cells[0] == 0, "A rectangular change area covers exactly its fraction");
+string otherPicture = Path.Combine(output, "another photo.png");
+await File.WriteAllBytesAsync(otherPicture, [4, 5, 6]);
+vm.UseAsStartingPicture(otherPicture);
+Check(!vm.IsPainting && vm.IsChangingWholePicture && !vm.ClearPaintingCommand.CanExecute(null), "A starting picture changes as a whole until the user paints");
+Check(vm.StartPainting(1600, 1200) && vm.IsPainting && vm.Mask is { Width: 512, Height: 384 } && !vm.IsChangingWholePicture && vm.PaintChangeIndex == 2,
+    "Painting starts with an empty area shaped like the picture and replaces it completely by default");
+var beforeEmpty = workbench.LastGeneration;
+await vm.GenerateCommand.ExecuteAsync(null);
+Check(ReferenceEquals(beforeEmpty, workbench.LastGeneration) && vm.Notice.StartsWith("Paint over"), "Nothing is generated until some part is painted");
+vm.BrushIndex = 2;
+vm.PaintStroke(0.2, 0.2, 0.8, 0.8);
+await vm.GenerateCommand.ExecuteAsync(null);
+Check(workbench.LastGeneration is { SourceImage: var paintedSource, Strength: 1.0, MaskImage: { } sentMask } && paintedSource == otherPicture && !File.Exists(sentMask)
+    && workbench.LastMaskBytes is { } sentBytes && MaskCanvas.DecodePng(sentBytes).Cells.SequenceEqual(vm.Mask!.Cells),
+    "Generation hands over the painted area and then removes its temporary copy");
+Check(workbench.LastGeneration!.Summary.StartsWith("Painted part of your picture changed completely"), "Summaries say when only a painted part changed");
+string storedMask = Path.Combine(output, "stored mask.png");
+await File.WriteAllBytesAsync(storedMask, vm.Mask!.EncodePng());
+vm.UseAsStartingPicture(picture);
+Check(!vm.IsPainting && vm.Mask is null, "Choosing a different picture discards the painted area");
+vm.UseImageSettingsCommand.Execute(reusable with { Settings = reusable.Settings with { SourceImage = otherPicture, MaskImage = storedMask, Strength = 0.75 } });
+Check(vm.IsPainting && vm.SourceImagePath == otherPicture && vm.PaintChangeIndex == 1 && vm.Mask!.Cells.SequenceEqual(MaskCanvas.DecodePng(File.ReadAllBytes(storedMask)).Cells),
+    "Reusing a painted change's settings restores its picture, painted area, and change level");
+vm.UseImageSettingsCommand.Execute(reusable with { Settings = reusable.Settings with { SourceImage = otherPicture } });
+Check(!vm.IsPainting && vm.ChangeIndex == 2, "Reusing a whole-picture change on the same picture stops painting");
+vm.StartPainting(1600, 1200);
+vm.StopPaintingCommand.Execute(null);
+Check(!vm.IsPainting && vm.Mask is null && vm.IsChangingWholePicture, "Change the whole picture leaves painting");
+vm.ClearStartingPictureCommand.Execute(null);
+
 // Upscaling from Tools.
 Check(vm.UseForUpscale(picture) && vm.SelectedPage == "tools" && vm.UpscaleSourcePath == picture, "Choosing a picture to enlarge opens Tools with it");
 vm.ModelReady = false;  // Opening Tools refreshed the (fake) status; force the not-installed case.

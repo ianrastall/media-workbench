@@ -44,7 +44,7 @@ For source development, `scripts/build.ps1` also copies the console host beside 
 | `workbench_search_models` | Default, online | Public Hub metadata; results do not imply installation support |
 | `workbench_model_details` | Default, online | Public repository/revision/license/files |
 | `workbench_install_model` | `--allow-setup` | Bundled SD 1.5/Real-ESRGAN only, through native planning and file/runtime/GPU verification |
-| `workbench_generate_image` | `--allow-inference` | Prompt/negative prompt/seed/steps/size/guidance/sampler; optional `sourceJobId` and strength for image-to-image |
+| `workbench_generate_image` | `--allow-inference` | Prompt/negative prompt/seed/steps/size/guidance/sampler; optional `sourceJobId` and strength for image-to-image; with `sourceJobId`, `changeLeft`/`changeTop`/`changeWidth`/`changeHeight` (fractions of the picture, all four together) change only that rectangle, strength 1 by default |
 | `workbench_upscale_image` | `--allow-inference` | Completed `sourceJobId`, scale 2 or 4; saves a new Library result |
 
 Image inputs come from completed jobs in the selected folder, with normal containment checks. Arbitrary source paths, arbitrary model/runtime installation, shell commands, deletion, credentials, and app updates are not exposed as tools. Export remains available in the GUI. Results contain metadata/settings and local image paths, not image bytes. A client may use its own separately authorized file tools to display a result.

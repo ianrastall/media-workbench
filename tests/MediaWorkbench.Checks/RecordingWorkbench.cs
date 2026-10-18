@@ -22,14 +22,19 @@ sealed class RecordingWorkbench : IWorkbenchService
     public Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         Record(dataRoot, new InstallationState("ready", "Ready"));
     public GenerationSettings? LastGeneration { get; private set; }
+    public byte[]? LastMaskBytes { get; private set; }
     public Task? GenerationGate { get; set; }
     public async Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {
         LastGeneration = settings;
+        // The view model deletes its temporary painted-area file after the call, so keep its bytes.
+        LastMaskBytes = settings.MaskImage is { } mask && File.Exists(mask) ? File.ReadAllBytes(mask) : null;
         if (GenerationGate is { } gate) await gate.WaitAsync(cancellationToken);
         return await Record(dataRoot, Image(dataRoot));
     }
     public List<LibraryQuery> LibraryQueries { get; } = [];
+    /// <summary>When set, Library lists this image instead of a fresh placeholder.</summary>
+    public GeneratedImage? LibraryImage { get; set; }
     public ImageExportRequest? LastExport { get; private set; }
     public Task<string> ExportImageAsync(string dataRoot, ImageExportRequest request, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {
@@ -40,7 +45,7 @@ sealed class RecordingWorkbench : IWorkbenchService
     {
         query ??= new();
         LibraryQueries.Add(query);
-        return Record(dataRoot, new LibrarySnapshot([Image(dataRoot)], 0,
+        return Record(dataRoot, new LibrarySnapshot([LibraryImage ?? Image(dataRoot)], 0,
             [new JobSummary(new string('a', 32), "failed", "CUDA out of memory", "2026-10-17T00:00:00+00:00", new("retry me", "blurry", 42, 7, 4.5, 768, 512, "euler-a"), null)],
             100, query.Offset, query.Offset + query.Limit < 100));
     }

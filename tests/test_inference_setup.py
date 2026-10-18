@@ -305,6 +305,59 @@ class ReadinessTests(unittest.TestCase):
             listed = setup.library({"dataRoot": str(root)})["artifacts"][0]["settings"]
             self.assertEqual(Path(listed["sourceImage"]), (root / "artifacts" / job / "source.jpg").resolve())
 
+    def test_painted_change_works_from_private_copies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            original, painted = Path(folder) / "photo.jpg", Path(folder) / "painted.png"
+            original.write_bytes(b"jpeg bytes")
+            painted.write_bytes(b"mask bytes")
+            seen = {}
+            def child(app_, data, operation, payload, cancel, progress, log_id=None):
+                seen.update(payload)
+                self.assertEqual(Path(payload["maskImage"]).read_bytes(), b"mask bytes")
+                return dict(fake_generation(app_, data, operation, payload, cancel, progress), width=1600, height=1200)
+            with patch.object(setup, "inference", side_effect=child):
+                record = setup.generate(app, {"dataRoot": str(root), "prompt": "a boat", "sourceImage": str(original),
+                                              "maskImage": str(painted), "strength": 1}, threading.Event(), lambda _: None)
+            job = record["id"]
+            self.assertEqual(Path(seen["maskImage"]), setup.owned(root, f"artifacts/{job}/mask.png"))
+            stored = json.loads((root / "jobs" / f"{job}.json").read_text())["settings"]
+            self.assertEqual((stored["maskImage"], stored["strength"], stored["width"]), (f"{job}/mask.png", 1.0, 1600))
+            painted.unlink()
+            listed = setup.library({"dataRoot": str(root)})["artifacts"][0]["settings"]
+            self.assertEqual(Path(listed["maskImage"]).read_bytes(), b"mask bytes")
+            # Without its picture, a painted area is not offered for reuse.
+            (root / "artifacts" / job / "source.jpg").unlink()
+            self.assertNotIn("maskImage", setup.resolve_settings(root, json.loads((root / "jobs" / f"{job}.json").read_text())))
+
+    def test_painted_area_is_validated_before_any_record(self):
+        with tempfile.TemporaryDirectory() as folder:
+            picture, painted = Path(folder) / "photo.png", Path(folder) / "painted.png"
+            picture.write_bytes(b"png")
+            painted.write_bytes(b"png")
+            (Path(folder) / "painted.jpg").write_bytes(b"jpg")
+            for bad in [{"maskImage": str(painted)}, {"sourceImage": str(picture), "maskImage": "painted.png"},
+                        {"sourceImage": str(picture), "maskImage": str(Path(folder) / "painted.jpg")},
+                        {"sourceImage": str(picture), "maskImage": str(Path(folder) / "gone.png")}]:
+                with self.subTest(bad=bad), self.assertRaises(ValueError):
+                    setup.generate(ROOT, dict(bad, prompt="house", dataRoot=str(Path(folder) / "data")), threading.Event(), lambda _: None)
+            self.assertFalse((Path(folder) / "data").exists())
+            self.assertNotIn("maskImage", setup.validate_generation({"prompt": "house", "sourceImage": str(picture), "maskImage": ""}))
+
+    def test_painted_region_has_context_supported_proportions_and_stays_inside(self):
+        for bounds, size in [((100, 100, 140, 140), (2000, 1500)), ((1900, 1400, 2000, 1500), (2000, 1500)),
+                             ((10, 10, 20, 20), (300, 200)), ((0, 0, 4000, 100), (4000, 3000)), ((50, 600, 400, 900), (1000, 3000))]:
+            with self.subTest(bounds=bounds, size=size):
+                box, shape = setup.edit_region(bounds, size)
+                self.assertTrue(0 <= box[0] <= bounds[0] and 0 <= box[1] <= bounds[1] and bounds[2] <= box[2] <= size[0] and bounds[3] <= box[3] <= size[1])
+                self.assertIn(shape, setup.SIZES)
+                self.assertEqual(shape, setup.shape_for(box[2] - box[0], box[3] - box[1]))
+        # A small painted spot in a large picture is redrawn from a close-up, not the whole picture.
+        self.assertEqual(setup.edit_region((100, 100, 140, 140), (2000, 1500)), ((0, 0, 384, 384), (512, 512)))
+        self.assertTrue(setup.mask_matches((512, 384), (4000, 3000)) and setup.mask_matches((300, 200), (300, 200)))
+        self.assertFalse(setup.mask_matches((384, 512), (4000, 3000)))
+
     def test_upscale_is_a_library_job_with_its_own_log(self):
         with tempfile.TemporaryDirectory() as folder:
             app, root = fake_app(folder), Path(folder) / "data"

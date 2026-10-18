@@ -82,6 +82,38 @@ def enlarge(payload, data_root, weights, gpu, torch, upscaler):
     return result
 
 
+def painted_change(payload):
+    """The starting picture, its painted area at full size, and the region the model redraws."""
+    from PIL import Image, ImageOps
+    with Image.open(payload["sourceImage"]) as opened:
+        picture = ImageOps.exif_transpose(opened).convert("RGB")
+    if max(picture.size) > inference_setup.EDIT_MAX_SIDE:
+        raise ValueError(f"Pictures up to {inference_setup.EDIT_MAX_SIDE} pixels on the longest side can be changed by painting; "
+                         f"this one is {picture.width} × {picture.height}. Make a smaller copy first.")
+    with Image.open(payload["maskImage"]) as opened:
+        cells = opened.convert("L")
+    if not inference_setup.mask_matches(cells.size, picture.size):
+        raise ValueError("The painted area does not match this picture. Paint it again.")
+    mask = cells.resize(picture.size, Image.Resampling.BILINEAR).point(lambda value: 255 if value > 127 else 0)
+    bounds = mask.getbbox()
+    if bounds is None:
+        raise ValueError("Paint over the part of the picture you want to change.")
+    box, shape = inference_setup.edit_region(bounds, picture.size)
+    return picture, mask, box, shape
+
+
+def blend_change(picture, mask, box, drawn):
+    """Pastes the redrawn region back with a softened edge; unpainted pixels keep their original values."""
+    from PIL import Image, ImageFilter
+    size = (box[2] - box[0], box[3] - box[1])
+    region = drawn.resize(size, Image.Resampling.LANCZOS)
+    feather = max(2, round(max(size) / 96))
+    edge = mask.crop(box).filter(ImageFilter.MaxFilter(2 * feather + 1)).filter(ImageFilter.GaussianBlur(feather))
+    result = picture.copy()
+    result.paste(region, box[:2], edge)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
@@ -111,8 +143,8 @@ def main():
         import torch
         import upscaler
         from diffusers import (DPMSolverMultistepScheduler, EulerAncestralDiscreteScheduler,
-                               StableDiffusionImg2ImgPipeline, StableDiffusionPipeline)
-        from PIL import Image, ImageOps, ImageStat
+                               StableDiffusionImg2ImgPipeline, StableDiffusionInpaintPipeline, StableDiffusionPipeline)
+        from PIL import Image, ImageFilter, ImageOps, ImageStat
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is unavailable. Check your NVIDIA driver; this profile requires an NVIDIA GPU.")
         # The parent sets CUDA_DEVICE_ORDER=PCI_BUS_ID, so device 0 is the GPU its preflight inspected.
@@ -127,9 +159,11 @@ def main():
             emit("result", enlarge(payload, args.data_root, upscaler_weights, gpu, torch, upscaler))
             return
         source = payload.get("sourceImage") if args.operation == "generate" else None
+        painted = painted_change(payload) if source and payload.get("maskImage") else None  # Checked before the slow load.
         progress("Loading Stable Diffusion 1.5")
-        # The same weights serve both modes; image-to-image starts from the user's picture.
-        pipeline_class = StableDiffusionImg2ImgPipeline if source else StableDiffusionPipeline
+        # The same weights serve every mode: image-to-image starts from the user's picture, and a painted
+        # change redraws only the painted region (Diffusers blends the standard 4-channel UNet's latents).
+        pipeline_class = (StableDiffusionInpaintPipeline if painted else StableDiffusionImg2ImgPipeline) if source else StableDiffusionPipeline
         pipe = pipeline_class.from_pretrained(str(model), torch_dtype=torch.float32,
             variant="fp16", use_safetensors=True, local_files_only=True)
         pipe.enable_model_cpu_offload()
@@ -149,7 +183,13 @@ def main():
             raise ValueError("Unknown sampler: " + str(sampler)[:40])
         width, height = settings.get("width", 512), settings.get("height", 512)
         extra = {}
-        if source:
+        if painted:
+            picture, mask, box, (width, height) = painted
+            # A slightly grown mask lets the model redraw the edge it will be blended across.
+            region_mask = mask.crop(box).resize((width, height), Image.Resampling.BILINEAR).filter(ImageFilter.MaxFilter(9))
+            extra = dict(image=picture.crop(box).resize((width, height), Image.Resampling.LANCZOS), mask_image=region_mask,
+                         width=width, height=height, strength=settings["strength"])
+        elif source:
             with Image.open(source) as opened:
                 picture = ImageOps.exif_transpose(opened).convert("RGB")
             width, height = inference_setup.shape_for(*picture.size)
@@ -170,6 +210,9 @@ def main():
             raise RuntimeError("The model safety checker rejected the result. Try a different prompt.")
         if image.size != (width, height) or max(ImageStat.Stat(image).stddev) < 1:
             raise RuntimeError("Inference produced an empty or invalid image; the installation is not verified.")
+        if painted:
+            image = blend_change(picture, mask, box, image)
+            width, height = image.size
         if args.operation == "verify":
             # The upscaler shares this runtime; a small real enlargement proves it loads and runs here.
             progress("Testing the picture upscaler")

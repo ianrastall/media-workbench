@@ -45,8 +45,10 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
         if (allowSetup) tools.Add(Define("workbench_install_model", "Install/verify only the bundled SD 1.5 and upscaler profile. Can download several GiB and run GPU verification. Review the model license first; readiness is reported only after verification.", Schema(new { }), false, true));
         if (allowInference)
         {
-            tools.Add(Define("workbench_generate_image", "Generate a local SD 1.5 image using an already verified installation. Optional sourceJobId starts from a completed Library image; arbitrary input paths are not accepted.",
-                Schema(new { prompt = Text(), negativePrompt = Text(), seed = Integer(0, uint.MaxValue), steps = Integer(1, 50), guidanceScale = Number(1, 20), width = IntegerChoice(512, 768, 512, 768), height = IntegerChoice(512, 768, 512, 768), sampler = Choice("pndm", "dpmpp-2m", "euler-a"), sourceJobId = Text(32, "^[a-f0-9]{32}$"), strength = Number(0.05, 1) }, ["prompt"]), false));
+            tools.Add(Define("workbench_generate_image", "Generate a local SD 1.5 image using an already verified installation. Optional sourceJobId starts from a completed Library image; arbitrary input paths are not accepted. "
+                + "With sourceJobId, changeLeft/changeTop/changeWidth/changeHeight (fractions 0-1 of the picture, all four together) change only that rectangle and keep the rest of the picture at its full size; strength 1 replaces the area completely.",
+                Schema(new { prompt = Text(), negativePrompt = Text(), seed = Integer(0, uint.MaxValue), steps = Integer(1, 50), guidanceScale = Number(1, 20), width = IntegerChoice(512, 768, 512, 768), height = IntegerChoice(512, 768, 512, 768), sampler = Choice("pndm", "dpmpp-2m", "euler-a"), sourceJobId = Text(32, "^[a-f0-9]{32}$"), strength = Number(0.05, 1),
+                    changeLeft = Number(0, 1), changeTop = Number(0, 1), changeWidth = Number(0, 1), changeHeight = Number(0, 1) }, ["prompt"]), false));
             tools.Add(Define("workbench_upscale_image", "Upscale a completed Library image 2× or 4× with the verified Real-ESRGAN profile. The result is another Library image.",
                 Schema(new { sourceJobId = Text(32, "^[a-f0-9]{32}$"), scale = IntegerChoice(2, 4, 2, 4) }, ["sourceJobId"]), false));
         }
@@ -206,6 +208,46 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             ?? throw new InvalidDataException("That completed source image was not found in the selected data folder.");
     }
 
+    private async Task<GeneratedImage> GenerateAsync(JsonElement args, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        string[] area = ["changeLeft", "changeTop", "changeWidth", "changeHeight"];
+        int given = area.Count(name => args.TryGetProperty(name, out _));
+        if (given is > 0 and < 4) throw new ArgumentException("Give all four of changeLeft, changeTop, changeWidth, and changeHeight, or none.");
+        string? source = await SourceImage(args, false, cancellationToken);
+        string? mask = null;
+        if (given == 4)
+        {
+            if (source is null) throw new ArgumentException("A change area needs sourceJobId.");
+            var (width, height) = PngSize(source);
+            var canvas = MaskCanvas.ForPicture(width, height);
+            canvas.FillRectangle(GetNumber(args, "changeLeft", 0), GetNumber(args, "changeTop", 0), GetNumber(args, "changeWidth", 0), GetNumber(args, "changeHeight", 0));
+            string folder = Path.Combine(Path.GetTempPath(), "MediaWorkbench", "painted");
+            Directory.CreateDirectory(folder);
+            mask = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".png");
+            await File.WriteAllBytesAsync(mask, canvas.EncodePng(), cancellationToken);
+        }
+        try
+        {
+            return await service.GenerateAsync(dataRoot,
+                new(GetString(args, "prompt"), GetString(args, "negativePrompt"), args.TryGetProperty("seed", out var seed) ? seed.GetInt64() : 20261017,
+                    GetInt(args, "steps", 20), GetNumber(args, "guidanceScale", 7.5), GetInt(args, "width", 512), GetInt(args, "height", 512), GetString(args, "sampler", "pndm"),
+                    source, GetNumber(args, "strength", mask is null ? 0.6 : 1.0), MaskImage: mask), progress, cancellationToken);
+        }
+        finally
+        {
+            if (mask is not null) try { File.Delete(mask); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>Pixel size from a Library PNG's header; Library images are app-written PNGs without orientation metadata.</summary>
+    private static (int Width, int Height) PngSize(string path)
+    {
+        Span<byte> header = stackalloc byte[24];
+        using (var stream = File.OpenRead(path)) stream.ReadExactly(header);
+        if (header[12] != (byte)'I' || header[13] != (byte)'H' || header[14] != (byte)'D' || header[15] != (byte)'R') throw new InvalidDataException("The source image is not a PNG.");
+        return (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[16..]), System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[20..]));
+    }
+
     private async Task ExecuteAsync(JsonElement id, string name, JsonElement args, JsonElement? progressToken, CancellationToken cancellationToken)
     {
         var progress = new DirectProgress(update =>
@@ -219,7 +261,7 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             cancellationToken.ThrowIfCancellationRequested();
             object result = name switch
             {
-                "workbench_capabilities" => new { dataRoot, allowSetup, allowInference, model = "sd15-baseline", imageGenerationSupported = true, upscalingSupported = true, videoGenerationSupported = false, requiresVerifiedInstallation = true },
+                "workbench_capabilities" => new { dataRoot, allowSetup, allowInference, model = "sd15-baseline", imageGenerationSupported = true, partialImageChangesSupported = true, upscalingSupported = true, videoGenerationSupported = false, requiresVerifiedInstallation = true },
                 "workbench_health" => new { summary = await service.GetHealthAsync(cancellationToken) },
                 "workbench_installation_plan" => service.GetBaselinePlan(),
                 "workbench_model_status" => await service.GetInstallationAsync(dataRoot, cancellationToken),
@@ -228,10 +270,7 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
                 "workbench_search_models" => new { models = await service.SearchAsync(GetString(args, "query"), GetString(args, "task"), cancellationToken) },
                 "workbench_model_details" => await service.GetDetailsAsync(GetString(args, "repoId"), cancellationToken),
                 "workbench_install_model" when allowSetup => await service.InstallAsync(dataRoot, progress, cancellationToken),
-                "workbench_generate_image" when allowInference => await service.GenerateAsync(dataRoot,
-                    new(GetString(args, "prompt"), GetString(args, "negativePrompt"), args.TryGetProperty("seed", out var seed) ? seed.GetInt64() : 20261017,
-                        GetInt(args, "steps", 20), GetNumber(args, "guidanceScale", 7.5), GetInt(args, "width", 512), GetInt(args, "height", 512), GetString(args, "sampler", "pndm"),
-                        await SourceImage(args, false, cancellationToken), GetNumber(args, "strength", 0.6)), progress, cancellationToken),
+                "workbench_generate_image" when allowInference => await GenerateAsync(args, progress, cancellationToken),
                 "workbench_upscale_image" when allowInference => await service.UpscaleAsync(dataRoot, (await SourceImage(args, true, cancellationToken))!, GetInt(args, "scale", 4), progress, cancellationToken),
                 _ => throw new InvalidOperationException("Tool is disabled.")
             };

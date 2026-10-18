@@ -49,6 +49,8 @@ public partial class MainViewModel : ObservableObject
         UpscaleCommand = new AsyncRelayCommand(UpscaleAsync, () => !IsBusy && ModelReady && HasUpscaleSource);
         GoToCreateCommand = new RelayCommand(() => SelectedPage = "create");
         ClearStartingPictureCommand = new RelayCommand(() => SourceImagePath = "");
+        ClearPaintingCommand = new RelayCommand(() => { Mask?.Clear(); MaskVersion++; }, () => IsPainting);
+        StopPaintingCommand = new RelayCommand(StopPainting, () => IsPainting);
         ClearStorageCommand = new AsyncRelayCommand<string?>(ClearStorageAsync, area => !IsBusy && !string.IsNullOrEmpty(area));
         DataRootDraft = DataRoot;
         try
@@ -95,13 +97,28 @@ public partial class MainViewModel : ObservableObject
     public IReadOnlyList<string> SizeLabels { get; } = [.. GenerationSettings.Sizes.Select(size => size.Label)];
     public IReadOnlyList<string> SamplerLabels { get; } = [.. GenerationSettings.Samplers.Select(sampler => sampler.Label)];
     /// <summary>An optional picture to start from (image-to-image); empty for a description only.</summary>
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSourceImage), nameof(HasNoSourceImage), nameof(SourceImageName))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSourceImage), nameof(HasNoSourceImage), nameof(SourceImageName), nameof(IsChangingWholePicture))]
     public partial string SourceImagePath { get; set; } = "";
     public bool HasSourceImage => SourceImagePath.Length > 0;
     public bool HasNoSourceImage => !HasSourceImage;
     public string SourceImageName => HasSourceImage ? Path.GetFileName(SourceImagePath) : "";
     /// <summary>Index into <see cref="GenerationSettings.ChangeLevels"/>.</summary>
     [ObservableProperty] public partial int ChangeIndex { get; set; } = 1;
+    /// <summary>The painted part of the starting picture to change; null when the whole picture changes.</summary>
+    public MaskCanvas? Mask { get; private set; }
+    /// <summary>Whether Create changes only a painted part of the starting picture.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsChangingWholePicture)), NotifyCanExecuteChangedFor(nameof(ClearPaintingCommand), nameof(StopPaintingCommand))]
+    public partial bool IsPainting { get; private set; }
+    public bool IsChangingWholePicture => HasSourceImage && !IsPainting;
+    /// <summary>Increments whenever <see cref="Mask"/> changes so the view redraws it.</summary>
+    [ObservableProperty] public partial int MaskVersion { get; private set; }
+    /// <summary>Index into <see cref="MaskCanvas.BrushSizes"/>.</summary>
+    [ObservableProperty] public partial int BrushIndex { get; set; } = 1;
+    [ObservableProperty] public partial bool IsErasing { get; set; }
+    public IReadOnlyList<string> BrushLabels { get; } = [.. MaskCanvas.BrushSizes.Select(brush => brush.Label)];
+    /// <summary>Index into <see cref="GenerationSettings.PaintChangeLevels"/>; a painted area is replaced completely by default.</summary>
+    [ObservableProperty] public partial int PaintChangeIndex { get; set; } = 2;
+    public IReadOnlyList<string> PaintChangeLabels { get; } = [.. GenerationSettings.PaintChangeLevels.Select(level => level.Label)];
     /// <summary>The picture Tools will enlarge.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasUpscaleSource), nameof(UpscaleSourceName)), NotifyCanExecuteChangedFor(nameof(UpscaleCommand))]
     public partial string UpscaleSourcePath { get; set; } = "";
@@ -190,6 +207,8 @@ public partial class MainViewModel : ObservableObject
     public IAsyncRelayCommand UpscaleCommand { get; }
     public IRelayCommand GoToCreateCommand { get; }
     public IRelayCommand ClearStartingPictureCommand { get; }
+    public IRelayCommand ClearPaintingCommand { get; }
+    public IRelayCommand StopPaintingCommand { get; }
     public IAsyncRelayCommand InstallUpdateCommand { get; }
     /// <summary>Raised with a checksum-verified installer path once the user chose to update; the shell runs it and exits.</summary>
     public event Action<string>? InstallerReady;
@@ -286,9 +305,22 @@ public partial class MainViewModel : ObservableObject
         var sampler = GenerationSettings.Samplers[Math.Clamp(SamplerIndex, 0, GenerationSettings.Samplers.Length - 1)];
         string? source = HasSourceImage ? SourceImagePath : null;
         if (source is not null && !File.Exists(source)) throw new InvalidDataException("The starting picture is no longer there. Choose it again or remove it.");
-        var change = GenerationSettings.ChangeLevels[Math.Clamp(ChangeIndex, 0, GenerationSettings.ChangeLevels.Length - 1)];
-        var image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps,
-            Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source, change.Strength), ObserveProgress(), token);
+        bool painted = source is not null && IsPainting;
+        if (painted && Mask?.HasPaint != true) throw new InvalidDataException("Paint over the part of the picture to change, or select Change the whole picture.");
+        var change = painted ? GenerationSettings.PaintChangeLevels[Math.Clamp(PaintChangeIndex, 0, GenerationSettings.PaintChangeLevels.Length - 1)]
+            : GenerationSettings.ChangeLevels[Math.Clamp(ChangeIndex, 0, GenerationSettings.ChangeLevels.Length - 1)];
+        // The worker copies the painted area into the job; this temporary file is only the hand-over.
+        string? mask = painted ? WriteTemporaryMask(Mask!) : null;
+        GeneratedImage image;
+        try
+        {
+            image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps,
+                Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source, change.Strength, MaskImage: mask), ObserveProgress(), token);
+        }
+        finally
+        {
+            if (mask is not null) try { File.Delete(mask); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
         PreviewPath = image.ImagePath;
         LatestImage = image;
         ImageDescription = image.Description;
@@ -340,6 +372,47 @@ public partial class MainViewModel : ObservableObject
             if (Images.Count > LibraryPageSize) Images.RemoveAt(Images.Count - 1);
         }
     }
+    private static string WriteTemporaryMask(MaskCanvas mask)
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "MediaWorkbench", "painted");
+        Directory.CreateDirectory(folder);
+        string path = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".png");
+        File.WriteAllBytes(path, mask.EncodePng());
+        return path;
+    }
+
+    /// <summary>Starts painting over the starting picture, given its displayed (EXIF-oriented) pixel size.</summary>
+    public bool StartPainting(int pictureWidth, int pictureHeight)
+    {
+        if (!HasSourceImage || pictureWidth < 1 || pictureHeight < 1) { Notice = "Choose a starting picture first."; return false; }
+        Mask = MaskCanvas.ForPicture(pictureWidth, pictureHeight);
+        MaskVersion++;
+        IsPainting = true;
+        Notice = "Paint over the part to change, describe what should be there, and select Generate image. Everything else stays as it is.";
+        return true;
+    }
+
+    /// <summary>Paints or erases a stroke between two points given as fractions (0–1) of the picture.</summary>
+    public void PaintStroke(double x0, double y0, double x1, double y1)
+    {
+        if (!IsPainting || Mask is null) return;
+        Mask.Stroke(x0, y0, x1, y1, MaskCanvas.BrushSizes[Math.Clamp(BrushIndex, 0, MaskCanvas.BrushSizes.Length - 1)].Radius, IsErasing);
+        MaskVersion++;
+    }
+
+    private void StopPainting()
+    {
+        Mask = null;
+        IsPainting = false;
+        IsErasing = false;
+        MaskVersion++;
+    }
+
+    partial void OnSourceImagePathChanged(string value)
+    {
+        if (IsPainting) StopPainting(); // A painted area belongs to the picture it was painted on.
+    }
+
     partial void OnDataRootChanged(string value)
     {
         ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = "";
@@ -423,8 +496,21 @@ public partial class MainViewModel : ObservableObject
         GuidanceScale = Math.Clamp(settings.GuidanceScale, 1, 20);
         SizeIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Sizes, size => size.Width == settings.Width && size.Height == settings.Height));
         SamplerIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Samplers, sampler => sampler.Id == settings.Sampler));
+        if (IsPainting) StopPainting();
         SourceImagePath = settings.SourceImage is { } source && File.Exists(source) ? source : "";
-        ChangeIndex = NearestChange(settings.Strength);
+        if (HasSourceImage && settings.MaskImage is { } painted && File.Exists(painted))
+        {
+            try
+            {
+                Mask = MaskCanvas.DecodePng(File.ReadAllBytes(painted));
+                MaskVersion++;
+                IsPainting = true;
+                PaintChangeIndex = Array.IndexOf(GenerationSettings.PaintChangeLevels,
+                    GenerationSettings.PaintChangeLevels.MinBy(level => Math.Abs(level.Strength - settings.Strength)));
+            }
+            catch (InvalidDataException) { Notice = "The painted area of that image could not be read; paint it again."; }
+        }
+        else ChangeIndex = NearestChange(settings.Strength);
         SelectedPage = "create";
         return true;
     }

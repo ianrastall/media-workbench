@@ -18,6 +18,7 @@ public sealed partial class ShellView : UserControl
         ViewModel = viewModel;
         InitializeComponent();
         ViewModel.PropertyChanged += SyncNavigation;
+        ViewModel.PropertyChanged += RedrawMask;
         _ready = true;
     }
     private void Navigate(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -32,6 +33,87 @@ public sealed partial class ShellView : UserControl
         object? target = ViewModel.SelectedPage == "settings" ? Navigation.SettingsItem
             : Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(item => item.Tag?.ToString() == ViewModel.SelectedPage);
         if (target is not null && !ReferenceEquals(Navigation.SelectedItem, target)) Navigation.SelectedItem = target;
+    }
+    private Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap? _maskBitmap;
+    private Windows.Foundation.Point? _lastPaint;
+    private byte[] _maskPixels = [];
+    // Shows the painted cells as a translucent red layer sized to the mask's own grid.
+    private void RedrawMask(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName != nameof(MainViewModel.MaskVersion)) return;
+        if (ViewModel.Mask is not { } mask) { PaintOverlay.Source = _maskBitmap = null; return; }
+        if (_maskBitmap is null || _maskBitmap.PixelWidth != mask.Width || _maskBitmap.PixelHeight != mask.Height)
+        {
+            _maskBitmap = new(mask.Width, mask.Height);
+            _maskPixels = new byte[mask.Width * mask.Height * 4];
+            PaintSurface.Width = mask.Width;
+            PaintSurface.Height = mask.Height;
+            PaintOverlay.Source = _maskBitmap;
+        }
+        var cells = mask.Cells;
+        for (int index = 0; index < cells.Length; index++)
+        {
+            // Premultiplied BGRA: red at about 55% opacity where painted.
+            bool painted = cells[index] != 0;
+            _maskPixels[index * 4] = _maskPixels[index * 4 + 1] = painted ? (byte)32 : (byte)0;
+            _maskPixels[index * 4 + 2] = _maskPixels[index * 4 + 3] = painted ? (byte)140 : (byte)0;
+        }
+        using (var stream = System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsStream(_maskBitmap.PixelBuffer))
+            stream.Write(_maskPixels);
+        _maskBitmap.Invalidate();
+    }
+    private async void StartPainting(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            // The worker applies EXIF orientation, so the mask must follow the oriented size too.
+            var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(ViewModel.SourceImagePath);
+            using var stream = await file.OpenReadAsync();
+            var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);
+            ViewModel.StartPainting((int)decoder.OrientedPixelWidth, (int)decoder.OrientedPixelHeight);
+        }
+        catch (Exception ex) { ViewModel.Notice = "That picture could not be opened for painting: " + ex.Message; }
+    }
+    private Windows.Foundation.Point PaintPosition(Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        var position = args.GetCurrentPoint(PaintSurface).Position;
+        if (ViewModel.Mask is { } mask)
+        {
+            double diameter = 2 * MaskCanvas.BrushSizes[Math.Clamp(ViewModel.BrushIndex, 0, MaskCanvas.BrushSizes.Length - 1)].Radius * Math.Max(mask.Width, mask.Height);
+            BrushOutline.Width = BrushOutline.Height = diameter;
+            Canvas.SetLeft(BrushOutline, position.X - diameter / 2);
+            Canvas.SetTop(BrushOutline, position.Y - diameter / 2);
+            BrushOutline.Visibility = Visibility.Visible;
+        }
+        return new(position.X / PaintSurface.ActualWidth, position.Y / PaintSurface.ActualHeight);
+    }
+    private void PaintPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if (!ViewModel.IsPainting || PaintSurface.ActualWidth <= 0) return;
+        PaintSurface.CapturePointer(args.Pointer);
+        var point = PaintPosition(args);
+        _lastPaint = point;
+        ViewModel.PaintStroke(point.X, point.Y, point.X, point.Y);
+        args.Handled = true;
+    }
+    private void PaintMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if (!ViewModel.IsPainting || PaintSurface.ActualWidth <= 0) return;
+        var point = PaintPosition(args);
+        // Contact, not pointer capture, decides whether a stroke continues; gestures or window activation can take capture mid-stroke.
+        if (_lastPaint is not { } last || !args.GetCurrentPoint(PaintSurface).IsInContact) { _lastPaint = null; return; }
+        ViewModel.PaintStroke(last.X, last.Y, point.X, point.Y);
+        _lastPaint = point;
+        args.Handled = true;
+    }
+    private void PaintReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        _lastPaint = null;
+        PaintSurface.ReleasePointerCapture(args.Pointer);
+    }
+    private void PaintExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if (_lastPaint is null) BrushOutline.Visibility = Visibility.Collapsed;
     }
     private void RetryJob(object sender, RoutedEventArgs args) => ViewModel.RetryJobCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void UseImageSettings(object sender, RoutedEventArgs args) => ViewModel.UseImageSettingsCommand.Execute((sender as FrameworkElement)?.Tag as GeneratedImage);

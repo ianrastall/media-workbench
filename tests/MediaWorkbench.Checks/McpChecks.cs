@@ -104,6 +104,23 @@ static class McpChecks
         check(!generated.GetProperty("result").GetProperty("isError").GetBoolean()
             && workbench.LastGeneration is { Prompt: "café forest", Seed: 4294967295L, Steps: 5, Width: 768, Height: 512, GuidanceScale: 4.5, Sampler: "euler-a" }
             && workbench.DataRoots[^1] == root, "MCP passes generation settings and large seeds to the scoped service without alteration");
+        string sourcePicture = Path.Combine(root, "mcp source.png");
+        await File.WriteAllBytesAsync(sourcePicture, new MaskCanvas(300, 200).EncodePng(), token);
+        workbench.LibraryImage = RecordingWorkbench.Image(root) with { Id = new string('b', 32), ImagePath = sourcePicture };
+        Send(new { jsonrpc = "2.0", id = "partial", method = "tools/call", @params = new { name = "workbench_generate_image",
+            arguments = new { prompt = "a boat", sourceJobId = new string('b', 32), changeLeft = 0.5 } } });
+        var partial = (await Read()).GetProperty("result");
+        check(partial.GetProperty("isError").GetBoolean() && partial.GetProperty("content")[0].GetProperty("text").GetString()!.Contains("all four"),
+            "MCP rejects an incomplete change area");
+        Send(new { jsonrpc = "2.0", id = "area", method = "tools/call", @params = new { name = "workbench_generate_image",
+            arguments = new { prompt = "a boat", sourceJobId = new string('b', 32), changeLeft = 0.25, changeTop = 0.5, changeWidth = 0.5, changeHeight = 0.5 } } });
+        var area = (await Read()).GetProperty("result");
+        check(!area.GetProperty("isError").GetBoolean() && workbench.LastGeneration is { SourceImage: var areaSource, Strength: 1.0, MaskImage: { } areaMask }
+            && areaSource == sourcePicture && !File.Exists(areaMask) && workbench.LastMaskBytes is { } areaBytes
+            && MaskCanvas.DecodePng(areaBytes) is { Width: 300, Height: 200 } areaCells && areaCells.Cells.ToArray().Count(cell => cell != 0) == 15000
+            && areaCells.Cells[150 * 300 + 150] == 255 && areaCells.Cells[50 * 300 + 150] == 0,
+            "MCP turns a change area into a painted area shaped like the source image and removes the hand-over file");
+        workbench.LibraryImage = null;
         workbench.HealthStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         Send(new { jsonrpc = "2.0", id = "disconnect", method = "tools/call", @params = new { name = "workbench_health", arguments = new { } } });
         await workbench.HealthStarted.Task.WaitAsync(token);
