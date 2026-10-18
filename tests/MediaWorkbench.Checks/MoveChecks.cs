@@ -76,6 +76,25 @@ static class MoveChecks
         var olderVm = new MainViewModel(asking, older, new FakeUpdates(null));
         await olderVm.RefreshInstallationCommand.ExecuteAsync(null);
         check(!olderVm.NeedsDriveChoice, "A folder chosen in an earlier version counts as chosen");
+        // Drives the user excludes are never suggested, saved, or moved to.
+        var excluding = new MainViewModel(asking, new SettingsStore(Path.Combine(output, "drive-exclusions")), new FakeUpdates(null));
+        await excluding.RefreshStorageCommand.ExecuteAsync(null);
+        var big = excluding.Drives.Single(drive => drive.Root == @"Z:\");
+        excluding.ToggleDriveCommand.Execute(big);
+        check(excluding.Drives.Single(drive => drive.Root == @"Z:\").Excluded, "A drive can be marked never to use");
+        await excluding.RefreshInstallationCommand.ExecuteAsync(null);
+        check(!excluding.NeedsDriveChoice, "An excluded drive is never suggested before setup");
+        string before = excluding.DataRoot;
+        excluding.DataRootDraft = @"Z:\Media Workbench";
+        excluding.SaveSettingsCommand.Execute(null);
+        check(excluding.DataRoot == before && excluding.Notice.Contains("never to use Z:"), "Saving a folder on an excluded drive is refused");
+        await excluding.CheckMoveCommand.ExecuteAsync(null);
+        check(!excluding.HasMovePlan && !excluding.MoveDataCommand.CanExecute(null), "Moving to an excluded drive is refused before checking anything");
+        var exclusionsReloaded = new MainViewModel(asking, new SettingsStore(Path.Combine(output, "drive-exclusions")), new FakeUpdates(null));
+        await exclusionsReloaded.RefreshStorageCommand.ExecuteAsync(null);
+        exclusionsReloaded.ToggleDriveCommand.Execute(exclusionsReloaded.Drives.Single(drive => drive.Root == @"Z:\"));
+        check(!exclusionsReloaded.Drives.Single(drive => drive.Root == @"Z:\").Excluded && new SettingsStore(Path.Combine(output, "drive-exclusions")).Load().ExcludedDrives is null,
+            "Exclusions are remembered, and a drive can be allowed again");
         var drives = await new WorkbenchService(root, python).GetDrivesAsync(token);
         check(drives.Any(drive => string.Equals(drive.Root, here, StringComparison.OrdinalIgnoreCase) && drive.FreeBytes > 0 && drive.TotalBytes >= drive.FreeBytes)
             && drives.Count(drive => drive.IsSystem) <= 1, "The real drive list includes the checks' drive with its free space");

@@ -400,6 +400,7 @@
                                 <Button Content="Move now" Command="{x:Bind ViewModel.MoveDataCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             </InfoBar.ActionButton>
                         </InfoBar>
+                        <InfoBar Severity="Warning" IsClosable="False" IsOpen="{x:Bind ViewModel.HasExcludedDriveWarning, Mode=OneWay}" Message="{x:Bind ViewModel.ExcludedDriveWarning, Mode=OneWay}" />
                         <TextBlock Text="Drives on this computer" FontWeight="SemiBold" Visibility="{x:Bind ViewModel.HasDrives, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                         <ItemsControl ItemsSource="{x:Bind ViewModel.Drives}">
                             <ItemsControl.ItemTemplate>
@@ -410,7 +411,10 @@
                                             <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
                                             <TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="Use this drive" Tag="{x:Bind}" Click="UseDrive" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <Button Content="Use this drive" Tag="{x:Bind}" Click="UseDrive" Visibility="{x:Bind Allowed, Converter={StaticResource VisibleWhenTrue}}" />
+                                            <Button Content="{x:Bind ExclusionLabel}" Tag="{x:Bind}" Click="ToggleDrive" />
+                                        </StackPanel>
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

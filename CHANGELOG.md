@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.4 — 2026-10-18
+
+- **Choose the drive before the big download.** Settings lists the drives on this computer with their free space and type, and which one holds Windows. **Use this drive** fills in a folder there; you still choose whether to save it or move your data. If the data folder is still the default on a drive with less room than another, Create asks where Media Workbench should work before setup's first download, and waits until you keep the drive or choose another. Your choice is remembered.
+- **Never use a drive.** Mark a drive **Never use this drive** in Settings, and Media Workbench will not save or move its data there or suggest it. Settings warns if the current data folder is on such a drive.
+- **Remove the old copy after a move.** After moving your data, Settings offers **Remove the old copy…**, also after a restart. It deletes only the files the new folder holds unchanged; anything that differs or was added later stays, and the app says how many files were kept.
+
 ## 0.3.0-alpha.3 — 2026-10-18
 
 - **Move your data to another folder or drive.** Type a new folder in Settings and select **Move my data there…**. Media Workbench first says how much it will copy, how much room the new drive has, and anything that prevents the move (the folder is not empty, there is not enough space, or the new folder is inside the current one). **Move now** copies your pictures, videos, models and setup, checks every copied file against the original, and only then switches to the new folder, so nothing has to download or set up again.

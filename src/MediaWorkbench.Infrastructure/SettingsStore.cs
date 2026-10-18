@@ -38,5 +38,7 @@ public sealed class SettingsStore(string stateRoot) : ISettingsStore
         if (string.Equals(path, drive, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Choose a folder inside a drive, rather than the entire drive.");
         if (settings.LastSearch is null || settings.LastSearch.Length > 200) throw new InvalidDataException("Search is too long.");
+        if (settings.ExcludedDrives is { } excluded && (excluded.Length > 64 || excluded.Any(root => root is null || root.Length > 260 || !Path.IsPathFullyQualified(root))))
+            throw new InvalidDataException("The list of drives not to use is invalid.");
     }
 }

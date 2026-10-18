@@ -2,10 +2,14 @@ namespace MediaWorkbench.Core;
 
 /// <summary>CheckForUpdates defaults to on for settings saved before it existed. Setup's download caches are
 /// removed once it passes its test unless KeepDownloadCaches is set.</summary>
-/// <summary>PendingMove names the destination of a data-folder move in progress, so a crash's half-made copy is removed at the next start.</summary>
-/// <summary>DataRootChosen records that the user picked (or kept) the data folder's location, so setup does not ask again.</summary>
+/// <summary>
+/// PendingMove names the destination of a data-folder move in progress, so a crash's half-made copy is removed at the next start.
+/// DataRootChosen records that the user picked (or kept) the data folder's location, so setup does not ask again. MovedFrom is
+/// the previous data folder after a move, kept until the user removes it. ExcludedDrives lists drive roots (such as D:\)
+/// the user never wants Media Workbench to work on.
+/// </summary>
 public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true, bool KeepDownloadCaches = false,
-    string? PendingMove = null, bool DataRootChosen = false, string? MovedFrom = null)
+    string? PendingMove = null, bool DataRootChosen = false, string? MovedFrom = null, string[]? ExcludedDrives = null)
 {
     public static AppSettings Default(string stateRoot) => new(1, Path.Combine(stateRoot, "Data"), "stable-diffusion");
 }
@@ -156,13 +160,16 @@ public sealed record DriveStatus(long FreeBytes, long TotalBytes, string DriveKi
 }
 
 /// <summary>A drive the data folder could go on, as Settings offers it. Kind as for <see cref="DriveStatus"/>.</summary>
-public sealed record DriveChoice(string Root, string Label, long FreeBytes, long TotalBytes, string DriveKind, bool IsSystem)
+public sealed record DriveChoice(string Root, string Label, long FreeBytes, long TotalBytes, string DriveKind, bool IsSystem, bool Excluded = false)
 {
+    public bool Allowed => !Excluded;
+    public string ExclusionLabel => Excluded ? "Allow this drive" : "Never use this drive";
     /// <summary>The folder offered on this drive.</summary>
     public string Folder => System.IO.Path.Combine(Root, "Media Workbench");
     public string Title => Label.Length > 0 ? $"{Root} {Label}" : Root;
     public string Detail => $"{StorageSnapshot.Format(FreeBytes)} free of {StorageSnapshot.Format(TotalBytes)} · " +
-        new DriveStatus(FreeBytes, TotalBytes, DriveKind).KindText + (IsSystem ? " · Windows is on this drive" : "");
+        new DriveStatus(FreeBytes, TotalBytes, DriveKind).KindText + (IsSystem ? " · Windows is on this drive" : "") +
+        (Excluded ? " · You chose never to use it for Media Workbench" : "");
 }
 
 /// <summary>What removing a moved folder's old copy did; kept files had no identical copy in the new folder.</summary>

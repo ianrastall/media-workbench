@@ -1,8 +1,8 @@
 # Initial alpha validation
 
-## Drive choice before setup and removing the old copy (unreleased)
+## Drive choice, never-use drives and removing the old copy (0.3.0-alpha.4)
 
-18 October 2026, Windows 11, development machine. `scripts/check.ps1` passed: 38 Rust tests, 202 Python tests, 253 C# checks; `scripts/build.ps1` passed with zero warnings.
+18 October 2026, Windows 11, development machine. `scripts/check.ps1` passed: 38 Rust tests, 202 Python tests, 258 C# checks (the last five cover never-use drives: marking, no suggestion before setup, refused save, refused move check, remembered and allowed again); `scripts/build.ps1` passed with zero warnings.
 
 | Check | Result |
 | --- | --- |

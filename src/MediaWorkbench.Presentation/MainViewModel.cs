@@ -40,6 +40,7 @@ public partial class MainViewModel : ObservableObject
         UseDriveCommand = new RelayCommand<DriveChoice?>(UseDrive, drive => drive is not null && !IsBusy);
         KeepDataDriveCommand = new RelayCommand(KeepDataDrive, () => !IsBusy);
         RemoveOldCopyCommand = new AsyncRelayCommand(RemoveOldCopyAsync, () => !IsBusy && HasOldCopy);
+        ToggleDriveCommand = new RelayCommand<DriveChoice?>(ToggleDrive, drive => drive is not null && !IsBusy);
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
         GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
@@ -80,6 +81,7 @@ public partial class MainViewModel : ObservableObject
             KeepDownloadCaches = saved.KeepDownloadCaches;
             _pendingMove = saved.PendingMove;
             _movedFrom = saved.MovedFrom;
+            _excludedDrives = [.. saved.ExcludedDrives ?? []];
             ShowOldCopy();
             // Earlier versions did not record the choice; a folder other than the default was chosen on purpose.
             _dataRootChosen = saved.DataRootChosen || !string.Equals(saved.DataRoot, DefaultDataRoot, StringComparison.OrdinalIgnoreCase);
@@ -295,6 +297,41 @@ public partial class MainViewModel : ObservableObject
     public IRelayCommand<DriveChoice?> UseDriveCommand { get; }
     public IRelayCommand KeepDataDriveCommand { get; }
     public IAsyncRelayCommand RemoveOldCopyCommand { get; }
+    public IRelayCommand<DriveChoice?> ToggleDriveCommand { get; }
+    private List<string> _excludedDrives = [];
+    /// <summary>The data folder is on a drive the user chose never to use.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasExcludedDriveWarning))] public partial string ExcludedDriveWarning { get; private set; } = "";
+    public bool HasExcludedDriveWarning => ExcludedDriveWarning.Length > 0;
+
+    /// <summary>The excluded drive holding <paramref name="folder"/>, or null. Drives are identified by their root, such as D:\.</summary>
+    private string? ExcludedRoot(string folder)
+    {
+        string? root = Path.GetPathRoot(Path.GetFullPath(folder));
+        return root is not null && _excludedDrives.Contains(root, StringComparer.OrdinalIgnoreCase) ? root : null;
+    }
+
+    private static string ExcludedMessage(string root) =>
+        $"You chose never to use {root} for Media Workbench. Choose a folder on another drive, or select Allow this drive under Drives on this computer.";
+
+    private void ShowExcludedDrive() =>
+        ExcludedDriveWarning = ExcludedRoot(DataRoot) is { } root
+            ? $"The data folder is on {root}, which you chose never to use. Select Move my data there… with a folder on another drive to move it."
+            : "";
+
+    /// <summary>Marks a drive as never to be used for Media Workbench, or allows it again.</summary>
+    private void ToggleDrive(DriveChoice? drive)
+    {
+        if (drive is null) return;
+        var previous = _excludedDrives.ToList();
+        if (drive.Excluded) _excludedDrives.RemoveAll(root => string.Equals(root, drive.Root, StringComparison.OrdinalIgnoreCase));
+        else _excludedDrives.Add(drive.Root);
+        try { _settings.Save(CurrentSettings()); }
+        catch (Exception ex) { _excludedDrives = previous; Notice = "Could not save the drive choice: " + ex.Message; return; }
+        int index = Drives.IndexOf(drive);
+        if (index >= 0) Drives[index] = drive with { Excluded = !drive.Excluded };
+        ShowExcludedDrive();
+        Notice = drive.Excluded ? $"{drive.Root} can be used again." : $"Media Workbench will not put its data on {drive.Root}.";
+    }
     private string? _movedFrom;
     /// <summary>After a move, the old data folder is kept until the user removes it here.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasOldCopy))] public partial string OldCopyText { get; private set; } = "";
@@ -817,7 +854,8 @@ public partial class MainViewModel : ObservableObject
         ShowStorage(await _service.GetStorageAsync(DataRoot, token));
         await UpdateLocations(token);
         Drives.Clear();
-        foreach (var drive in await _service.GetDrivesAsync(token)) Drives.Add(drive);
+        foreach (var drive in await _service.GetDrivesAsync(token)) Drives.Add(drive with { Excluded = ExcludedRoot(drive.Root) is not null });
+        ShowExcludedDrive();
         OnPropertyChanged(nameof(HasDrives));
     });
 
@@ -1106,6 +1144,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             if (!Path.IsPathFullyQualified(DataRootDraft)) throw new InvalidDataException("Choose an absolute data folder.");
+            if (ExcludedRoot(DataRootDraft) is { } excluded) throw new InvalidDataException(ExcludedMessage(excluded));
             _dataRootChosen = true; // Saving a folder is choosing where Media Workbench works.
             _movedFrom = null; // An old copy relates only to the folder it was moved to.
             var value = CurrentSettings(Path.GetFullPath(DataRootDraft));
@@ -1113,6 +1152,7 @@ public partial class MainViewModel : ObservableObject
             DataRoot = DataRootDraft = value.DataRoot;
             DriveChoiceText = "";
             ShowOldCopy();
+            ShowExcludedDrive();
             Notice = "Settings saved. Models, generation, and Library now use this data folder.";
             Record("Storage settings saved");
         }
@@ -1120,7 +1160,8 @@ public partial class MainViewModel : ObservableObject
     }
 
     private AppSettings CurrentSettings(string? dataRoot = null) =>
-        new(1, dataRoot ?? DataRoot, SearchQuery, CheckForUpdates, KeepDownloadCaches, _pendingMove, _dataRootChosen, _movedFrom);
+        new(1, dataRoot ?? DataRoot, SearchQuery, CheckForUpdates, KeepDownloadCaches, _pendingMove, _dataRootChosen, _movedFrom,
+            _excludedDrives.Count == 0 ? null : [.. _excludedDrives]);
 
     private void ShowOldCopy()
     {
@@ -1149,6 +1190,7 @@ public partial class MainViewModel : ObservableObject
     private void UseDrive(DriveChoice? drive)
     {
         if (drive is null) return;
+        if (drive.Excluded) { Notice = ExcludedMessage(drive.Root); return; }
         DataRootDraft = drive.Folder;
         Notice = $"Select Save settings to start using {drive.Folder}, or Move my data there… to bring what you already have.";
     }
@@ -1157,6 +1199,8 @@ public partial class MainViewModel : ObservableObject
     private void KeepDataDrive()
     {
         _dataRootChosen = true;
+        if (ExcludedRoot(DataRoot) is { } root) _excludedDrives.RemoveAll(item => string.Equals(item, root, StringComparison.OrdinalIgnoreCase));
+        ShowExcludedDrive();
         try { _settings.Save(CurrentSettings()); } catch (Exception ex) { Notice = "Could not save the choice: " + ex.Message; }
         DriveChoiceText = "";
         InstallCommand.NotifyCanExecuteChanged();
@@ -1168,7 +1212,7 @@ public partial class MainViewModel : ObservableObject
         if (_dataRootChosen || ModelReady || !string.Equals(DataRoot, DefaultDataRoot, StringComparison.OrdinalIgnoreCase)) { DriveChoiceText = ""; return; }
         var drives = await _service.GetDrivesAsync(token);
         var current = drives.FirstOrDefault(drive => DataRoot.StartsWith(drive.Root, StringComparison.OrdinalIgnoreCase));
-        var roomier = drives.Where(drive => drive != current && drive.DriveKind != "network" && drive.FreeBytes > (current?.FreeBytes ?? 0))
+        var roomier = drives.Where(drive => drive != current && drive.DriveKind != "network" && ExcludedRoot(drive.Root) is null && drive.FreeBytes > (current?.FreeBytes ?? 0))
             .OrderByDescending(drive => drive.FreeBytes).FirstOrDefault();
         DriveChoiceText = current is null || roomier is null ? ""
             : $"Setup will download about 5 GB and needs about 20 GB in the data folder, which is on {current.Root} ({current.Detail}). " +
@@ -1189,6 +1233,7 @@ public partial class MainViewModel : ObservableObject
     private Task CheckMoveAsync() => RunAsync("Checking the new location…", async token =>
     {
         string source = DataRoot, target = DraftFolder() ?? throw new InvalidDataException("Choose an absolute data folder.");
+        if (ExcludedRoot(target) is { } excluded) { Notice = ExcludedMessage(excluded); return; }
         var plan = await _service.PlanDataMoveAsync(source, target, token);
         if (source != DataRoot || target != DraftFolder()) return; // The choice changed meanwhile.
         _movePlan = plan; _moveTarget = target; _moveSource = source;
@@ -1220,6 +1265,7 @@ public partial class MainViewModel : ObservableObject
         DataRoot = DataRootDraft = target;
         ClearMovePlan();
         ShowOldCopy();
+        ShowExcludedDrive();
         Notice = $"Moved {StorageSnapshot.Format(plan.Bytes)} to {target} and checked every file. Media Workbench now uses the new folder. " +
             $"The old folder ({source}) was not changed: once you have checked the new one, select Remove the old copy in Settings. " +
             "If you use the local MCP host, update its --data-root.";
