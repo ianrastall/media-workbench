@@ -248,6 +248,23 @@ var timed = System.Text.Json.JsonSerializer.Deserialize<GeneratedImage>("""
 Check(timed.SavedNotice == "Image saved in 14.1 seconds of inference, after 48.4 seconds loading the model. Loading the model took 48 seconds. The data folder is on a hard disk."
     && RecordingWorkbench.Image(nextRoot).SavedNotice == "Image saved in 1.0 seconds of inference." && vm.Notice == RecordingWorkbench.Image(nextRoot).SavedNotice,
     "Create reports model loading apart from inference, with the plain reason when loading was slow, and older records keep their notice");
+// Stable Diffusion XL: an optional setup that joins the Model chooser with its own sizes once tested.
+Check(vm.NeedsXlSetup && !vm.ModelChoices.Any(model => model.IsXl) && vm.AddedModels.All(model => !model.IsXl), "Stable Diffusion XL is offered for setup and is not listed as an added model");
+await vm.InstallXlCommand.ExecuteAsync(null);
+Check(workbench.XlInstalls == 1 && vm.XlReady && !vm.NeedsXlSetup, "Setting up Stable Diffusion XL tests it once" + $" ({workbench.XlInstalls}, {vm.XlReady}, {vm.NeedsXlSetup}, {vm.Notice})");
+Check(vm.SelectedModelId == ModelChoice.XlId && vm.SizeLabels[0].Contains("1024") && vm.Notice.Contains("Choose it under Model"),
+    "Setting up Stable Diffusion XL selects it and offers its larger shapes" + $" ({vm.SelectedModelId}, {vm.SizeLabels[0]}, {vm.Notice})");
+vm.SizeIndex = 2;
+await vm.GenerateCommand.ExecuteAsync(null);
+Check(workbench.LastGeneration is { Model: ModelChoice.XlId, Width: 1216, Height: 832 }, "Pictures with Stable Diffusion XL use its sizes");
+vm.CreateKindIndex = 1;
+Check(vm.SizeLabels[0].Contains("512"), "Videos keep Stable Diffusion 1.5's shapes even while XL is chosen for pictures");
+vm.CreateKindIndex = 0;
+vm.UseImageSettingsCommand.Execute(RecordingWorkbench.Image(nextRoot) with { Settings = new("castle", "", 3, 20, Width: 832, Height: 1216, Model: ModelChoice.XlId) });
+Check(vm.SelectedModelId == ModelChoice.XlId && vm.SizeIndex == 1, "Use settings restores an XL picture's model before its shape");
+await vm.RemoveXlCommand.ExecuteAsync(null);
+Check(!vm.XlReady && vm.SelectedModelId == ModelChoice.BuiltInId && vm.SizeLabels[0].Contains("512") && vm.Notice.Contains("were kept"),
+    "Removing Stable Diffusion XL returns to Stable Diffusion 1.5 and its shapes");
 // Short videos: chosen in Create, set up once, then made with the shared description and Advanced options.
 vm.CreateKindIndex = 1;
 Check(vm.IsVideoMode && vm.NeedsVideoSetup && !vm.GenerateVideoCommand.CanExecute(null) && vm.PromptHeader == "Describe the video" && vm.ShowsShape,

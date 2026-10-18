@@ -321,6 +321,8 @@ def listing(app, payload):
     models = [dict(id=BUILT_IN, name=BUILT_IN_NAME, status=base.get("status", "not_installed"),
                    message=str(base.get("message", "")), format="bundled", bytes=0, builtIn=True, ownVae=True,
                    verifiedUtc=str(base.get("verifiedUtc", "")), sourceName="")]
+    import sdxl  # Local import: sdxl imports inference_setup, which imports this module lazily.
+    models.append(sdxl.entry(app, root))
     models += [entry(app, root, record, base_ready) for record in imported_records(root)]
     return {"models": models}
 

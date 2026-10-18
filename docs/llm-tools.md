@@ -41,11 +41,12 @@ For source development, `scripts/build.ps1` also copies the console host beside 
 | `workbench_model_status` | Default | Actual ready/not-installed/needs-verification state; normal idle crash recovery |
 | `workbench_video_status` | Default | Whether short videos are set up and still verified here, with the tested settings |
 | `workbench_storage` | Default | Storage inventory, with no deletion |
-| `workbench_models` | Default | The bundled SD 1.5 (`sd15-baseline`) and SD 1.5-family models the user added in the app, each with its actual tested status; only `ready` models can generate |
+| `workbench_models` | Default | The bundled SD 1.5 (`sd15-baseline`), the optional Stable Diffusion XL (`sdxl-base`), and SD 1.5-family models the user added in the app, each with its actual tested status; only `ready` models can generate |
 | `workbench_library` | Default | Literal prompt/seed/job-ID search, image-type filter, offset and 1–48-image pages, unfinished-job diagnostics; `kind` `video` lists videos, which return `videoPath` (MP4) and `imagePath` (first frame) |
 | `workbench_search_models` | Default, online | Public Hub metadata; results do not imply installation support |
 | `workbench_model_details` | Default, online | Public repository/revision/license/files |
 | `workbench_install_model` | `--allow-setup` | Bundled SD 1.5/Real-ESRGAN only, through native planning and file/runtime/GPU verification |
+| `workbench_install_xl` | `--allow-setup` | Pinned Stable Diffusion XL base 1.0 (6.9 GB, CreativeML Open RAIL++-M): native file verification and a real 1024 × 1024 GPU test; then `workbench_generate_image` accepts `model` `sdxl-base` with its sizes (1024 × 1024, 832 × 1216, 1216 × 832) |
 | `workbench_install_video` | `--allow-setup` | Pinned AnimateDiff motion adapter (1.7 GB): native file verification and a real 16-frame GPU test encoded to MP4; needs a verified SD 1.5 installation |
 | `workbench_generate_image` | `--allow-inference` | Prompt/negative prompt/seed/steps/size/guidance/sampler; optional `sourceJobId` and strength for image-to-image; with `sourceJobId`, `changeLeft`/`changeTop`/`changeWidth`/`changeHeight` (fractions of the picture, all four together) change only that rectangle, strength 1 by default; optional `model` names a ready model from `workbench_models` |
 | `workbench_upscale_image` | `--allow-inference` | Completed `sourceJobId`, scale 2 or 4; saves a new Library result |

@@ -246,7 +246,7 @@ class ImportTests(unittest.TestCase):
         with self.assertRaises(setup.SetupError):
             self.add(checkpoint(self.folder / "broken.safetensors"), inference=fails)
         self.assertEqual(list((self.root / "models/imported").iterdir()), [])
-        self.assertEqual(list(self.listed()), [models.BUILT_IN])
+        self.assertEqual(list(self.listed()), [models.BUILT_IN, "sdxl-base"])
 
     def test_cancelled_copy_keeps_nothing(self):
         self.cancel.set()
@@ -341,7 +341,7 @@ class ImportTests(unittest.TestCase):
         summary = storage.summary({"dataRoot": str(self.root)}, app=ROOT)
         self.assertGreater({item["id"]: item["bytes"] for item in summary["items"]}["imported"], 70 * 1024**2)
         result = models.remove(self.app, {"dataRoot": str(self.root), "modelId": added["id"]})
-        self.assertEqual([item["id"] for item in result["models"]], [models.BUILT_IN])
+        self.assertEqual([item["id"] for item in result["models"]], [models.BUILT_IN, "sdxl-base"])
         self.assertTrue(Path(image["imagePath"]).is_file() and (self.root / "jobs" / (image["id"] + ".json")).is_file())
         self.assertEqual(result["models"][0]["status"], "ready")
         with self.assertRaises(ValueError):

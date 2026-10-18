@@ -84,7 +84,7 @@ try {
     if ($taskStorage.isError -or $taskStorage.structuredContent.items.Count -ne 8 -or $taskStorage.structuredContent.freeBytes -le 0) { throw 'Published MCP native storage check failed.' }
     $taskMcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"workbench_models","arguments":{}}}')
     $taskModels = (Read-McpSmokeResponse).result
-    if ($taskModels.isError -or $taskModels.structuredContent.models[0].id -ne 'sd15-baseline' -or $taskModels.structuredContent.models.Count -ne 1) { throw 'Published MCP model listing failed.' }
+    if ($taskModels.isError -or $taskModels.structuredContent.models[0].id -ne 'sd15-baseline' -or $taskModels.structuredContent.models.Count -ne 2 -or $taskModels.structuredContent.models[1].id -ne 'sdxl-base') { throw 'Published MCP model listing failed.' }
     $taskMcp.StandardInput.Close()
     if (-not $taskMcp.WaitForExit(30000) -or $taskMcp.ExitCode -ne 0) { throw 'Published MCP host did not exit cleanly.' }
     Write-Output 'PASS: published MCP host, permissions, and worker'

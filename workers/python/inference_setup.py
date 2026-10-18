@@ -26,6 +26,9 @@ UPSCALER = "realesrgan-x4plus"
 SETUP_ACTIVE = ["preparing", "runtime", "downloading", "verifying"]
 # Output sizes and samplers offered for SD 1.5; verification itself always runs the 512 x 512 default.
 SIZES = [(512, 512), (512, 768), (768, 512)]
+# Stable Diffusion XL, an optional verified setup, has its own trained sizes and model ID.
+XL_MODEL = "sdxl-base"
+XL_SIZES = [(1024, 1024), (832, 1216), (1216, 832)]
 SAMPLERS = ["pndm", "dpmpp-2m", "euler-a"]
 SOURCE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 SOURCE_MAX_BYTES = 50 * 1024**2
@@ -601,11 +604,13 @@ def validate_generation(payload):
         raise ValueError("Steps must be an integer from 1 to 50")
     if type(guidance) not in (int, float) or not 1 <= guidance <= 20:
         raise ValueError("Guidance must be a number from 1 to 20")
-    if not all(type(side) is int for side in size) or size not in SIZES:
-        raise ValueError("Size must be 512 × 512, 512 × 768, or 768 × 512")
+    xl = model == XL_MODEL
+    if not all(type(side) is int for side in size) or size not in (XL_SIZES if xl else SIZES):
+        raise ValueError("Size must be 1024 × 1024, 832 × 1216, or 1216 × 832 for Stable Diffusion XL" if xl
+                         else "Size must be 512 × 512, 512 × 768, or 768 × 512")
     if sampler not in SAMPLERS:
         raise ValueError("Sampler must be one of: " + ", ".join(SAMPLERS))
-    if model != RECIPE and not job_id_valid(model):
+    if model not in (RECIPE, XL_MODEL) and not job_id_valid(model):
         raise ValueError("Choose one of the listed models")
     settings = {"prompt": prompt.strip(), "negativePrompt": negative, "seed": seed, "steps": steps,
                 "width": size[0], "height": size[1], "guidanceScale": round(float(guidance), 2), "sampler": sampler,
@@ -645,10 +650,11 @@ def validate_upscale(payload):
     return {"sourceImage": str(validate_picture(payload.get("sourceImage"))), "scale": scale}
 
 
-def shape_for(width, height):
-    """The supported shape closest to a picture's proportions."""
+def shape_for(width, height, xl=False):
+    """The supported shape closest to a picture's proportions (Stable Diffusion XL's when `xl`)."""
     ratio = width / height
-    return (768, 512) if ratio >= 1.25 else (512, 768) if ratio <= 0.8 else (512, 512)
+    square, portrait, landscape = XL_SIZES if xl else (SIZES[0], SIZES[1], SIZES[2])
+    return landscape if ratio >= 1.25 else portrait if ratio <= 0.8 else square
 
 
 def mask_matches(mask_size, picture_size, maximum=512):
@@ -657,17 +663,18 @@ def mask_matches(mask_size, picture_size, maximum=512):
     return all(abs(cells - max(1, round(side * scale))) <= 1 for cells, side in zip(mask_size, picture_size))
 
 
-def edit_region(bounds, size, minimum=384):
+def edit_region(bounds, size, minimum=None, xl=False):
     """The box around painted pixels that the model redraws, and the supported shape it is drawn at.
 
     `bounds` is (left, top, right, bottom) of the painted pixels in a picture of `size`. The box adds
     surrounding context, takes the nearest supported proportions, and stays inside the picture.
     """
+    minimum = minimum or (768 if xl else 384)
     width, height = size
     left, top, right, bottom = bounds
     pad = max(32, round(0.25 * max(right - left, bottom - top)))
     w, h = right - left + 2 * pad, bottom - top + 2 * pad
-    shape = shape_for(w, h)
+    shape = shape_for(w, h, xl)
     ratio = shape[0] / shape[1]
     w, h = max(w, h * ratio), max(h, w / ratio)
     grow = max(1, min(minimum, max(width, height)) / max(w, h))
@@ -676,7 +683,7 @@ def edit_region(bounds, size, minimum=384):
     x0 = min(max(0, cx - w / 2), width - w)
     y0 = min(max(0, cy - h / 2), height - h)
     box = (round(x0), round(y0), round(x0 + w), round(y0 + h))
-    return box, shape_for(box[2] - box[0], box[3] - box[1])
+    return box, shape_for(box[2] - box[0], box[3] - box[1], xl)
 
 
 def resolve_settings(root, record):
@@ -717,7 +724,8 @@ def space_needed(kind, settings):
     if kind == "upscale":
         side = UPSCALE_MAX_SIDE * settings["scale"]
     else:  # A painted change keeps the picture's own size; other pictures are at most 768 pixels.
-        side = EDIT_MAX_SIDE if "maskImage" in settings else max(max(size) for size in SIZES)
+        sizes = XL_SIZES if settings.get("model") == XL_MODEL else SIZES
+        side = EDIT_MAX_SIDE if "maskImage" in settings else max(max(size) for size in sizes)
     return inputs + side * side * 3 + WRITE_HEADROOM_BYTES  # An uncompressed RGB PNG is the worst case.
 
 
@@ -767,7 +775,13 @@ def run_job(app, root, kind, settings, cancel, progress):
         source = dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"])
         model, model_name, extra = RECIPE, "Stable Diffusion 1.5", dict(runtime=ready["runtime"])
         model_bytes = loaded_bytes(app)
-        if settings.get("model", RECIPE) != RECIPE:
+        if settings.get("model") == XL_MODEL:
+            import sdxl  # Local import: sdxl imports this module.
+            extra, model, model_name = sdxl.child_payload(app, root), XL_MODEL, sdxl.NAME
+            xl_source = sdxl.XL.manifest(app)
+            source = dict(provider="huggingface", repoId=xl_source["repoId"], revision=xl_source["revision"], license=xl_source["license"])
+            model_bytes = sdxl.weight_bytes(app) + loaded_bytes(app, {"files": [], "ownVae": True})
+        elif settings.get("model", RECIPE) != RECIPE:
             import model_library
             added = model_library.ready_model(app, root, settings["model"])
             model, model_name, extra = added["id"], added["name"], model_library.child_payload(added)

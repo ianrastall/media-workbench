@@ -55,6 +55,8 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
     public bool IsPaintedChange => SourceImage is not null && MaskImage is not null;
     public static readonly string[] PictureExtensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp"];
     public static readonly (int Width, int Height, string Label)[] Sizes = [(512, 512, "Square · 512 × 512 (fastest)"), (512, 768, "Portrait · 512 × 768 (slower)"), (768, 512, "Landscape · 768 × 512 (slower)")];
+    /// <summary>Stable Diffusion XL's trained sizes for square, portrait, and landscape pictures.</summary>
+    public static readonly (int Width, int Height, string Label)[] XlSizes = [(1024, 1024, "Square · 1024 × 1024"), (832, 1216, "Portrait · 832 × 1216"), (1216, 832, "Landscape · 1216 × 832")];
     public static readonly (string Id, string Label)[] Samplers = [("pndm", "Balanced (model default, PNDM)"), ("dpmpp-2m", "Crisp detail (DPM++ 2M Karras)"), ("euler-a", "Softer and more varied (Euler ancestral)")];
     public string Summary => (IsVideo ? $"Short video, {Frames / (double)Math.Max(1, Fps == 0 ? 8 : Fps):0.#} seconds ({Frames} frames) · "
             : SourceImage is null ? "" : IsPaintedChange
@@ -86,8 +88,8 @@ public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha
         ? $"Upscaled {Settings.Scale}× to {Width} × {Height} · {Seconds:N1}s · {Gpu}"
         : $"{Settings.Prompt}\n{ModelLabel}{Settings.Summary} · {Seconds:N1}s · {Gpu}";
 }
-/// <summary>Whether short videos are set up and verified here; Settings names the runtime choice that passed.</summary>
-public sealed record VideoState(string Status, string Message, RuntimeSettings? Settings = null)
+/// <summary>Whether an optional setup (short videos, Stable Diffusion XL) is ready here, and the runtime choice that passed its test.</summary>
+public sealed record AddonState(string Status, string Message, RuntimeSettings? Settings = null)
 {
     public bool IsReady => Status == "ready";
 }
@@ -96,6 +98,9 @@ public sealed record ModelChoice(string Id, string Name, string Status, string M
     bool BuiltIn = false, bool OwnVae = true, string VerifiedUtc = "", string SourceName = "")
 {
     public const string BuiltInId = "sd15-baseline";
+    /// <summary>Stable Diffusion XL, an optional bundled setup listed after Stable Diffusion 1.5.</summary>
+    public const string XlId = "sdxl-base";
+    public bool IsXl => Id == XlId;
     public bool IsReady => Status == "ready";
     public bool NeedsTest => !BuiltIn && !IsReady;
     public string StatusText => Status switch
@@ -254,11 +259,15 @@ public interface IWorkbenchService
     Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false);
     Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     /// <summary>Whether short videos are set up and still verified; creates nothing but the data folder.</summary>
-    Task<VideoState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken);
+    Task<AddonState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Downloads the pinned motion adapter (1.7 GB), verifies it, and tests a short video on the GPU.</summary>
-    Task<VideoState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    Task<AddonState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     /// <summary>Removes the motion adapter; videos already made are kept.</summary>
-    Task<VideoState> RemoveVideoAsync(string dataRoot, CancellationToken cancellationToken);
+    Task<AddonState> RemoveVideoAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>Downloads Stable Diffusion XL (6.9 GB), verifies it, and tests a 1024 × 1024 picture on the GPU; then Create can choose it.</summary>
+    Task<AddonState> InstallXlAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Removes Stable Diffusion XL; pictures already made are kept.</summary>
+    Task<AddonState> RemoveXlAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Makes a short video (Frames 16 or 24) with Stable Diffusion 1.5; the result is a Library item with a poster frame.</summary>
     Task<GeneratedImage> GenerateVideoAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null);

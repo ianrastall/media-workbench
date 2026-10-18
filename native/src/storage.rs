@@ -157,7 +157,7 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
         ),
         (
             "model",
-            "Bundled models (Stable Diffusion 1.5, upscaler, and video motion)",
+            "Bundled models (Stable Diffusion 1.5 and XL, upscaler, and video motion)",
             request
                 .model_ids
                 .iter()

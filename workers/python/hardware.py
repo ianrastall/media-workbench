@@ -42,7 +42,21 @@ VIDEO_RUNTIMES = {
                              description="full precision, each part of the model moves to the graphics card while it runs"),
     VIDEO_CONSERVATIVE: dict(precision="float32", offload="sequential", minimumVramMiB=6144, label="Memory-saving",
                              description="full precision, the model streams to the graphics card layer by layer"),
+}# Stable Diffusion XL's UNet is about three times SD 1.5's (2.6 billion parameters): 5 GB of weights in half
+# precision and 10 GB in full precision, which wait in system memory while offloaded. Each choice is verified.
+XL_CONSERVATIVE = "xl-fp32-sequential"
+XL_RUNTIMES = {
+    "xl-fp16-model": dict(precision="float16", offload="model", minimumVramMiB=8192, label="Fast",
+                          description="half precision, each part of the model moves to the graphics card while it runs"),
+    "xl-fp16-sequential": dict(precision="float16", offload="sequential", minimumVramMiB=6144, label="Fast, memory-saving",
+                               description="half precision, the model streams to the graphics card layer by layer"),
+    "xl-fp32-model": dict(precision="float32", offload="model", minimumVramMiB=16384, label="Full precision",
+                          description="full precision, each part of the model moves to the graphics card while it runs"),
+    XL_CONSERVATIVE: dict(precision="float32", offload="sequential", minimumVramMiB=6144, label="Memory-saving",
+                          description="full precision, the model streams to the graphics card layer by layer"),
 }
+# Full-precision SDXL keeps about 13 GB of weights in system memory while it streams them.
+XL_FULL_PRECISION_RAM_MIB = 16384
 MINIMUM_RAM_MIB = 8192  # Below this, loading the model alone would push Windows into heavy paging.
 RECOMMENDED_RAM_MIB = 16384  # Memory-saving settings keep the model in system memory between steps.
 GPU_FIELDS = ["index", "uuid", "name", "memory.total", "memory.free", "compute_cap", "driver_version"]
@@ -145,6 +159,30 @@ def choose_video(hardware, minimum_vram_mib):
         reasons.append("Each part of the video model moves to the graphics card while it runs.")
     if not half_precision_ok(gpu):
         reasons.append("Videos use full precision on this graphics card, like pictures.")
+    return dict(runtime=runtime, blocked=None, reasons=reasons, warnings=warnings)
+
+
+def choose_xl(hardware, minimum_vram_mib):
+    """The Stable Diffusion XL runtime for this computer, in the shape `choose` returns."""
+    base = choose(hardware, minimum_vram_mib)
+    if base["blocked"]:
+        return base
+    gpu, ram = hardware["gpu"], hardware.get("ramMiB")
+    runtime = next(name for name in XL_RUNTIMES if allows(name, gpu, XL_RUNTIMES))
+    settings = XL_RUNTIMES[runtime]
+    if settings["precision"] == "float32" and type(ram) in (int, float) and ram + RAM_MARGIN_MIB < XL_FULL_PRECISION_RAM_MIB:
+        return dict(runtime=None, reasons=[], warnings=[], blocked=(
+            f"This computer has {gib(ram)} of memory. {gpu['name']} needs Stable Diffusion XL in full precision, which keeps about "
+            f"13 GB in memory while it works, so it needs at least {gib(XL_FULL_PRECISION_RAM_MIB)}. Adding memory would make it "
+            "possible; Stable Diffusion 1.5 keeps working."))
+    reasons, warnings = [], list(base["warnings"])
+    if settings["offload"] == "sequential":
+        reasons.append(f"With {gib(float(gpu.get('vramMiB') or 0))} of graphics memory, Stable Diffusion XL streams to the graphics "
+                       "card layer by layer. That fits, but each picture can take several minutes.")
+    else:
+        reasons.append("Each part of Stable Diffusion XL moves to the graphics card while it runs.")
+    if settings["precision"] == "float32":
+        reasons.append("Stable Diffusion XL uses full precision on this graphics card, like Stable Diffusion 1.5.")
     return dict(runtime=runtime, blocked=None, reasons=reasons, warnings=warnings)
 
 

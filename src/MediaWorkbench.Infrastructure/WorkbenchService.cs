@@ -66,12 +66,16 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         JsonSerializer.Deserialize<GeneratedImage>(await Execute("generate.image", new { dataRoot, settings.Prompt, settings.NegativePrompt, settings.Seed, settings.Steps,
             settings.GuidanceScale, settings.Width, settings.Height, settings.Sampler, sourceImage = settings.SourceImage ?? "", settings.Strength, maskImage = settings.MaskImage ?? "",
             model = settings.Model ?? "" }, cancellationToken, progress), Wire.Json)!;
-    public async Task<VideoState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken) =>
-        JsonSerializer.Deserialize<VideoState>(await Execute("video.status", new { dataRoot }, cancellationToken), Wire.Json)!;
-    public async Task<VideoState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
-        JsonSerializer.Deserialize<VideoState>(await Execute("video.install", new { dataRoot }, cancellationToken, progress), Wire.Json)!;
-    public async Task<VideoState> RemoveVideoAsync(string dataRoot, CancellationToken cancellationToken) =>
-        JsonSerializer.Deserialize<VideoState>(await Execute("video.remove", new { dataRoot }, cancellationToken), Wire.Json)!;
+    public async Task<AddonState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<AddonState>(await Execute("video.status", new { dataRoot }, cancellationToken), Wire.Json)!;
+    public async Task<AddonState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<AddonState>(await Execute("video.install", new { dataRoot }, cancellationToken, progress), Wire.Json)!;
+    public async Task<AddonState> RemoveVideoAsync(string dataRoot, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<AddonState>(await Execute("video.remove", new { dataRoot }, cancellationToken), Wire.Json)!;
+    public async Task<AddonState> InstallXlAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<AddonState>(await Execute("xl.install", new { dataRoot }, cancellationToken, progress), Wire.Json)!;
+    public async Task<AddonState> RemoveXlAsync(string dataRoot, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<AddonState>(await Execute("xl.remove", new { dataRoot }, cancellationToken), Wire.Json)!;
     public async Task<GeneratedImage> GenerateVideoAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<GeneratedImage>(await Execute("generate.video", new { dataRoot, settings.Prompt, settings.NegativePrompt, settings.Seed, settings.Steps,
             settings.GuidanceScale, settings.Width, settings.Height, settings.Frames }, cancellationToken, progress), Wire.Json)!;

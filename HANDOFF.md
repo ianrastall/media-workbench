@@ -1,6 +1,6 @@
 # Media Workbench handoff
 
-Updated 18 October 2026 for **0.2.0-alpha.16**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 18 October 2026 for **0.3.0-alpha.1**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
 
 ## Where development stopped and resumed
 
@@ -13,6 +13,8 @@ Alpha.14 adds Discover's public single-file SD 1.5 download path: native metadat
 Alpha.15 resumes from `ec1e5f5` and moves SD 1.5 tensor-layout compatibility to Rust for local checkpoints, Diffusers parts, pinned Discover headers and copied-model checks. Python retains bounded header/offset parsing and folder configuration handling. Copied Diffusers files repeat weight-format checks before GPU testing. Inference settings, adapter versions and readiness stamps do not change. This milestone uses headless checks and no GPU work; interactive validation remains pending as already recorded for alpha.14.
 
 Alpha.16 resumes from `72a7a2e` and separates model loading from inference: the ML child records `startupSeconds`, `loadSeconds` and `seconds` for generation, verification and upscaling, and the coordinator stores a plain `loadNote` (from `hardware.load_note` and Rust `mw_drive_info`) when a generation's load took 20 s or more on a hard disk, USB or network folder, or ran below 100 MiB/s on another drive. Create shows the load time and note after saving; Library/MCP return them. No inference, adapter or readiness change; headless checks only. Calibration against a real hard-disk folder and collecting cold/warm timings for the warm-worker decision are the next measurements.
+
+Alpha.16 → 0.3.0-alpha.1 (resumed from `5e41ca7`, checkpoint `04ff7bf`) adds the two remaining 1.0 features as optional verified setups sharing `workers/python/addon.py`: short videos (`video.py`, AnimateDiff v1-5-3, Rust `mw_encode_video` through run-time-loaded Media Foundation) and Stable Diffusion XL base 1.0 (`sdxl.py`). The setup tests run the safety checker but record rather than enforce its verdict, because their 4-step output is unfinished texture the checker can misread (observed: a red-and-green 4-step video frame flagged; the same prompt at 12 steps was a watercolor house and passed). Real generation still blocks on it. `tests/gpu_video_check.py` and `tests/gpu_xl_check.py` are the opt-in real GPU checks; the development folder for them is `artifacts/gpu-video-data` (ignored). See [next steps](docs/next-steps.md#path-to-100) for what remains before 1.0.0.
 
 ## Build, check, run
 

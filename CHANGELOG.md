@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-alpha.1 — 2026-10-18
+
+- **Short videos.** Create has a new **What to make → A short video** choice that makes 2- or 3-second clips (16 or 24 frames) with Stable Diffusion 1.5 and the AnimateDiff motion adapter. **Set up videos** downloads the pinned adapter (1.7 GB, Apache-2.0), verifies it, and makes a real test clip on your graphics card; nothing can be made until that passes. Videos are saved as MP4 with Windows' own H.264 encoder, play on a loop in Create, show their first frame in Library (**Videos** filter, **Play video**, **Save a copy…** as a verified MP4), and every frame is reviewed by the model's safety checker.
+- **Stable Diffusion XL.** Once Stable Diffusion 1.5 is ready, **Get Stable Diffusion XL** sets up SDXL base 1.0 (6.9 GB, CreativeML Open RAIL++-M) with its own download, verification and 1024 × 1024 GPU test. Then **Model** offers it, with 1024-pixel square, portrait and landscape shapes; starting pictures and painted changes work with it too.
+- Both choose their settings from your hardware like pictures do. On 6 GB graphics cards, or cards without reliable half precision, the model streams to the card layer by layer: it fits, but a video or an SDXL picture can take several minutes, and full-precision SDXL needs 16 GB of system memory (the app says so before downloading). Faster settings are offered on larger cards and must pass the same test first.
+- Settings can remove the video setup or Stable Diffusion XL again; your videos and pictures are kept. Clean-up and crash recovery remove raw video frames and partial files. The local MCP tools gain video status, setup and generation, SDXL setup, and SDXL generation.
+- The Rust core encodes video through Media Foundation loaded at run time, so the app still starts on Windows editions without it; those are told to add the Media Feature Pack. Existing Stable Diffusion 1.5 installations and added models stay verified.
 ## 0.2.0-alpha.16 — 2026-10-18
 
 - Create now says how long loading the model took, separately from the seconds spent making the picture. Job records keep the runtime start, model-load and inference times apart, so repeated-generation work can be measured before a warm worker is built.

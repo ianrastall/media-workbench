@@ -1,16 +1,26 @@
-# Development direction after 0.2.0-alpha.16
+# Development direction after 0.3.0-alpha.1
 
-This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, adding SD 1.5-family models the user already downloaded, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance with automatic clean-up and free-space checks, runtime settings chosen from the computer's hardware, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
+This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, optional Stable Diffusion XL pictures, short SD 1.5 videos with AnimateDiff, adding SD 1.5-family models the user already downloaded, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance with automatic clean-up and free-space checks, runtime settings chosen from the computer's hardware, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 
 ## Purpose and next feature priority
 
-Media Workbench aims to move image and eventually video generation onto the user's own computer, with offline use after setup and less reliance on online generation services. Video is not implemented. Energy, water, chip-demand, and cost benefits have not been measured; local generation still uses electricity and hardware. It stays free, MIT-licensed, and unlocked on the public repository. It must serve beginners as well as power users, so runtime, precision, and pipeline details stay under the hood behind plain choices.
+Media Workbench aims to move image and eventually video generation onto the user's own computer, with offline use after setup and less reliance on online generation services. Short videos (2–3 seconds) are implemented; longer and image-to-video clips are not. Energy, water, chip-demand, and cost benefits have not been measured; local generation still uses electricity and hardware. It stays free, MIT-licensed, and unlocked on the public repository. It must serve beginners as well as power users, so runtime, precision, and pipeline details stay under the hood behind plain choices.
 
 The next user-facing priorities are:
 
 1. **Add your own downloaded models.** Done for SD 1.5-family single files and Diffusers folders in 0.2.0-alpha.11; other architectures follow with their own verified profiles.
 2. **Download models from Hugging Face.** Implemented for public root-level single-file SD 1.5 checkpoints in alpha.14: license/file hints, pinned metadata and bounded header checks, hardware/space/readiness limits, and download through native checks and real inference verification. Direct Diffusers-folder downloads, protected access and other model architectures remain separate verified slices.
-3. Then newer image models that fit 6 GB, and short video, as optional verified profiles.
+3. **Newer image models and short video.** Implemented in 0.3.0-alpha.1 as optional verified setups: Stable Diffusion XL base 1.0 and 2–3 second AnimateDiff videos, each with its own download, native verification, real GPU test, and hardware-chosen runtime (streaming on 6 GB cards). SDXL fine-tunes, videos from added models, and image-to-video follow with their own verification.
+
+## Path to 1.0.0
+
+The user's 1.0 scope is text-to-image, image-from-image (restyle and painted changes), upscaling, newer image models where the GPU allows, and video, with check-then-ask updates and MIT licensing. All are implemented as of 0.3.0-alpha.1. What still stands between that and an honest 1.0.0:
+
+1. **Real-hardware evidence for each setup on the development GPU**: the conservative video (`video-fp32-sequential`) and SDXL (`xl-fp32-sequential`) choices with `tests/gpu_video_check.py` and the GUI, recorded in `docs/validation.md`. Faster choices stay "verified per machine" until someone with that hardware runs the checks; that is acceptable for 1.0 because every machine must pass its own test before anything is ready.
+2. **Clean-machine installer, upgrade and update checks** in Windows Sandbox or a spare Windows 10/11 machine (the user agreed to enable Sandbox): fresh install, upgrade from an alpha, offline launch after setup, Update now, uninstall keeping data.
+3. **Interactive acceptance pass** of every page with the user available: keyboard navigation, narrow windows, high DPI/text scaling, the new video player and model choices, long operations and cancel.
+4. **Stability under repeated use**: the durable queue is optional for 1.0, but generation must stay reliable across many runs; measure repeated load times (now recorded per job) and fix anything flaky.
+5. **Release hygiene**: version 1.0.0 in `Directory.Build.props` with a changelog section, README and docs describing exactly what works, and no "alpha" wording left where it is no longer true.
 
 Alongside these, every feature follows the product principles in `AGENTS.md`: easy to use, stable, aware of the computer it runs on, clean, and mindful of drive space. The section below says what that still requires.
 

@@ -97,7 +97,7 @@ def enlarge(payload, data_root, weights, gpu, torch, upscaler):
     return result
 
 
-def painted_change(payload):
+def painted_change(payload, xl=False):
     """The starting picture, its painted area at full size, and the region the model redraws."""
     from PIL import Image, ImageOps
     with Image.open(payload["sourceImage"]) as opened:
@@ -113,7 +113,7 @@ def painted_change(payload):
     bounds = mask.getbbox()
     if bounds is None:
         raise ValueError("Paint over the part of the picture you want to change.")
-    box, shape = inference_setup.edit_region(bounds, picture.size)
+    box, shape = inference_setup.edit_region(bounds, picture.size, xl=xl)
     return picture, mask, box, shape
 
 
@@ -161,6 +161,36 @@ def load_added(data_root, payload, torch, dtype):
         text_encoder=CLIPTextModel.from_pretrained(str(folder / "text_encoder"), **weights), **parts)
 
 
+def safety_checker(data_root, torch):
+    """Stable Diffusion 1.5's safety checker on the CPU, for pipelines that have none of their own (videos, SDXL)."""
+    from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
+    from transformers import CLIPImageProcessor
+    bundled = str(data_root / "models" / inference_setup.RECIPE)
+    checker = StableDiffusionSafetyChecker.from_pretrained(bundled, subfolder="safety_checker", variant="fp16",
+        torch_dtype=torch.float32, use_safetensors=True, local_files_only=True)
+    return checker, CLIPImageProcessor.from_pretrained(bundled, subfolder="feature_extractor", local_files_only=True)
+
+
+def flagged(checker, extractor, pictures, torch):
+    """Whether the safety checker rejects any of these RGB pictures."""
+    import numpy
+    arrays = numpy.stack([numpy.asarray(picture, dtype=numpy.float32) / 255 for picture in pictures])
+    with torch.no_grad():
+        clip = extractor(pictures, return_tensors="pt").pixel_values.to(torch.float32)
+        _, found = checker(images=arrays, clip_input=clip)
+    return any(found)
+
+
+def place(pipe, offload):
+    """Moves a pipeline onto the GPU as the verified runtime choice says."""
+    if offload == "sequential":
+        pipe.enable_sequential_cpu_offload()  # Streams layers to the GPU; fits 6 GB in full precision.
+    elif offload:
+        pipe.enable_model_cpu_offload()  # Each part moves to the GPU only while it runs.
+    else:
+        pipe.to("cuda")
+
+
 def video_folder(args, payload):
     """Where the child writes a clip: its job's artifact folder, or setup's test folder under cache/."""
     if args.operation == "video":
@@ -204,10 +234,7 @@ def make_video(args, payload, torch, gpu, total, startup):
     # The scheduler settings AnimateDiff was trained with.
     pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config, beta_schedule="linear", clip_sample=False,
         timestep_spacing="linspace", steps_offset=1)
-    if settings["offload"] == "sequential":
-        pipe.enable_sequential_cpu_offload()  # Streams layers to the GPU; fits 6 GB in full precision.
-    else:
-        pipe.enable_model_cpu_offload()
+    place(pipe, settings["offload"])
     pipe.enable_vae_slicing()
     pipe.set_progress_bar_config(disable=True)
     loaded = round(time.monotonic() - loading, 2)
@@ -229,11 +256,9 @@ def make_video(args, payload, torch, gpu, total, startup):
             or max(ImageStat.Stat(pictures[0]).stddev) < 1:
         raise RuntimeError("Inference produced an empty or invalid video; it was not saved.")
     progress("Checking the frames")
-    arrays = numpy.stack([numpy.asarray(picture, dtype=numpy.float32) / 255 for picture in pictures])
-    with torch.no_grad():
-        clip = extractor(pictures, return_tensors="pt").pixel_values.to(torch.float32)
-        _, flagged = checker(images=arrays, clip_input=clip)
-    if any(flagged):
+    rejected = flagged(checker, extractor, pictures, torch)
+    # The setup test only proves the runtime: its 4-step frames are unfinished texture the checker can misread.
+    if rejected and args.operation == "video":
         raise RuntimeError("The model safety checker rejected part of the video. Try a different prompt.")
     raw = folder / "frames.rgb.partial"
     with raw.open("wb") as stream:
@@ -245,7 +270,7 @@ def make_video(args, payload, torch, gpu, total, startup):
     os.replace(poster, folder / "poster.png")
     result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda, precision=settings["precision"],
         offload=settings["offload"], runtime=runtime, seconds=seconds, loadSeconds=loaded, startupSeconds=startup,
-        width=width, height=height, frames=frames, sampler="ddim",
+        width=width, height=height, frames=frames, sampler="ddim", safetyChecked=True, safetyFlagged=rejected,
         peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2), python=sys.version.split()[0])
     if args.operation == "video":
         target = folder / "poster.png"
@@ -257,14 +282,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--data-root", type=Path, required=True)
-    parser.add_argument("--operation", choices=["download", "verify", "verify-model", "generate", "upscale", "video", "verify-video"], required=True)
+    parser.add_argument("--operation", choices=["download", "verify", "verify-model", "generate", "upscale", "video", "verify-video", "verify-xl"], required=True)
     parser.add_argument("--payload", required=True)
     args = parser.parse_args()
     if not sys.flags.isolated or not sys.flags.no_user_site:
         raise RuntimeError("The inference interpreter must run in isolated mode (-I).")
     payload = json.loads(args.payload)
-    manifest = json.loads((args.root / "profiles/sd15-files.json").read_text())
-    model = args.data_root / "models/sd15-baseline"
+    # Downloads name one of the pinned manifests; each has its own folder under models/.
+    downloads = {"sd15-files.json": inference_setup.RECIPE, "sdxl-files.json": inference_setup.XL_MODEL}
+    chosen = payload.get("manifest", "sd15-files.json") if args.operation == "download" else "sd15-files.json"
+    if chosen not in downloads:
+        raise ValueError("Unknown model manifest")
+    manifest = json.loads((args.root / "profiles" / chosen).read_text())
+    model = args.data_root / "models" / downloads[chosen]
     with redirect_stdout(sys.stderr):
         if args.operation == "download":
             # Downloads use the supported Hub cache; generation itself is strictly offline.
@@ -305,38 +335,48 @@ def main():
             return
         # The coordinator sends the runtime choice that passed this installation's (or this model's) GPU test, or the
         # one under test. Check it again against the card CUDA sees, so a swapped GPU cannot run untested settings.
+        # Stable Diffusion XL has its own verified runtime choices; everything else uses SD 1.5's.
+        xl = args.operation == "verify-xl" or payload.get("model") == inference_setup.XL_MODEL
+        table = hardware.XL_RUNTIMES if xl else hardware.RUNTIMES
         runtime = payload.get("runtime")
-        if runtime not in hardware.RUNTIMES:
+        if runtime not in table:
             raise ValueError("Unknown runtime choice")
         major, minor = torch.cuda.get_device_capability(0)
-        if not hardware.allows(runtime, dict(name=gpu, computeCapability=f"{major}.{minor}", vramMiB=total)):
+        if not hardware.allows(runtime, dict(name=gpu, computeCapability=f"{major}.{minor}", vramMiB=total), table):
             raise RuntimeError(f"The settings tested for this installation do not suit {gpu}. Install / verify again in Create.")
-        settings = hardware.RUNTIMES[runtime]
+        settings = table[runtime]
         # FP16 is used only where hardware.half_precision_ok trusts it; GTX 16-series cards stay in FP32.
         dtype = torch.float16 if settings["precision"] == "float16" else torch.float32
         source = payload.get("sourceImage") if args.operation == "generate" else None
-        painted = painted_change(payload) if source and payload.get("maskImage") else None  # Checked before the slow load.
-        added = payload.get("model", inference_setup.RECIPE) != inference_setup.RECIPE
-        progress("Loading your model" if added else "Loading Stable Diffusion 1.5")
+        painted = painted_change(payload, xl) if source and payload.get("maskImage") else None  # Checked before the slow load.
+        added = not xl and payload.get("model", inference_setup.RECIPE) != inference_setup.RECIPE
+        progress("Loading Stable Diffusion XL" if xl else "Loading your model" if added else "Loading Stable Diffusion 1.5")
         loading = time.monotonic()
         # The same weights serve every mode: image-to-image starts from the user's picture, and a painted
         # change redraws only the painted region (Diffusers blends the standard 4-channel UNet's latents).
         pipeline_class = (StableDiffusionInpaintPipeline if painted else StableDiffusionImg2ImgPipeline) if source else StableDiffusionPipeline
-        if added:
+        checker = None
+        if xl:
+            from diffusers import StableDiffusionXLImg2ImgPipeline, StableDiffusionXLInpaintPipeline, StableDiffusionXLPipeline
+            pipe = StableDiffusionXLPipeline.from_pretrained(str(args.data_root / "models" / inference_setup.XL_MODEL), torch_dtype=dtype,
+                variant="fp16", use_safetensors=True, local_files_only=True, add_watermarker=False)
+            if source:
+                pipe = (StableDiffusionXLInpaintPipeline if painted else StableDiffusionXLImg2ImgPipeline).from_pipe(pipe)
+            checker = safety_checker(args.data_root, torch)  # SDXL has none of its own.
+        elif added:
             pipe = load_added(args.data_root, payload, torch, dtype)
             if pipeline_class is not StableDiffusionPipeline:
                 pipe = pipeline_class.from_pipe(pipe)
         else:
             pipe = pipeline_class.from_pretrained(str(model), torch_dtype=dtype,
                 variant="fp16", use_safetensors=True, local_files_only=True)
-        if settings["offload"]:
-            pipe.enable_model_cpu_offload()  # Each part moves to the GPU only while it runs.
-        else:
-            pipe.to("cuda")
+        place(pipe, settings["offload"])
         pipe.enable_vae_slicing()
+        if xl:
+            pipe.enable_vae_tiling()  # Decoding 1024 pixels in full precision would not fit 6 GB in one piece.
         pipe.set_progress_bar_config(disable=True)
         loaded = round(time.monotonic() - loading, 2)
-        request = payload if args.operation == "generate" else dict(
+        request = payload if args.operation in ("generate", "verify-xl") else dict(
             prompt="A small red ceramic house beside a green tree, watercolor illustration, daylight",
             negativePrompt="", seed=20261017, steps=4, width=512, height=512)
         # The coordinator validated the sampler; the model's own PNDM scheduler is the default.
@@ -359,7 +399,7 @@ def main():
         elif source:
             with Image.open(source) as opened:
                 picture = ImageOps.exif_transpose(opened).convert("RGB")
-            width, height = inference_setup.shape_for(*picture.size)
+            width, height = inference_setup.shape_for(*picture.size, xl=xl)
             extra = dict(image=ImageOps.fit(picture, (width, height), Image.Resampling.LANCZOS), strength=request["strength"])
         else:
             extra = dict(width=width, height=height)
@@ -372,8 +412,12 @@ def main():
             guidance_scale=request.get("guidanceScale", 7.5), generator=torch.Generator(device="cpu").manual_seed(request["seed"]),
             callback_on_step_end=step_end)
         image = output.images[0]
-        blocked = bool(output.nsfw_content_detected and output.nsfw_content_detected[0])
-        if blocked:
+        if checker is not None:
+            progress("Checking the picture")
+        blocked = flagged(*checker, [image.convert("RGB")], torch) if checker is not None \
+            else bool(output.nsfw_content_detected and output.nsfw_content_detected[0])
+        # The SDXL setup test only proves the runtime; its 4-step picture is unfinished and can be misread.
+        if blocked and args.operation != "verify-xl":
             raise RuntimeError("The model safety checker rejected the result. Try a different prompt.")
         if image.size != (width, height) or max(ImageStat.Stat(image).stddev) < 1:
             raise RuntimeError("Inference produced an empty or invalid image; the installation is not verified.")

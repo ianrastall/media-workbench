@@ -71,15 +71,15 @@ sealed class RecordingWorkbench : IWorkbenchService
     }
     /// <summary>Video status reads are counted separately so data-folder counts above stay about pictures.</summary>
     public List<string> VideoRoots { get; } = [];
-    public VideoState Video { get; set; } = new("not_installed", "Videos are not set up yet.");
+    public AddonState Video { get; set; } = new("not_installed", "Videos are not set up yet.");
     public int VideoInstalls { get; private set; }
     public GenerationSettings? LastVideo { get; private set; }
-    public Task<VideoState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken)
+    public Task<AddonState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken)
     {
         VideoRoots.Add(dataRoot);
         return Task.FromResult(Video);
     }
-    public Task<VideoState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    public Task<AddonState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {
         VideoInstalls++;
         VideoRoots.Add(dataRoot);
@@ -87,7 +87,21 @@ sealed class RecordingWorkbench : IWorkbenchService
             new("video-fp32-sequential", "Memory-saving", "full precision, the model streams to the graphics card layer by layer"));
         return Task.FromResult(Video);
     }
-    public Task<VideoState> RemoveVideoAsync(string dataRoot, CancellationToken cancellationToken)
+    /// <summary>Stable Diffusion XL's row, as the worker lists it after Stable Diffusion 1.5.</summary>
+    public ModelChoice Xl { get; set; } = new(ModelChoice.XlId, "Stable Diffusion XL", "not_installed", "Stable Diffusion XL is not set up.", "bundled-xl", 6_938_451_574, BuiltIn: true);
+    public int XlInstalls { get; private set; }
+    public Task<AddonState> InstallXlAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        XlInstalls++;
+        Xl = Xl with { Status = "ready", Message = "Ready" };
+        return Task.FromResult(new AddonState("ready", "Stable Diffusion XL is ready on Test GPU with memory-saving settings."));
+    }
+    public Task<AddonState> RemoveXlAsync(string dataRoot, CancellationToken cancellationToken)
+    {
+        Xl = Xl with { Status = "not_installed", Message = "Stable Diffusion XL is not set up." };
+        return Task.FromResult(new AddonState("not_installed", "Stable Diffusion XL is not set up."));
+    }
+    public Task<AddonState> RemoveVideoAsync(string dataRoot, CancellationToken cancellationToken)
     {
         VideoRoots.Add(dataRoot);
         Video = new("not_installed", "Videos are not set up yet.");
@@ -147,7 +161,7 @@ sealed class RecordingWorkbench : IWorkbenchService
     public Task<IReadOnlyList<ModelChoice>> GetModelsAsync(string dataRoot, CancellationToken cancellationToken)
     {
         ModelRoots.Add(dataRoot);
-        return Task.FromResult<IReadOnlyList<ModelChoice>>([BuiltIn, .. Models]);
+        return Task.FromResult<IReadOnlyList<ModelChoice>>([BuiltIn, Xl, .. Models]);
     }
     public Task<ModelInspection> InspectModelAsync(string path, CancellationToken cancellationToken) => path.EndsWith(".ckpt", StringComparison.OrdinalIgnoreCase)
         ? throw new InvalidOperationException(".ckpt files can run hidden code when they are opened.")

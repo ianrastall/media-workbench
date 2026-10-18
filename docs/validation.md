@@ -281,3 +281,25 @@ Validated headlessly on the Windows 11 development machine. No desktop input, mo
 Python tests cover `hardware.load_note` (quick loads, invalid values, each slow drive kind, a busy solid-state drive below the rate threshold, an unknown drive, unknown model size), the coordinator recording `startupSeconds`/`loadSeconds`/`seconds` and `loadNote` in the job record, an unreadable drive leaving a finished job without a note, the weight bytes counted for bundled and added models, and Library listing timed records while ignoring damaged timing fields. A C# check deserializes a worker-shaped record and checks Create's saved notice with and without load timings.
 
 The ML child's timing code was compiled but not executed on a GPU in this milestone; the first real generation on this build will produce the first recorded load times. The 20-second and 100 MiB/s thresholds are estimates from earlier end-to-end timings on the GTX 1660 Ti (about 8 s between start and inference for a 10-step job); they have not been measured on a hard-disk or USB data folder.
+
+## 0.3.0-alpha.1 — short videos and Stable Diffusion XL (18 October 2026)
+
+Validated on the Windows 11 development machine with an NVIDIA GeForce GTX 1660 Ti (6 GB, compute 7.5), 64 GB of memory, and a fresh data folder under the repository's ignored `artifacts/`. GPU work ran headlessly through the worker; no desktop input was used.
+
+| Check | Result |
+|---|---|
+| Fresh Stable Diffusion 1.5 setup in a new data folder (`tests/gpu_video_check.py`) | Ready with `fp32-offload`; runtime, model, and upscaler downloaded, verified, and tested |
+| Set up videos, first attempt | The real 16-frame 4-step test clip ran (`video-fp32-sequential`), but the safety checker flagged its first frame. A scratch diagnostic saved the frames: at 4 steps they are unfinished red-and-green texture; the same prompt and seed at 12 steps is a recognisable watercolor house and passes. The setup test now records the checker's verdict instead of failing on it; real videos still block |
+| Set up videos, after that change | Ready with `video-fp32-sequential` (float32, layer-by-layer streaming): 16-frame 4-step test 63.5 s after a 10.0 s load (runtime start 5.6 s), peak 4189 MiB; Windows' H.264 encoder wrote the test MP4; `safetyFlagged` recorded true for the 4-step frames |
+| 20-step 16-frame 512 × 512 video ("ocean waves … at sunset") | 283.0 s after a 9.3 s load, peak 4189 MiB, 703 KiB MP4; the poster shows a wave on sand; raw frames removed |
+| Library and export | Listed under the video filter with its MP4; Save a copy wrote a byte-identical MP4 matching the recorded SHA-256 |
+| 12-step diagnostic clip | 165.2 s, peak 4187 MiB (about 14 s per step for 16 frames) |
+
+The faster video choices (`video-fp16-model`, `video-fp16-sequential`, `video-fp32-model`) were not observed on real hardware; each machine that chooses one must pass the same test first, and falls back to the conservative choice otherwise.
+| Set up Stable Diffusion XL (`tests/gpu_xl_check.py`) | Downloaded the pinned 6.9 GB through the ML child, verified natively, ready with `xl-fp32-sequential`: 1024 × 1024 4-step test 28.8 s after a 4.7 s load, peak 3084 MiB |
+| SDXL 1216 × 832 picture, 20 steps ("a lighthouse on a rocky coast at sunset, oil painting") | 117.9 s after a 3.5 s load, peak 2508 MiB; a coherent oil-painting lighthouse at sunset |
+| SDXL painted change of a rectangle of that picture ("a full moon in the sky", strength 1) | 122.5 s; kept 1216 × 832; a moon and cloud appeared in the painted area and the rest of the picture was unchanged |
+
+Full-precision streaming on this card was much faster for SDXL than for 16-frame videos because a single picture batches far less work per step. The faster SDXL choices (`xl-fp16-model`, `xl-fp16-sequential`, `xl-fp32-model`) were not observed on real hardware and are verified per machine before use. The video player in Create and the new Create, Library and Settings controls loaded in the published app's window self-test; an interactive walkthrough with the user remains pending.
+
+Automated checks for this release: `scripts/check.ps1` with `ContinuousIntegrationBuild=true` passed 35 Rust tests plus formatting/Clippy, 199 Python tests (including the new `test_video.py` and `test_sdxl.py`, and a real Media Foundation encode through the Python adapter), and 216 C# checks including MCP; the Release publish passed with zero warnings/errors, and the published self-test and MCP smoke check now expect the Stable Diffusion XL row and the video files. The release DLL imports no Media Foundation library (checked with `dumpbin /dependents`).

@@ -59,6 +59,8 @@ public partial class MainViewModel : ObservableObject
         RetestModelCommand = new AsyncRelayCommand<ModelChoice?>(RetestModelAsync, model => !IsBusy && model is { BuiltIn: false });
         RemoveModelCommand = new AsyncRelayCommand<ModelChoice?>(RemoveModelAsync, model => !IsBusy && model is { BuiltIn: false });
         InstallVideoCommand = new AsyncRelayCommand(InstallVideoAsync, () => !IsBusy && ModelReady);
+        InstallXlCommand = new AsyncRelayCommand(InstallXlAsync, () => !IsBusy && ModelReady);
+        RemoveXlCommand = new AsyncRelayCommand(RemoveXlAsync, () => !IsBusy && XlReady);
         GenerateVideoCommand = new AsyncRelayCommand(GenerateVideoAsync, () => !IsBusy && ModelReady && VideoReady);
         RemoveVideoCommand = new AsyncRelayCommand(RemoveVideoAsync, () => !IsBusy);
         OpenVideoCommand = new RelayCommand<string?>(OpenVideo, path => !string.IsNullOrEmpty(path));
@@ -95,8 +97,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string Status { get; set; } = "Ready";
     [ObservableProperty] public partial string Notice { get; set; } = "Start in Create to install and verify Stable Diffusion 1.5. Requires an NVIDIA GPU with 6 GB VRAM and 20 GiB free space.";
     [ObservableProperty] public partial string InstallationText { get; set; } = "Check model status, or install / verify to prepare image generation.";
-    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand), nameof(ImportModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand)),
-     NotifyPropertyChangedFor(nameof(NeedsSetup), nameof(NeedsVideoSetup), nameof(CanMakeVideo), nameof(CanMakePicture))] public partial bool ModelReady { get; set; }
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand), nameof(ImportModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(InstallXlCommand)),
+     NotifyPropertyChangedFor(nameof(NeedsSetup), nameof(NeedsVideoSetup), nameof(CanMakeVideo), nameof(CanMakePicture), nameof(NeedsXlSetup))] public partial bool ModelReady { get; set; }
     public bool NeedsSetup => !ModelReady;
     /// <summary>"This computer" for Create's setup card: hardware and the settings chosen from it.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSystemProfile))] public partial string SystemProfileText { get; set; } = "";
@@ -132,7 +134,30 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial int SizeIndex { get; set; }
     /// <summary>Index into <see cref="GenerationSettings.Samplers"/>.</summary>
     [ObservableProperty] public partial int SamplerIndex { get; set; }
-    public IReadOnlyList<string> SizeLabels { get; } = [.. GenerationSettings.Sizes.Select(size => size.Label)];
+    /// <summary>The shapes the chosen model and mode offer: Stable Diffusion XL pictures are larger.</summary>
+    public ObservableCollection<string> SizeLabels { get; } = [.. GenerationSettings.Sizes.Select(size => size.Label)];
+    public (int Width, int Height, string Label)[] ActiveSizes => IsPictureMode && SelectedModelId == ModelChoice.XlId ? GenerationSettings.XlSizes : GenerationSettings.Sizes;
+    private void ShowSizes()
+    {
+        int index = SizeIndex;
+        var labels = ActiveSizes.Select(size => size.Label).ToArray();
+        if (SizeLabels.SequenceEqual(labels)) return;
+        SizeLabels.Clear();
+        foreach (string label in labels) SizeLabels.Add(label);
+        SizeIndex = Math.Clamp(index, 0, labels.Length - 1);
+    }
+    partial void OnModelIndexChanged(int value) => ShowSizes();
+    partial void OnCreateKindIndexChanged(int value) => ShowSizes();
+    /// <summary>Stable Diffusion XL's row from the model list; null until the list is read.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(XlReady), nameof(NeedsXlSetup), nameof(XlText), nameof(XlSettingsText))]
+    public partial ModelChoice? XlChoice { get; private set; }
+    public bool XlReady => XlChoice?.IsReady == true;
+    public bool NeedsXlSetup => ModelReady && !XlReady;
+    public string XlText => XlChoice is { IsReady: false, Message.Length: > 0 } xl ? xl.Message : "Stable Diffusion XL is not set up.";
+    public string XlSettingsText => XlReady ? "Stable Diffusion XL is set up and tested; choose it under Model in Create."
+        : "Stable Diffusion XL is not set up. Create offers it once Stable Diffusion 1.5 is ready.";
+    public IAsyncRelayCommand InstallXlCommand { get; }
+    public IAsyncRelayCommand RemoveXlCommand { get; }
     public IReadOnlyList<string> SamplerLabels { get; } = [.. GenerationSettings.Samplers.Select(sampler => sampler.Label)];
     /// <summary>An optional picture to start from (image-to-image); empty for a description only.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSourceImage), nameof(HasNoSourceImage), nameof(SourceImageName), nameof(IsChangingWholePicture), nameof(ShowsShape))]
@@ -210,7 +235,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -396,7 +421,7 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowVideo(new("unknown", "Video setup could not be read: " + ex.Message)); }
     }
 
-    private void ShowVideo(VideoState state)
+    private void ShowVideo(AddonState state)
     {
         VideoReady = state.IsReady;
         VideoText = state.Message;
@@ -434,13 +459,17 @@ public partial class MainViewModel : ObservableObject
     {
         string chosen = select ?? SelectedModelId;
         AddedModels.Clear();
-        foreach (var model in models.Where(model => !model.BuiltIn)) AddedModels.Add(model);
+        foreach (var model in models.Where(model => !model.BuiltIn && !model.IsXl)) AddedModels.Add(model);
         HasAddedModels = AddedModels.Count > 0;
+        XlChoice = models.FirstOrDefault(model => model.IsXl);
+        RemoveXlCommand.NotifyCanExecuteChanged();
         ModelChoices.Clear();
         ModelChoices.Add(BuiltInChoice);
+        if (XlChoice is { IsReady: true } xl) ModelChoices.Add(xl);
         foreach (var model in AddedModels.Where(model => model.IsReady)) ModelChoices.Add(model);
         ModelIndex = Math.Max(0, ModelChoices.ToList().FindIndex(model => model.Id == chosen));
         HasModelChoice = ModelChoices.Count > 1;
+        ShowSizes();  // The same index can now name a different model.
     }
 
     /// <summary>Identifies a model file or folder the user chose, without copying it.</summary>
@@ -558,6 +587,30 @@ public partial class MainViewModel : ObservableObject
         }
     }, longRunning: true);
 
+    private Task InstallXlAsync() => RunAsync("Setting up Stable Diffusion XL…", async token =>
+    {
+        try
+        {
+            var state = await _service.InstallXlAsync(DataRoot, ObserveProgress(), token);
+            Notice = state.Message + (state.IsReady ? " Choose it under Model." : "");
+            Record(state.Message);
+        }
+        finally
+        {
+            await UpdateModels(token, ModelChoice.XlId);
+            _ = RefreshDriveAsync();
+        }
+    }, longRunning: true);
+
+    private Task RemoveXlAsync() => RunAsync("Removing Stable Diffusion XL…", async token =>
+    {
+        await _service.RemoveXlAsync(DataRoot, token);
+        await UpdateModels(token);
+        ShowStorage(await _service.GetStorageAsync(DataRoot, token));
+        Notice = "Removed Stable Diffusion XL (about 6.9 GB). Pictures you made with it were kept; setting it up again downloads it again.";
+        Record(Notice);
+    });
+
     private Task RemoveVideoAsync() => RunAsync("Removing the video setup…", async token =>
     {
         ShowVideo(await _service.RemoveVideoAsync(DataRoot, token));
@@ -585,7 +638,7 @@ public partial class MainViewModel : ObservableObject
     private Task GenerateAsync() => RunAsync("Preparing image generation…", async token =>
     {
         CheckRefinement();
-        var size = GenerationSettings.Sizes[Math.Clamp(SizeIndex, 0, GenerationSettings.Sizes.Length - 1)];
+        var size = ActiveSizes[Math.Clamp(SizeIndex, 0, ActiveSizes.Length - 1)];
         var sampler = GenerationSettings.Samplers[Math.Clamp(SamplerIndex, 0, GenerationSettings.Samplers.Length - 1)];
         string? source = HasSourceImage ? SourceImagePath : null;
         if (source is not null && !File.Exists(source)) throw new InvalidDataException("The starting picture is no longer there. Choose it again or remove it.");
@@ -805,9 +858,9 @@ public partial class MainViewModel : ObservableObject
         Seed = settings.Seed;
         Steps = Math.Clamp(settings.Steps, 1, 50);
         GuidanceScale = Math.Clamp(settings.GuidanceScale, 1, 20);
-        SizeIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Sizes, size => size.Width == settings.Width && size.Height == settings.Height));
         SamplerIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Samplers, sampler => sampler.Id == settings.Sampler));
-        _restoreNote = SelectModel(settings.Model);
+        _restoreNote = SelectModel(settings.Model);  // Before the shape: Stable Diffusion XL has its own sizes.
+        SizeIndex = Math.Max(0, Array.FindIndex(ActiveSizes, size => size.Width == settings.Width && size.Height == settings.Height));
         if (IsPainting) StopPainting();
         SourceImagePath = settings.SourceImage is { } source && File.Exists(source) ? source : "";
         if (HasSourceImage && settings.MaskImage is { } painted && File.Exists(painted))

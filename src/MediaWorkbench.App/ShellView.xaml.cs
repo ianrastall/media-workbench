@@ -132,6 +132,11 @@ public sealed partial class ShellView : UserControl
     private void UseImageSettings(object sender, RoutedEventArgs args) => ViewModel.UseImageSettingsCommand.Execute((sender as FrameworkElement)?.Tag as GeneratedImage);
     private void OpenLibraryImage(object sender, RoutedEventArgs args) => ViewModel.OpenImageCommand.Execute((sender as FrameworkElement)?.Tag as string);
     private void OpenLibraryVideo(object sender, RoutedEventArgs args) => ViewModel.OpenVideoCommand.Execute((sender as FrameworkElement)?.Tag as string);
+    private void RemoveXl(object sender, RoutedEventArgs args)
+    {
+        ClosePopups();
+        ViewModel.RemoveXlCommand.Execute(null);
+    }
     private void RemoveVideo(object sender, RoutedEventArgs args)
     {
         ClosePopups();

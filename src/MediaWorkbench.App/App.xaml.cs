@@ -83,7 +83,7 @@ public partial class App : Application
                     if (storage.Items.Count != 8 || storage.FreeBytes <= 0 || storage.InstallationBytes != 0)
                         throw new InvalidDataException("The bundled native storage check failed.");
                     var models = await service.GetModelsAsync(libraryCheck, deadline.Token);
-                    if (models.Count != 1 || !models[0].BuiltIn || models[0].IsReady)
+                    if (models.Count != 2 || !models[0].BuiltIn || models[0].IsReady || !models[1].IsXl || models[1].IsReady)
                         throw new InvalidDataException("The bundled model listing check failed.");
                 }
                 finally { if (Directory.Exists(libraryCheck)) Directory.Delete(libraryCheck, recursive: true); }

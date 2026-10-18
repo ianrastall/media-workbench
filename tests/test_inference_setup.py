@@ -29,6 +29,8 @@ def fake_app(folder):
     for name in setup.STAMPED_FILES:
         (app / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, app / name)
+    for name in ("profiles/sdxl-files.json", "profiles/video-files.json"):  # Optional setups the model list reads.
+        shutil.copyfile(ROOT / name, app / name)
     manifest = json.loads((app / "profiles/sd15-files.json").read_text())
     manifest["files"] = [{"path": path, "size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
                          for path, body in MODEL_FILES]

@@ -46,7 +46,7 @@ def sizes(result):
 class StorageTests(unittest.TestCase):
     def test_inventory_layout_matches_the_supported_installation(self):
         self.assertEqual(json.loads((ROOT / "profiles/storage-layout.json").read_text()),
-                         {"runtimeProfileId": setup.PROFILE, "modelIds": [setup.RECIPE, setup.UPSCALER, video.MOTION]})
+                         {"runtimeProfileId": setup.PROFILE, "modelIds": [setup.RECIPE, setup.UPSCALER, video.MOTION, setup.XL_MODEL]})
 
     def test_summary_reports_each_area(self):
         with tempfile.TemporaryDirectory() as folder:
