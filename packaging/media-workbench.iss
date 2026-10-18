@@ -51,7 +51,25 @@ Name: "{userdesktop}\Media Workbench"; Filename: "{app}\MediaWorkbench.exe"; Wor
 
 [Run]
 Filename: "{app}\MediaWorkbench.exe"; Description: "Open Media Workbench"; Flags: nowait postinstall skipifsilent
-; An in-app update runs this installer silently after the app exits; reopen the updated app.
-Filename: "{app}\MediaWorkbench.exe"; Flags: nowait; Check: WizardSilent
+; An in-app update runs this installer with /SILENT after the app exits; reopen the updated app.
+; An unattended /VERYSILENT installation does not open the app.
+Filename: "{app}\MediaWorkbench.exe"; Flags: nowait; Check: ReopenAfterUpdate
 
 ; User settings and media are deliberately outside {app} and are preserved on uninstall.
+
+[Code]
+function HasParameter(Name: String): Boolean;
+var
+  Index: Integer;
+begin
+  Result := False;
+  for Index := 1 to ParamCount do
+    if CompareText(ParamStr(Index), Name) = 0 then
+      Result := True;
+end;
+
+// Every app version's updater passes /SILENT; deployments and scripts pass /VERYSILENT.
+function ReopenAfterUpdate: Boolean;
+begin
+  Result := WizardSilent and not HasParameter('/VERYSILENT');
+end;

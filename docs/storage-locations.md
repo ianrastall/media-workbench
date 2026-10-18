@@ -17,7 +17,7 @@ Recorded 18 October 2026. **In progress; not complete or released as 0.4.0-alpha
 | Move existing data | **Done (slice 3)**: verified copy, unchanged source, crash recovery |
 | Removing the old copy after a move | **Done**: explicit, confirmed, deletes only files the new folder holds unchanged |
 | Choosing a drive before setup | **Done (slice 4)**: drive list in Settings, question before the first setup |
-| Installer destination | Already kept on upgrade and shown on first install (Inno defaults); not yet tested on a clean machine |
+| Installer destination | Already kept on upgrade and shown on first install (Inno defaults); not yet tested on a clean machine. Since 0.3.0-alpha.5 (unreleased), only a `/SILENT` installation (the in-app updater's) reopens the app; an unattended `/VERYSILENT` installation leaves it closed |
 | Drive exclusions | **Done (0.3.0-alpha.4)**: Never use this drive, enforced on save, move and the setup question |
 | All-app-owned-files arrangement (preferences and startup log with the data) | **Not started**; needs launch/update/uninstall testing before it is offered |
 
