@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -154,6 +155,10 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
                 raise ValueError("steps must be an integer from 1 to 100")
             if type(delay_ms) is not int or not 0 <= delay_ms <= 1000:
                 raise ValueError("delayMs must be an integer from 0 to 1000")
+            # How long acknowledging a cancellation takes, like stopping an ML child that is releasing the GPU.
+            cancel_delay_ms = payload.get("cancelDelayMs", 0)
+            if type(cancel_delay_ms) is not int or not 0 <= cancel_delay_ms <= 10000:
+                raise ValueError("cancelDelayMs must be an integer from 0 to 10000")
             if not isinstance(label, str) or len(label) > 4096:
                 raise ValueError("label must be a string of at most 4096 characters")
             output = payload.get("outputDirectory")
@@ -161,6 +166,7 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
                 raise ValueError("An explicit absolute outputDirectory is required")
             for step in range(steps):
                 if cancellation.wait(delay_ms / 1000):
+                    time.sleep(cancel_delay_ms / 1000)
                     finish(request_id, "error", {"code": "cancelled", "message": "Protocol demonstration cancelled"})
                     return
                 emit(request_id, "progress", {"stage": "protocol demonstration",

@@ -27,7 +27,7 @@ The data folder ended at 14.9 GiB, and the largest `temp/` seen was 72 MiB (the 
 
 Windows' own bookkeeping, also recorded in the app's processes but not app writes: NTFS records on D: (`$Mft`, `$LogFile`, `$BitMap`, 48 MiB in all) and on C: (`$LogFile`, 40 KB, from the `.pyc` writes above), and paging writes that flushed other programs' cached folder pages on D:. Free space on C: varied by up to about 0.6 GB during the run, from activity outside the app (the trace shows no app writes there).
 
-**Open finding, not about containment:** cancelling a picture through MCP leaves its job recorded as *interrupted* (recovered on the next Library read) rather than *cancelled*. Not yet investigated.
+**Finding, not about containment:** cancelling a picture through MCP left its job recorded as *interrupted* (recovered on the next Library read) rather than *cancelled*. The trace's timeline shows why. The C# client sent `cancel`, waited its 3-second grace and then stopped the whole worker tree. The coordinator was still stopping its ML child (a CUDA process takes seconds to release the GPU) and had not yet written the cancelled record. **Fixed after 0.3.0-alpha.10 (unreleased):** the grace is now 15 s (`PythonWorkerClient.CancelGrace`), longer than the coordinator's bounded 10 s child stop. A new C# check makes a worker take 5 s to acknowledge cancellation, and it still answers with *cancelled*. A worker that never answers is still stopped.
 
 ## Installer reopen behaviour on a real release installer
 

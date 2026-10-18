@@ -34,6 +34,12 @@ await using (var client = await PythonWorkerClient.StartAsync(python, root, null
     Check(cancelled.Kind == "error" && cancelled.ErrorCode == "cancelled", "Cooperative cancellation reaches a terminal outcome");
     var afterCancel = await client.ExecuteAsync("catalog.list", new { }, cancellationToken: deadline.Token);
     Check(afterCancel.Kind == "result", "Worker remains usable after cooperative cancellation");
+    // Stopping an ML child that is releasing the GPU took over 3 s in the drive-containment trace; the worker must
+    // still be allowed to answer (and record the job as cancelled) rather than being stopped first.
+    using var slowCancel = new CancellationTokenSource();
+    var slowlyCancelled = await client.ExecuteAsync("demo.run", new { label, outputDirectory = output, steps = 100, delayMs = 30, cancelDelayMs = 5000 },
+        e => { if (e.Kind == "progress") slowCancel.Cancel(); }, slowCancel.Token);
+    Check(slowlyCancelled.Kind == "error" && slowlyCancelled.ErrorCode == "cancelled", "A worker that takes 5 s to acknowledge cancellation still answers it");
     var unknown = await client.ExecuteAsync("generate.image", new { }, cancellationToken: deadline.Token);
     Check(unknown.ErrorCode == "invalid_input", "Generation rejects missing prompt before touching storage");
     var invalid = await client.ExecuteAsync("demo.run", new { outputDirectory = "relative", steps = 1 }, cancellationToken: deadline.Token);

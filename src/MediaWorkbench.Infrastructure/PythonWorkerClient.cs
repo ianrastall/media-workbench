@@ -101,6 +101,11 @@ public sealed class PythonWorkerClient : IWorkerClient
         catch { await client.DisposeAsync(); throw; }
     }
 
+    /// <summary>How long a cancelled worker may take to answer before its tree is stopped. The coordinator stops its
+    /// ML child (bounded at 10 s; a CUDA process can take seconds to release the GPU) and only then records the job as
+    /// cancelled; stopping it sooner leaves the job to be recovered as interrupted.</summary>
+    internal static readonly TimeSpan CancelGrace = TimeSpan.FromSeconds(15);
+
     public async Task<WorkerEvent> ExecuteAsync(string operation, object payload,
         Action<WorkerEvent>? onEvent = null, CancellationToken cancellationToken = default)
     {
@@ -122,7 +127,7 @@ public sealed class PythonWorkerClient : IWorkerClient
                 catch (OperationCanceledException) when (grace is null && cancellationToken.IsCancellationRequested)
                 {
                     await SendAsync(new { protocol = Wire.Version, id, operation = "cancel", payload = new { } });
-                    grace = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    grace = new CancellationTokenSource(CancelGrace);
                     // Reuse the pending read. Never create a second concurrent StreamReader read.
                     line = await pending.WaitAsync(grace.Token);
                 }
