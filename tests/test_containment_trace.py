@@ -62,22 +62,27 @@ class ClassificationTests(unittest.TestCase):
 
 
 class SummaryTests(unittest.TestCase):
-    environment = [("TEMP", "c:\\users\\someone\\appdata\\local\\temp"), ("LOCALAPPDATA", "c:\\users\\someone\\appdata\\local"), ("USERPROFILE", "c:\\users\\someone")]
+    environment = [("%TEMP%", "c:\\profiles\\someone\\appdata\\local\\temp"), ("%LOCALAPPDATA%", "c:\\profiles\\someone\\appdata\\local"), ("%USERPROFILE%", "c:\\profiles\\someone")]
+
+    def test_data_and_app_folders_are_labelled(self):
+        environment = summarize_writes.environment_folders("d:\\run\\data", "c:\\profiles\\someone\\appdata\\local\\programs\\media workbench")
+        self.assertEqual(summarize_writes.anonymize("D:\\run\\data\\jobs\\a.json", environment), "<data>\\jobs\\a.json")
+        self.assertEqual(summarize_writes.anonymize("C:\\Profiles\\Someone\\AppData\\Local\\Programs\\Media Workbench\\x.pyc", environment), "<app>\\x.pyc")
 
     def row(self, process, pid, operation, path, detail="", result="SUCCESS"):
         return {"Process Name": process, "PID": str(pid), "Operation": operation, "Path": path, "Result": result, "Detail": detail}
 
     def test_only_the_app_tree_counts_and_areas_are_grouped(self):
-        data, app = "d:\\run\\data", "c:\\users\\someone\\appdata\\local\\programs\\media workbench"
+        data, app = "d:\\run\\data", "c:\\profiles\\someone\\appdata\\local\\programs\\media workbench"
         rows = [
-            self.row("python.exe", 10, "Process Create", "C:\\Users\\Someone\\AppData\\Local\\Programs\\Media Workbench\\MediaWorkbench.Cli.exe", "PID: 100, Command line: mcp"),
+            self.row("python.exe", 10, "Process Create", "C:\\Profiles\\Someone\\AppData\\Local\\Programs\\Media Workbench\\MediaWorkbench.Cli.exe", "PID: 100, Command line: mcp"),
             self.row("MediaWorkbench.Cli.exe", 100, "Process Create", "C:\\x\\python.exe", "PID: 200, Command line: worker"),
             self.row("python.exe", 200, "WriteFile", "D:\\run\\data\\temp\\work\\abc\\x.tmp", "Offset: 0, Length: 1,024"),
-            self.row("python.exe", 200, "WriteFile", "C:\\Users\\Someone\\AppData\\Local\\Temp\\leak.tmp", "Offset: 0, Length: 10"),
-            self.row("python.exe", 200, "CreateFile", "C:\\Users\\Someone\\AppData\\Local\\Programs\\Media Workbench\\workers\\python\\__pycache__\\a.pyc",
+            self.row("python.exe", 200, "WriteFile", "C:\\Profiles\\Someone\\AppData\\Local\\Temp\\leak.tmp", "Offset: 0, Length: 10"),
+            self.row("python.exe", 200, "CreateFile", "C:\\Profiles\\Someone\\AppData\\Local\\Programs\\Media Workbench\\workers\\python\\__pycache__\\a.pyc",
                      "Desired Access: Generic Write, Disposition: OverwriteIf, OpenResult: Created"),
             self.row("python.exe", 200, "WriteFile", "\\\\.\\pipe\\x", "Length: 5"),
-            self.row("Explorer.EXE", 300, "WriteFile", "C:\\Users\\Someone\\elsewhere.txt", "Length: 99"),
+            self.row("Explorer.EXE", 300, "WriteFile", "C:\\Profiles\\Someone\\elsewhere.txt", "Length: 99"),
             self.row("python.exe", 200, "Process Exit", "", ""),
             self.row("other.exe", 200, "WriteFile", "C:\\reused-pid.txt", "Length: 7"),
         ]
@@ -88,7 +93,7 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(set(summarize_writes.outside(areas)), {"%TEMP%\\leak.tmp", "app/workers"})
 
     def test_profile_folders_are_named_by_variable(self):
-        area = summarize_writes.area_of("C:\\Users\\Someone\\AppData\\Local\\NVIDIA\\GLCache\\x\\y.bin", "d:\\data", "d:\\app", self.environment)
+        area = summarize_writes.area_of("C:\\Profiles\\Someone\\AppData\\Local\\NVIDIA\\GLCache\\x\\y.bin", "d:\\data", "d:\\app", self.environment)
         self.assertEqual(area, "%LOCALAPPDATA%\\NVIDIA\\GLCache")
         self.assertEqual(summarize_writes.area_of("D:\\data\\jobs\\a.json", "d:\\data", "d:\\app", self.environment), "data/jobs")
         self.assertEqual(summarize_writes.area_of("D:\\data\\.operation.lock", "d:\\data", "d:\\app", self.environment), "data/(top level)")

@@ -28,7 +28,7 @@ READ_ONLY_OPERATIONS = [
     "QueryPositionInformationFile", "QueryRemoteProtocolInformation", "QueryInformationVolume",
     "QueryVolumeInformation", "QuerySizeInformationVolume", "QueryAttributeInformationVolume",
     "QueryDeviceInformationVolume", "QueryFullSizeInformationVolume", "QueryCaseSensitiveInformationFile",
-    "QueryHardLinkInformationFile", "QueryLinkInformationFile", "QueryStatInformationFile",
+    "QueryHardLinkInformationFile", "QueryLinkInformationFile", "QueryStatInformationFile", "QueryStatInformation",
     "FASTIO_ACQUIRE_FOR_SECTION_SYNCHRONIZATION", "FASTIO_RELEASE_FOR_SECTION_SYNCHRONIZATION",
     "FASTIO_ACQUIRE_FOR_CC_FLUSH", "FASTIO_RELEASE_FOR_CC_FLUSH", "FASTIO_ACQUIRE_FOR_MOD_WRITE",
     "FASTIO_RELEASE_FOR_MOD_WRITE", "FASTIO_NETWORK_QUERY_OPEN", "FASTIO_CHECK_IF_POSSIBLE",

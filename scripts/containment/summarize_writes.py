@@ -61,10 +61,11 @@ def classify(operation, result, detail):
 
 
 def anonymize(path, environment):
+    """Replace the longest matching known folder with its label (%TEMP%, <data>, ...)."""
     lowered = path.lower()
-    for name, folder in environment:
+    for label, folder in environment:
         if lowered == folder or lowered.startswith(folder + "\\"):
-            return f"%{name}%" + path[len(folder):]
+            return label + path[len(folder):]
     return path
 
 
@@ -80,7 +81,7 @@ def area_of(path, data_root, app_root, environment):
             return f"{label}/{rest[0]}" if rest and rest[0] and len(rest) > 1 else f"{label}/(top level)"
     shown = anonymize(clean, environment)
     parts = shown.split("\\")
-    depth = 3 if shown.startswith("%") else 4
+    depth = 3 if shown.startswith(("%", "<")) else 4
     return "\\".join(parts[:depth])
 
 
@@ -130,13 +131,13 @@ def read_rows(csv_path):
         yield from csv.DictReader(source)
 
 
-def environment_folders():
-    found = []
+def environment_folders(data_root, app_root):
+    found = [("<data>", data_root), ("<app>", app_root)]
     for name in ("TEMP", "LOCALAPPDATA", "APPDATA", "ProgramData", "windir", "USERPROFILE"):
         value = os.environ.get(name)
         if value:
-            found.append((name, os.path.normpath(value).lower().rstrip("\\")))
-    # Longest first, so %TEMP% wins over %LOCALAPPDATA% and %LOCALAPPDATA% over %USERPROFILE%.
+            found.append((f"%{name}%", os.path.normpath(value).lower().rstrip("\\")))
+    # Longest first, so <app> wins over %LOCALAPPDATA%, %TEMP% over %LOCALAPPDATA%, and that over %USERPROFILE%.
     return sorted(found, key=lambda item: -len(item[1]))
 
 
@@ -184,7 +185,7 @@ def main():
     run = json.loads((run_folder / "run.json").read_text(encoding="utf-8"))
     data_root = os.path.normpath(run["dataRoot"]).lower().rstrip("\\")
     app_root = os.path.normpath(run["appRoot"]).lower().rstrip("\\")
-    environment = environment_folders()
+    environment = environment_folders(data_root, app_root)
     phases = []
     for phase in run["phases"]:
         csv_path = run_folder / "procmon" / f"{phase['name']}.csv"
