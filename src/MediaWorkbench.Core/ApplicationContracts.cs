@@ -102,22 +102,26 @@ public sealed record AddonState(string Status, string Message, RuntimeSettings? 
 {
     public bool IsReady => Status == "ready";
 }
-/// <summary>The bundled Stable Diffusion 1.5 or a model the user added; only ready models can generate.</summary>
+/// <summary>The bundled Stable Diffusion 1.5 or a model the user added; only ready models can generate.
+/// Architecture is "sd15" or "sdxl" (added Stable Diffusion XL checkpoints).</summary>
 public sealed record ModelChoice(string Id, string Name, string Status, string Message, string Format = "", long Bytes = 0,
-    bool BuiltIn = false, bool OwnVae = true, string VerifiedUtc = "", string SourceName = "")
+    bool BuiltIn = false, bool OwnVae = true, string VerifiedUtc = "", string SourceName = "", string Architecture = "sd15")
 {
     public const string BuiltInId = "sd15-baseline";
     /// <summary>Stable Diffusion XL, an optional bundled setup listed after Stable Diffusion 1.5.</summary>
     public const string XlId = "sdxl-base";
     public bool IsXl => Id == XlId;
+    /// <summary>Stable Diffusion XL or a model built on it: larger pictures with SDXL's shapes.</summary>
+    public bool UsesXlSizes => IsXl || Architecture == "sdxl";
+    private string Family => UsesXlSizes ? "Stable Diffusion XL" : "Stable Diffusion 1.5";
     public bool IsReady => Status == "ready";
     public bool NeedsTest => !BuiltIn && !IsReady;
     public string StatusText => Status switch
     {
         "ready" => "Ready", "needs_verification" => "Needs a new test", "failed" => "Did not pass its test", _ => Status
     };
-    public string Summary => (Format == "diffusers" ? "Model folder" : "Single model file") + $" · {StorageSnapshot.Format(Bytes)} · {StatusText}"
-        + (OwnVae ? "" : " · uses Stable Diffusion 1.5's picture decoder");
+    public string Summary => (Architecture == "sdxl" ? "Stable Diffusion XL · " : "") + (Format == "diffusers" ? "Model folder" : "Single model file")
+        + $" · {StorageSnapshot.Format(Bytes)} · {StatusText}" + (OwnVae ? "" : $" · uses {Family}'s picture decoder");
     public string Detail => IsReady ? (SourceName.Length > 0 ? "Added from " + SourceName : "") : Message;
 }
 /// <summary>What adding a file or folder would copy, found from its headers without loading it.</summary>

@@ -797,7 +797,9 @@ def validate_generation(payload):
     if type(guidance) not in (int, float) or not 1 <= guidance <= 20:
         raise ValueError("Guidance must be a number from 1 to 20")
     xl = model == XL_MODEL
-    if not all(type(side) is int for side in size) or size not in (XL_SIZES if xl else SIZES):
+    # An added model's family is known only from its record; run_job checks its size against that.
+    sizes = XL_SIZES + SIZES if job_id_valid(model) else XL_SIZES if xl else SIZES
+    if not all(type(side) is int for side in size) or size not in sizes:
         raise ValueError("Size must be 1024 × 1024, 832 × 1216, or 1216 × 832 for Stable Diffusion XL" if xl
                          else "Size must be 512 × 512, 512 × 768, or 768 × 512")
     if sampler not in SAMPLERS:
@@ -978,6 +980,9 @@ def run_job(app, root, kind, settings, cancel, progress):
             added = model_library.ready_model(app, root, settings["model"])
             model, model_name, extra = added["id"], added["name"], model_library.child_payload(added)
             model_bytes = loaded_bytes(app, added)
+            if kind == "generate" and (settings["width"], settings["height"]) not in (XL_SIZES if model_library.is_xl(added) else SIZES):
+                raise SetupError(f"“{added['name']}” makes "
+                                 + ("1024 × 1024, 832 × 1216, or 1216 × 832 pictures." if model_library.is_xl(added) else "512 × 512, 512 × 768, or 768 × 512 pictures."))
             source = added.get("source") or dict(provider="local", name=added.get("sourceName", ""), sha256=added["files"][0]["sha256"])
         if kind == "upscale":
             extra = {}  # The upscaler always runs in full precision; its tile size follows free graphics memory.

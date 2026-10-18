@@ -41,6 +41,17 @@ FOLDER = {
     "vae/diffusion_pytorch_model.fp16.safetensors": {
         "decoder.conv_in.weight": ("F16", [512, 4, 3, 3]), "encoder.conv_out.weight": ("F16", [8, 512, 3, 3])},
 }
+# As in the official single-file sd_xl_base_1.0.safetensors header (the parts the layout check reads).
+XL_CHECKPOINT = {
+    UNET + "input_blocks.0.0.weight": ("F16", [320, 4, 3, 3]),
+    UNET + "out.2.weight": ("F16", [4, 320, 3, 3]),
+    UNET + "label_emb.0.0.weight": ("F16", [1280, 2816]),
+    UNET + "input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight": ("F16", [640, 2048]),
+    "conditioner.embedders.0.transformer.text_model.embeddings.token_embedding.weight": ("F16", [49408, 768]),
+    "conditioner.embedders.1.model.token_embedding.weight": ("F16", [49408, 1280]),
+    "first_stage_model.decoder.conv_in.weight": ("F16", [512, 4, 3, 3]),
+    "first_stage_model.encoder.conv_out.weight": ("F16", [8, 512, 3, 3]),
+}
 SIZES = {"F16": 2, "F32": 4, "BF16": 2, "F8_E4M3": 1, "I64": 8}
 
 
@@ -100,6 +111,17 @@ class IdentificationTests(unittest.TestCase):
         self.assertEqual((result["format"], result["ownVae"], result["suggestedName"]), ("single-file", True, "dreamy style v2"))
         self.assertEqual(result["files"], [{"path": "model.safetensors", "source": str(path.resolve()), "size": path.stat().st_size}])
         self.assertIn("original stays where it is", result["summary"])
+
+    def test_sdxl_checkpoints_are_identified_and_refiners_refused(self):
+        path = write_safetensors(self.folder / "juggernaut_xl.safetensors", XL_CHECKPOINT)
+        result = models.inspect({"path": str(path)})
+        self.assertEqual((result["format"], result["architecture"], result["ownVae"]), ("single-file", "sdxl", True))
+        self.assertIn("Stable Diffusion XL-family model file", result["summary"])
+        self.assertIn("needs Stable Diffusion XL to be set up", result["summary"])
+        refiner = dict(XL_CHECKPOINT, **{UNET + "input_blocks.0.0.weight": ("F16", [384, 4, 3, 3]),
+                                         UNET + "label_emb.0.0.weight": ("F16", [1536, 2560])})
+        self.refused(write_safetensors(self.folder / "refiner.safetensors", refiner), "refiner")
+        self.assertEqual(models.inspect({"path": str(checkpoint(self.folder / "sd15.safetensors"))})["architecture"], "sd15")
 
     def test_checkpoint_without_vae_uses_the_bundled_decoder(self):
         path = checkpoint(self.folder / "no-vae.safetensors", remove=[n for n in CHECKPOINT if n.startswith("first_stage_model.")])
@@ -225,7 +247,7 @@ class ImportTests(unittest.TestCase):
         record = json.loads((copy.parent / "model.json").read_text())
         self.assertEqual(record["files"], [{"path": "model.safetensors", "size": source.stat().st_size, "sha256": before}])
         self.assertEqual((digest(copy), digest(source)), (before, before))  # The original is untouched.
-        self.assertEqual(self.tests, [("verify-model", {"model": added["id"], "modelFormat": "single-file", "ownVae": True, "runtime": "fp32-offload"})])
+        self.assertEqual(self.tests, [("verify-model", {"model": added["id"], "modelFormat": "single-file", "ownVae": True, "family": "sd15", "runtime": "fp32-offload"})])
         self.assertEqual(record["runtime"], "fp32-offload")
         listed = self.listed()
         self.assertTrue(listed[models.BUILT_IN]["builtIn"])
@@ -260,6 +282,34 @@ class ImportTests(unittest.TestCase):
             self.add(checkpoint(self.folder / "early.safetensors"))
         self.assertIn("Install / verify Stable Diffusion 1.5", str(raised.exception))
         self.assertEqual(self.tests, [])
+
+    def test_sdxl_models_need_the_sdxl_setup_and_are_tested_with_its_runtime_at_1024(self):
+        source = write_safetensors(self.folder / "downloads" / "photo_xl.safetensors", XL_CHECKPOINT)
+        with self.assertRaises(setup.SetupError) as raised:
+            self.add(source)
+        self.assertIn("Set up Stable Diffusion XL", str(raised.exception))
+        self.assertEqual((self.tests, list((self.root / "models/imported").glob("*"))), ([], []), "nothing is copied first")
+        import sdxl
+        xl = dict(runtime="xl-fp32-sequential")
+        with patch.object(models, "xl_ready", return_value=xl):
+            added = self.add(source, "Photo XL")
+            self.assertEqual((added["status"], added["architecture"]), ("ready", "sdxl"))
+            operation, payload = self.tests[-1]
+            self.assertEqual(operation, "verify-xl")
+            self.assertEqual((payload["family"], payload["runtime"], payload["width"], payload["model"]), ("sdxl", "xl-fp32-sequential", 1024, added["id"]))
+            record = json.loads((self.root / "models/imported" / added["id"] / "model.json").read_text())
+            self.assertEqual(record["profileStamp"], sdxl.XL.profile_stamp(self.app, "xl-fp32-sequential"))
+            self.assertEqual(models.child_payload(record)["runtime"], "xl-fp32-sequential")
+            self.assertEqual(self.listed()[added["id"]]["status"], "ready")
+            # Generation checks the model's own sizes before any record is written.
+            with patch.object(setup, "inference", side_effect=fake_generation):
+                with self.assertRaisesRegex(setup.SetupError, "1024 × 1024"):
+                    setup.generate(self.app, {"dataRoot": str(self.root), "prompt": "a beach", "model": added["id"]}, self.cancel, lambda _: None)
+                picture = setup.generate(self.app, {"dataRoot": str(self.root), "prompt": "a beach", "model": added["id"],
+                                                     "width": 1024, "height": 1024}, self.cancel, lambda _: None)
+            self.assertEqual((picture["model"], picture["runtime"]), (added["id"], "xl-fp32-sequential"))
+        self.assertEqual(self.listed()[added["id"]]["status"], "needs_verification", "without the SDXL setup it cannot run")
+        self.assertIn("Set up Stable Diffusion XL", self.listed()[added["id"]]["message"])
 
     def test_readiness_needs_its_own_test_and_the_bundled_installation(self):
         added = self.add(checkpoint(self.folder / "watched.safetensors"))

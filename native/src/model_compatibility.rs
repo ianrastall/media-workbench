@@ -1,10 +1,12 @@
-//! Pure SD 1.5 tensor-layout policy. Never reads weights, executes model code or grants readiness.
+//! Pure SD 1.5 and SDXL tensor-layout policy. Never reads weights, executes model code or grants readiness.
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const MAX_INPUT: usize = 100 * 1024 * 1024;
 pub const OUTPUT_CAPACITY: usize = 1024;
-const NOT_SD15: &str = "Media Workbench can add Stable Diffusion 1.5-family models for now, such as fine-tuned SD 1.5 checkpoints.";
+const NOT_SD15: &str = "Media Workbench can add Stable Diffusion 1.5 and Stable Diffusion XL models for now, such as fine-tuned checkpoints of either.";
+const NOT_SDXL: &str =
+    "Choose an SDXL base model or a fine-tuned version of it as a single .safetensors file.";
 const UNKNOWN: &str = "This file is not a Stable Diffusion model that Media Workbench recognizes. ";
 
 #[derive(Deserialize)]
@@ -33,11 +35,14 @@ struct Request {
 struct Report {
     compatible: bool,
     own_vae: bool,
+    /// "sd15" or "sdxl" when compatible; empty otherwise.
+    family: &'static str,
     message: String,
 }
 
 type Tensors = BTreeMap<String, Tensor>;
 type Decision = Result<bool, String>;
+type Identified = Result<(bool, &'static str), String>;
 
 pub fn inspect(input: &[u8]) -> Result<Vec<u8>, i32> {
     if input.len() > MAX_INPUT {
@@ -53,21 +58,24 @@ pub fn inspect(input: &[u8]) -> Result<Vec<u8>, i32> {
     {
         return Err(super::INVALID);
     }
+    let sd15 = |decision: Decision| decision.map(|own_vae| (own_vae, "sd15"));
     let decision = match request.kind {
         Kind::Checkpoint => checkpoint(&request.tensors),
-        Kind::Unet => unet(&request.tensors),
-        Kind::TextEncoder => text_encoder(&request.tensors),
-        Kind::Vae => vae(&request.tensors),
+        Kind::Unet => sd15(unet(&request.tensors)),
+        Kind::TextEncoder => sd15(text_encoder(&request.tensors)),
+        Kind::Vae => sd15(vae(&request.tensors)),
     };
     let report = match decision {
-        Ok(own_vae) => Report {
+        Ok((own_vae, family)) => Report {
             compatible: true,
             own_vae,
+            family,
             message: String::new(),
         },
         Err(message) => Report {
             compatible: false,
             own_vae: false,
+            family: "",
             message,
         },
     };
@@ -84,7 +92,8 @@ fn fragments(tensors: &Tensors, parts: &[&str]) -> bool {
         .any(|name| parts.iter().any(|part| name.contains(part)))
 }
 
-fn refuse_other_kinds(tensors: &Tensors) -> Result<(), String> {
+/// LoRAs, embeddings and ControlNets, which are add-ons for any family rather than complete models.
+fn refuse_add_ons(tensors: &Tensors) -> Result<(), String> {
     let reason = if fragments(
         tensors,
         &[
@@ -107,12 +116,31 @@ fn refuse_other_kinds(tensors: &Tensors) -> Result<(), String> {
     } else if fragments(
         tensors,
         &[
+            "control_model.",
+            "input_hint_block",
+            "controlnet_cond_embedding",
+        ],
+    ) {
+        "This is a ControlNet add-on that guides another model, not a complete model.".into()
+    } else {
+        return Ok(());
+    };
+    Err(reason)
+}
+
+/// Other model families, after the add-ons; Stable Diffusion XL here means a part of one (a full SDXL
+/// checkpoint is recognized before this runs).
+fn refuse_other_kinds(tensors: &Tensors) -> Result<(), String> {
+    refuse_add_ons(tensors)?;
+    let reason = if fragments(
+        tensors,
+        &[
             "conditioner.embedders.",
             "label_emb.0.0.weight",
             "add_embedding.linear_1",
         ],
     ) {
-        format!("This is a Stable Diffusion XL model. {NOT_SD15}")
+        format!("This is part of a Stable Diffusion XL model. {NOT_SDXL}")
     } else if fragments(tensors, &["double_blocks.", "single_transformer_blocks."]) {
         format!("This is a FLUX model. {NOT_SD15}")
     } else if fragments(
@@ -120,15 +148,6 @@ fn refuse_other_kinds(tensors: &Tensors) -> Result<(), String> {
         &["joint_blocks.", "transformer_blocks.0.attn.add_k_proj"],
     ) {
         format!("This is a Stable Diffusion 3 model. {NOT_SD15}")
-    } else if fragments(
-        tensors,
-        &[
-            "control_model.",
-            "input_hint_block",
-            "controlnet_cond_embedding",
-        ],
-    ) {
-        "This is a ControlNet add-on that guides another model, not a complete model.".into()
     } else if fragments(
         tensors,
         &[
@@ -202,7 +221,78 @@ fn check_types(tensors: &Tensors, prefixes: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
-fn checkpoint(tensors: &Tensors) -> Decision {
+/// A single-file Stable Diffusion XL checkpoint: the base layout's two text encoders and UNet.
+fn is_sdxl(tensors: &Tensors) -> bool {
+    tensors
+        .keys()
+        .any(|name| name.starts_with("conditioner.embedders."))
+        && tensors
+            .keys()
+            .any(|name| name.starts_with("model.diffusion_model."))
+}
+
+fn sdxl_checkpoint(tensors: &Tensors) -> Decision {
+    let unet = "model.diffusion_model.";
+    let input = shape(tensors, "model.diffusion_model.input_blocks.0.0.weight");
+    let label = shape(tensors, "model.diffusion_model.label_emb.0.0.weight");
+    if input == Some([384, 4, 3, 3].as_slice()) || label == Some([1536, 2560].as_slice()) {
+        return Err(format!(
+            "This is the Stable Diffusion XL refiner, which only finishes another model's pictures. {NOT_SDXL}"
+        ));
+    }
+    if input == Some([320, 9, 3, 3].as_slice()) {
+        return Err("This is a dedicated Stable Diffusion XL inpainting model. Painted changes already work with ordinary SDXL models; dedicated inpainting models are not supported yet.".into());
+    }
+    let expected = [
+        (
+            "model.diffusion_model.input_blocks.0.0.weight",
+            &[320, 4, 3, 3][..],
+        ),
+        ("model.diffusion_model.out.2.weight", &[4, 320, 3, 3][..]),
+        (
+            "model.diffusion_model.label_emb.0.0.weight",
+            &[1280, 2816][..],
+        ),
+        (
+            "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight",
+            &[640, 2048][..],
+        ),
+        (
+            "conditioner.embedders.0.transformer.text_model.embeddings.token_embedding.weight",
+            &[49408, 768][..],
+        ),
+        (
+            "conditioner.embedders.1.model.token_embedding.weight",
+            &[49408, 1280][..],
+        ),
+    ];
+    if expected
+        .iter()
+        .any(|(name, size)| shape(tensors, name) != Some(*size))
+    {
+        return Err(format!(
+            "This model's layout does not match Stable Diffusion XL. {NOT_SDXL}"
+        ));
+    }
+    let own_vae = tensors
+        .keys()
+        .any(|name| name.starts_with("first_stage_model."));
+    if own_vae {
+        // SDXL's picture decoder has the same layout as Stable Diffusion 1.5's.
+        check_vae(
+            shape(tensors, "first_stage_model.decoder.conv_in.weight"),
+            shape(tensors, "first_stage_model.encoder.conv_out.weight"),
+        )?;
+    }
+    check_types(tensors, &[unet, "conditioner.", "first_stage_model."])?;
+    Ok(own_vae)
+}
+
+fn checkpoint(tensors: &Tensors) -> Identified {
+    refuse_add_ons(tensors)?;
+    if is_sdxl(tensors) {
+        return sdxl_checkpoint(tensors).map(|own_vae| (own_vae, "sdxl"));
+    }
     refuse_other_kinds(tensors)?;
     let unet = "model.diffusion_model.";
     if !tensors.keys().any(|name| name.starts_with(unet)) {
@@ -252,7 +342,7 @@ fn checkpoint(tensors: &Tensors) -> Decision {
         )?;
     }
     check_types(tensors, &[unet, "cond_stage_model.", "first_stage_model."])?;
-    Ok(own_vae)
+    Ok((own_vae, "sd15"))
 }
 
 fn unet(tensors: &Tensors) -> Decision {
@@ -311,7 +401,7 @@ mod tests {
         let mut request = checkpoint_request();
         assert_eq!(
             report(&request),
-            json!({"compatible":true,"ownVae":false,"message":""})
+            json!({"compatible":true,"ownVae":false,"family":"sd15","message":""})
         );
         let tensors = request["tensors"].as_object_mut().unwrap();
         let text = tensors
@@ -337,6 +427,92 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("picture decoder")
+        );
+    }
+
+    fn sdxl_request() -> Value {
+        json!({"kind":"checkpoint", "tensors":{
+            "model.diffusion_model.input_blocks.0.0.weight":{"dtype":"F16","shape":[320,4,3,3]},
+            "model.diffusion_model.out.2.weight":{"dtype":"F16","shape":[4,320,3,3]},
+            "model.diffusion_model.label_emb.0.0.weight":{"dtype":"F16","shape":[1280,2816]},
+            "model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight":{"dtype":"F16","shape":[640,2048]},
+            "conditioner.embedders.0.transformer.text_model.embeddings.token_embedding.weight":{"dtype":"F16","shape":[49408,768]},
+            "conditioner.embedders.1.model.token_embedding.weight":{"dtype":"F16","shape":[49408,1280]},
+            "first_stage_model.decoder.conv_in.weight":{"dtype":"F16","shape":[512,4,3,3]},
+            "first_stage_model.encoder.conv_out.weight":{"dtype":"F16","shape":[8,512,3,3]}
+        }})
+    }
+
+    #[test]
+    fn sdxl_checkpoints_are_recognized_and_refiners_and_part_layouts_refused() {
+        // Shapes as in the official sd_xl_base_1.0.safetensors header.
+        let request = sdxl_request();
+        assert_eq!(
+            report(&request),
+            json!({"compatible":true,"ownVae":true,"family":"sdxl","message":""})
+        );
+        let mut without_vae = sdxl_request();
+        let tensors = without_vae["tensors"].as_object_mut().unwrap();
+        tensors.retain(|name, _| !name.starts_with("first_stage_model."));
+        assert_eq!(report(&without_vae)["ownVae"], false);
+        // As in sd_xl_refiner_1.0.safetensors: wider input, other label embedding, one text encoder.
+        let mut refiner = sdxl_request();
+        refiner["tensors"]["model.diffusion_model.input_blocks.0.0.weight"]["shape"] =
+            json!([384, 4, 3, 3]);
+        refiner["tensors"]["model.diffusion_model.label_emb.0.0.weight"]["shape"] =
+            json!([1536, 2560]);
+        assert!(
+            report(&refiner)["message"]
+                .as_str()
+                .unwrap()
+                .contains("refiner")
+        );
+        let mut inpainting = sdxl_request();
+        inpainting["tensors"]["model.diffusion_model.input_blocks.0.0.weight"]["shape"] =
+            json!([320, 9, 3, 3]);
+        assert!(
+            report(&inpainting)["message"]
+                .as_str()
+                .unwrap()
+                .contains("inpainting")
+        );
+        let mut other = sdxl_request();
+        other["tensors"]["conditioner.embedders.1.model.token_embedding.weight"]["shape"] =
+            json!([49408, 1024]);
+        let refused = report(&other);
+        assert_eq!(
+            (refused["compatible"].clone(), refused["family"].clone()),
+            (json!(false), json!(""))
+        );
+        assert!(
+            refused["message"]
+                .as_str()
+                .unwrap()
+                .contains("does not match Stable Diffusion XL")
+        );
+        let mut lora = sdxl_request();
+        lora["tensors"]["lora_unet_a.lora_up.weight"] = json!({"dtype":"F16","shape":[1]});
+        assert!(report(&lora)["message"].as_str().unwrap().contains("LoRA"));
+        let mut compressed = sdxl_request();
+        compressed["tensors"]["model.diffusion_model.out.2.weight"]["dtype"] = json!("F8_E4M3");
+        assert!(
+            report(&compressed)["message"]
+                .as_str()
+                .unwrap()
+                .contains("compressed")
+        );
+        // Diffusers parts of an SDXL model are not added as SD 1.5 parts.
+        let unet = json!({"kind":"unet","tensors":{
+            "conv_in.weight":{"dtype":"F16","shape":[320,4,3,3]},
+            "conv_out.weight":{"dtype":"F16","shape":[4,320,3,3]},
+            "add_embedding.linear_1.weight":{"dtype":"F16","shape":[1280,2816]},
+            "down_blocks.0.attentions.0.transformer_blocks.0.attn2.to_k.weight":{"dtype":"F16","shape":[320,2048]}
+        }});
+        assert!(
+            report(&unet)["message"]
+                .as_str()
+                .unwrap()
+                .contains("Stable Diffusion XL")
         );
     }
 

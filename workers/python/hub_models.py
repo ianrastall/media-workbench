@@ -148,15 +148,20 @@ def plan(app, payload, cancel, fetch=None):
         result["message"] = f"Downloading this model needs {(file['bytes'] + models.IMPORT_HEADROOM_BYTES) / 1024**3:.1f} GiB free in the data folder. Free space or choose another drive in Settings."
         return result
     try:
-        result["ownVae"] = identify_remote(details["id"], details["revision"], file, cancel)
-        result["headerChecked"] = True
+        identified = identify_remote(details["id"], details["revision"], file, cancel)
+        result.update(ownVae=identified["ownVae"], architecture=identified["family"], headerChecked=True)
     except models.Refused as exc:
         result["message"] = str(exc)
         return result
+    family = models.FAMILY_NAMES[identified["family"]]
     if not models.bundled_ready(app, root):
-        result["message"] = "This file matches Stable Diffusion 1.5. Set up Stable Diffusion 1.5 in Create first; downloaded models share its verified runtime. Then check this file again."
+        result["message"] = f"This file matches {family}. Set up Stable Diffusion 1.5 in Create first; downloaded models share its verified runtime. Then check this file again."
         return result
-    result.update(canInstall=True, message="This file matches Stable Diffusion 1.5 and fits this computer's supported profile. Download and test makes a small picture on your GPU; only a passing model becomes available in Create.")
+    if identified["family"] == "sdxl" and not models.xl_ready(app, root):
+        result["message"] = f"This file matches {family}. {models.XL_NEEDED} Then check this file again."
+        return result
+    result.update(canInstall=True, message=f"This file matches {family} and fits this computer's supported profile. Download and test makes a "
+                  f"{'1024 × 1024' if identified['family'] == 'sdxl' else 'small'} picture on your GPU; only a passing model becomes available in Create.")
     return result
 
 
@@ -234,7 +239,7 @@ def install(app, payload, cancel, progress):
         source = dict(provider="huggingface", repoId=details["id"], revision=details["revision"],
                       file=file["path"], sha256=file["sha256"], license=details["license"])
         record = dict(schemaVersion=1, id=model_id, name=models.unique_name(root, models.clean_name(details["id"].split("/")[-1])),
-                      format="single-file", architecture="sd15", ownVae=checked["ownVae"], status="copying",
+                      format="single-file", architecture=checked.get("architecture", "sd15"), ownVae=checked["ownVae"], status="copying",
                       message="Downloading the pinned model.", startedUtc=datetime.now(timezone.utc).isoformat(),
                       sourceName=details["id"] + "/" + file["path"], source=source, files=[], notices=[])
         try:

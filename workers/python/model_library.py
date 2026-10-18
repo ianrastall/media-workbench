@@ -140,12 +140,32 @@ def check_compatibility(tensors, kind="checkpoint"):
     result = json.loads(output.raw[:required.value])
     if not result["compatible"]:
         raise Refused(result["message"])
-    return result["ownVae"]
+    return result
 
 
 def identify_checkpoint(tensors):
-    """A single-file SD 1.5 checkpoint; returns whether it has its own VAE."""
-    return check_compatibility(tensors)
+    """A single-file SD 1.5 or SDXL checkpoint: {"ownVae": bool, "family": "sd15" | "sdxl"}."""
+    found = check_compatibility(tensors)
+    return dict(ownVae=found["ownVae"], family=found.get("family") or "sd15")
+
+
+FAMILY_NAMES = {"sd15": "Stable Diffusion 1.5", "sdxl": "Stable Diffusion XL"}
+
+
+def is_xl(record):
+    return record.get("architecture") == "sdxl"
+
+
+def xl_ready(app, root):
+    """Added SDXL models borrow the verified Stable Diffusion XL setup's configuration, runtime choice and VAE."""
+    import sdxl  # Local import: sdxl imports inference_setup, which imports this module lazily.
+    try:
+        return sdxl.XL.ready_record(app, root)
+    except setup.SetupError:
+        return None
+
+
+XL_NEEDED = "Set up Stable Diffusion XL in Create first (Get Stable Diffusion XL). Added SDXL models use its settings and parts, so only the model itself is copied."
 
 
 def read_json(path, what):
@@ -217,7 +237,7 @@ def inspect(payload):
     if path.is_dir():
         files = {part: source.resolve() for part, source in identify_folder(path).items()}
         sources = [(FOLDER_PARTS[part][1], source) for part, source in files.items()]
-        result = dict(format="diffusers", ownVae="vae" in files)
+        result = dict(format="diffusers", ownVae="vae" in files, architecture="sd15")
     elif path.is_file():
         suffix = path.suffix.lower()
         if suffix in PICKLE_SUFFIXES:
@@ -225,15 +245,19 @@ def inspect(payload):
                           ".safetensors files. Most model pages offer a .safetensors download of the same model.")
         if suffix != ".safetensors":
             raise Refused("Choose a .safetensors model file, or a Diffusers model folder.")
-        result = dict(format="single-file", ownVae=identify_checkpoint(read_header(path)))
+        identified = identify_checkpoint(read_header(path))
+        result = dict(format="single-file", ownVae=identified["ownVae"], architecture=identified["family"])
         sources = [("model.safetensors", path.resolve())]
     else:
         raise Refused("That file or folder could not be found.")
     size = sum(source.stat().st_size for _, source in sources)
-    summary = (f"Stable Diffusion 1.5-family {'model folder' if result['format'] == 'diffusers' else 'model file'} · "
+    family = FAMILY_NAMES[result["architecture"]]
+    summary = (f"{family}-family {'model folder' if result['format'] == 'diffusers' else 'model file'} · "
                f"{size / 1024**3:.2f} GiB. It will be copied into your data folder; the original stays where it is.")
     if not result["ownVae"]:
-        summary += " It has no picture decoder (VAE) of its own, so Stable Diffusion 1.5's is used."
+        summary += f" It has no picture decoder (VAE) of its own, so {family}'s is used."
+    if result["architecture"] == "sdxl":
+        summary += " It makes 1024-pixel pictures and needs Stable Diffusion XL to be set up."
     return dict(result, suggestedName=suggested_name(path), bytes=size, summary=summary,
                 files=[dict(path=target, source=str(source), size=source.stat().st_size) for target, source in sources])
 
@@ -288,7 +312,9 @@ def readiness(app, root, record, base_ready):
         return record.get("status", "failed"), str(record.get("message", ""))[:2000]
     if not base_ready:
         return "needs_verification", "Install / verify Stable Diffusion 1.5 in Create; added models use its runtime."
-    if record.get("adapterVersion") != IMPORT_ADAPTER_VERSION or not setup.stamp_valid(app, record):
+    if is_xl(record) and not xl_ready(app, root):
+        return "needs_verification", XL_NEEDED
+    if record.get("adapterVersion") != IMPORT_ADAPTER_VERSION or not stamp_valid(app, record):
         return "needs_verification", "Media Workbench changed how models run. Test this model again."
     try:
         if stamps(root, record) != record.get("stamps"):
@@ -298,12 +324,20 @@ def readiness(app, root, record, base_ready):
     return "ready", "Ready"
 
 
+def stamp_valid(app, record):
+    if is_xl(record):
+        import sdxl
+        return sdxl.XL.stamp_valid(app, record)
+    return setup.stamp_valid(app, record)
+
+
 def entry(app, root, record, base_ready):
     status, message = readiness(app, root, record, base_ready)
     size = sum(item.get("size", 0) for item in record["files"] if isinstance(item, dict) and type(item.get("size")) is int)
     return dict(id=record["id"], name=record["name"], status=status, message=message, format=record["format"],
                 bytes=size, builtIn=False, ownVae=bool(record.get("ownVae", True)),
-                verifiedUtc=str(record.get("verifiedUtc", "")), sourceName=str(record.get("sourceName", "")))
+                verifiedUtc=str(record.get("verifiedUtc", "")), sourceName=str(record.get("sourceName", "")),
+                architecture=record.get("architecture", "sd15"))
 
 
 def imported_records(root):
@@ -427,18 +461,31 @@ def test_model(app, root, record, cancel, progress):
         verify(app, root, path, item, cancel, progress, item["path"])
     # The copy, not the original, is what runs: identify it again from its own headers.
     copied = identify_folder_copy(folder) if record["format"] == "diffusers" else identify_checkpoint(read_header(folder / "model.safetensors"))
-    if record["format"] == "single-file" and copied != record["ownVae"]:
+    if record["format"] == "single-file" and (copied["ownVae"] != record["ownVae"] or copied["family"] != record.get("architecture", "sd15")):
         raise Refused("The copied model does not match the file that was checked. Try adding it again.")
     before = stamps(root, record)
-    progress({"stage": "Testing 512 × 512 pictures with this model on your GPU"})
-    # The bundled installation's verified runtime first; a model that fails there may still pass the conservative one.
-    bundled = setup.read_record(setup.state_path(root)) or {}
-    runtime, evidence, _ = setup.verify_runtime(app, root, {}, bundled["runtime"], [], cancel, progress,
-                                                "verify-model", child_payload(record))
+    if is_xl(record):
+        import sdxl
+        xl = xl_ready(app, root)
+        if xl is None:
+            raise setup.SetupError(XL_NEEDED)
+        # Stable Diffusion XL's own verified runtime choice and its 1024 × 1024 test picture.
+        progress({"stage": "Testing a 1024 × 1024 picture with this model on your GPU"})
+        runtime = xl["runtime"]
+        evidence = dict(setup.inference(app, root, "verify-xl", dict(sdxl.TEST, **child_payload(record), runtime=runtime), cancel, progress),
+                        runtime=runtime)
+        stamp = sdxl.XL.profile_stamp(app, runtime)
+    else:
+        progress({"stage": "Testing 512 × 512 pictures with this model on your GPU"})
+        # The bundled installation's verified runtime first; a model that fails there may still pass the conservative one.
+        bundled = setup.read_record(setup.state_path(root)) or {}
+        runtime, evidence, _ = setup.verify_runtime(app, root, {}, bundled["runtime"], [], cancel, progress,
+                                                    "verify-model", child_payload(record))
+        stamp = setup.profile_stamp(app, runtime)
     if stamps(root, record) != before:
         raise setup.SetupError("This model's copied files changed during its test. Test it again.")
     return dict(record, status="ready", message="Ready", verifiedUtc=datetime.now(timezone.utc).isoformat(), runtime=runtime,
-                evidence=evidence, stamps=before, adapterVersion=IMPORT_ADAPTER_VERSION, profileStamp=setup.profile_stamp(app, runtime))
+                evidence=evidence, stamps=before, adapterVersion=IMPORT_ADAPTER_VERSION, profileStamp=stamp)
 
 
 def identify_folder_copy(folder):
@@ -450,8 +497,9 @@ def identify_folder_copy(folder):
 
 
 def child_payload(record):
-    payload = dict(model=record["id"], modelFormat=record["format"], ownVae=bool(record["ownVae"]))
-    if record.get("runtime") in setup.hardware.RUNTIMES:
+    payload = dict(model=record["id"], modelFormat=record["format"], ownVae=bool(record["ownVae"]),
+                   family=record.get("architecture", "sd15"))
+    if record.get("runtime") in (setup.hardware.XL_RUNTIMES if is_xl(record) else setup.hardware.RUNTIMES):
         payload["runtime"] = record["runtime"]  # A tested model runs as it was tested; a test supplies its own.
     return payload
 
@@ -481,6 +529,8 @@ def import_model(app, payload, cancel, progress):
         setup.recover_interrupted(root)
         if not bundled_ready(app, root):
             raise setup.SetupError("Install / verify Stable Diffusion 1.5 in Create first. Added models use its private runtime, so nothing else downloads.")
+        if identified["architecture"] == "sdxl" and not xl_ready(app, root):
+            raise setup.SetupError(XL_NEEDED)
         needed = identified["bytes"] + IMPORT_HEADROOM_BYTES
         if shutil.disk_usage(root).free < needed:
             raise setup.SetupError(f"Adding this model needs {needed / 1024**3:.1f} GiB of free space in the data folder.")
@@ -488,7 +538,7 @@ def import_model(app, payload, cancel, progress):
         folder = folder_of(root, model_id)
         folder.mkdir(parents=True)
         record = dict(schemaVersion=1, id=model_id, name=unique_name(root, name), format=identified["format"],
-                      architecture="sd15", ownVae=identified["ownVae"], status="copying",
+                      architecture=identified["architecture"], ownVae=identified["ownVae"], status="copying",
                       message="Copying the model into the data folder.", startedUtc=datetime.now(timezone.utc).isoformat(),
                       sourceName=Path(payload["path"]).name[:260], files=[])
         setup.atomic_json(record_path(root, model_id), record)
@@ -515,6 +565,8 @@ def retest(app, payload, cancel, progress):
             raise ValueError("That model is no longer in the data folder.")
         if not bundled_ready(app, root):
             raise setup.SetupError("Install / verify Stable Diffusion 1.5 in Create first; added models use its runtime.")
+        if is_xl(record) and not xl_ready(app, root):
+            raise setup.SetupError(XL_NEEDED)
         try:
             record = test_model(app, root, record, cancel, progress)
         except setup.Cancelled:

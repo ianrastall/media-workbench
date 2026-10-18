@@ -163,6 +163,27 @@ def load_added(data_root, payload, torch, dtype):
         text_encoder=CLIPTextModel.from_pretrained(str(folder / "text_encoder"), **weights), **parts)
 
 
+def load_added_xl(data_root, payload, dtype):
+    """An added Stable Diffusion XL checkpoint, with the verified SDXL setup's configuration (and VAE if it has none).
+
+    Weights load only from the app's own safetensors copy; configuration and tokenizers come from the bundled
+    SDXL files, never from the user's model, and nothing is fetched online.
+    """
+    from diffusers import AutoencoderKL, StableDiffusionXLPipeline
+    model_id = payload["model"]
+    if len(model_id) != 32 or any(c not in "0123456789abcdef" for c in model_id):
+        raise ValueError("Invalid model identifier")
+    if payload.get("modelFormat") != "single-file":
+        raise ValueError("Stable Diffusion XL models are added as single files")
+    bundled = str(data_root / "models" / inference_setup.XL_MODEL)
+    parts = {}
+    if not payload["ownVae"]:
+        parts["vae"] = AutoencoderKL.from_pretrained(bundled, subfolder="vae", variant="fp16", torch_dtype=dtype,
+                                                     use_safetensors=True, local_files_only=True)
+    return StableDiffusionXLPipeline.from_single_file(str(data_root / "models" / "imported" / model_id / "model.safetensors"),
+        config=bundled, torch_dtype=dtype, local_files_only=True, add_watermarker=False, **parts)
+
+
 def safety_checker(data_root, torch):
     """Stable Diffusion 1.5's safety checker on the CPU, for pipelines that have none of their own (videos, SDXL)."""
     from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
@@ -344,8 +365,11 @@ def load_pipeline(session, args, payload, xl, added, source, painted, settings, 
     checker = None
     if xl:
         from diffusers import StableDiffusionXLImg2ImgPipeline, StableDiffusionXLInpaintPipeline, StableDiffusionXLPipeline
-        pipe = StableDiffusionXLPipeline.from_pretrained(str(args.data_root / "models" / inference_setup.XL_MODEL), torch_dtype=dtype,
-            variant="fp16", use_safetensors=True, local_files_only=True, add_watermarker=False)
+        if added:
+            pipe = load_added_xl(args.data_root, payload, dtype)
+        else:
+            pipe = StableDiffusionXLPipeline.from_pretrained(str(args.data_root / "models" / inference_setup.XL_MODEL), torch_dtype=dtype,
+                variant="fp16", use_safetensors=True, local_files_only=True, add_watermarker=False)
         if source:
             pipe = (StableDiffusionXLInpaintPipeline if painted else StableDiffusionXLImg2ImgPipeline).from_pipe(pipe)
         checker = safety_checker(args.data_root, torch)  # SDXL has none of its own.
@@ -376,7 +400,7 @@ def make_picture(session, args, operation, payload, keep=False):
     # The coordinator sends the runtime choice that passed this installation's (or this model's) GPU test, or the
     # one under test. Check it again against the card CUDA sees, so a swapped GPU cannot run untested settings.
     # Stable Diffusion XL has its own verified runtime choices; everything else uses SD 1.5's.
-    xl = operation == "verify-xl" or payload.get("model") == inference_setup.XL_MODEL
+    xl = operation == "verify-xl" or payload.get("model") == inference_setup.XL_MODEL or payload.get("family") == "sdxl"
     table = hardware.XL_RUNTIMES if xl else hardware.RUNTIMES
     runtime = payload.get("runtime")
     if runtime not in table:
@@ -389,7 +413,7 @@ def make_picture(session, args, operation, payload, keep=False):
     dtype = torch.float16 if settings["precision"] == "float16" else torch.float32
     source = payload.get("sourceImage") if operation == "generate" else None
     painted = painted_change(payload, xl) if source and payload.get("maskImage") else None  # Checked before the slow load.
-    added = not xl and payload.get("model", inference_setup.RECIPE) != inference_setup.RECIPE
+    added = payload.get("model", inference_setup.RECIPE) not in (inference_setup.RECIPE, inference_setup.XL_MODEL)
     loading = time.monotonic()
     torch.cuda.reset_peak_memory_stats()
     pipe, checker, default, reused = load_pipeline(session, args, payload, xl, added, source, painted, settings, dtype, keep)

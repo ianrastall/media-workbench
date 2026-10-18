@@ -152,7 +152,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial int SamplerIndex { get; set; }
     /// <summary>The shapes the chosen model and mode offer: Stable Diffusion XL pictures are larger.</summary>
     public ObservableCollection<string> SizeLabels { get; } = [.. GenerationSettings.Sizes.Select(size => size.Label)];
-    public (int Width, int Height, string Label)[] ActiveSizes => IsPictureMode && SelectedModelId == ModelChoice.XlId ? GenerationSettings.XlSizes : GenerationSettings.Sizes;
+    public (int Width, int Height, string Label)[] ActiveSizes =>
+        IsPictureMode && ModelChoices.ElementAtOrDefault(Math.Max(0, ModelIndex))?.UsesXlSizes == true ? GenerationSettings.XlSizes : GenerationSettings.Sizes;
     private void ShowSizes()
     {
         int index = SizeIndex;

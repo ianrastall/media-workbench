@@ -36,7 +36,7 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             Define("workbench_model_status", "Read the saved folder's actual model readiness and recover interrupted work when idle.", Schema(new { })),
             Define("workbench_video_status", "Read whether short videos are set up and verified on this computer, and with which settings.", Schema(new { })),
             Define("workbench_storage", "Inspect storage usage in the selected data folder. No deletion is offered.", Schema(new { })),
-            Define("workbench_models", "List the models in the selected data folder: the bundled Stable Diffusion 1.5 (id sd15-baseline), the optional Stable Diffusion XL (id sdxl-base, once set up), and SD 1.5-family models the user added, with their test status. Only models with status ready can generate; adding or removing models is done by the user in the app.", Schema(new { })),
+            Define("workbench_models", "List the models in the selected data folder: the bundled Stable Diffusion 1.5 (id sd15-baseline), the optional Stable Diffusion XL (id sdxl-base, once set up), and SD 1.5- or SDXL-family models the user added (architecture sd15 or sdxl), with their test status. Only models with status ready can generate; adding or removing models is done by the user in the app.", Schema(new { })),
             Define("workbench_library", "Search completed images and videos by prompt, seed or job ID and inspect recent unfinished jobs. Returns paths/settings, not image or video bytes.",
                 Schema(new { query = Text(), kind = Choice("all", "generate", "upscale", "video"), offset = Integer(0, int.MaxValue), limit = Integer(1, 48) })),
             Define("workbench_search_models", "Search public Hugging Face metadata. Results do not imply runnable model support.",
@@ -52,7 +52,7 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             tools.Add(Define("workbench_generate_image", "Generate a local SD 1.5 image using an already verified installation. Optional sourceJobId starts from a completed Library image; arbitrary input paths are not accepted. "
                 + "With sourceJobId, changeLeft/changeTop/changeWidth/changeHeight (fractions 0-1 of the picture, all four together) change only that rectangle and keep the rest of the picture at its full size; strength 1 replaces the area completely. "
                 + "Optional model is an id from workbench_models whose status is ready; the bundled sd15-baseline is the default. "
-                + "Sizes: 512 or 768 per side for SD 1.5 models (512 x 512, 512 x 768, 768 x 512); sdxl-base uses 1024 x 1024, 832 x 1216, or 1216 x 832.",
+                + "Sizes: 512 or 768 per side for SD 1.5 models (512 x 512, 512 x 768, 768 x 512); sdxl-base and added models with architecture sdxl use 1024 x 1024, 832 x 1216, or 1216 x 832.",
                 Schema(new { prompt = Text(), negativePrompt = Text(), seed = Integer(0, uint.MaxValue), steps = Integer(1, 50), guidanceScale = Number(1, 20), width = IntegerChoice(512, 1216, 512, 768, 832, 1024, 1216), height = IntegerChoice(512, 1216, 512, 768, 832, 1024, 1216), sampler = Choice("pndm", "dpmpp-2m", "euler-a"), sourceJobId = Text(32, "^[a-f0-9]{32}$"), strength = Number(0.05, 1),
                     model = Text(32, "^(sd15-baseline|sdxl-base|[a-f0-9]{32})$"),
                     changeLeft = Number(0, 1), changeTop = Number(0, 1), changeWidth = Number(0, 1), changeHeight = Number(0, 1) }, ["prompt"]), false));

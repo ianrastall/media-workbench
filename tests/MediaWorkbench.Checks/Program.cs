@@ -281,6 +281,16 @@ Check(vm.SelectedModelId == ModelChoice.XlId && vm.SizeIndex == 1, "Use settings
 await vm.RemoveXlCommand.ExecuteAsync(null);
 Check(!vm.XlReady && vm.SelectedModelId == ModelChoice.BuiltInId && vm.SizeLabels[0].Contains("512") && vm.Notice.Contains("were kept"),
     "Removing Stable Diffusion XL returns to Stable Diffusion 1.5 and its shapes");
+// A Stable Diffusion XL fine-tune the user added offers SDXL's shapes, and is listed among added models.
+var addedXl = new ModelChoice("0123456789abcdef0123456789abcdef", "Photo XL", "ready", "Ready", "single-file", 6_900_000_000, Architecture: "sdxl");
+workbench.Models.Add(addedXl);
+await vm.RefreshInstallationCommand.ExecuteAsync(null);
+vm.ModelIndex = vm.ModelChoices.IndexOf(vm.ModelChoices.Single(model => model.Id == addedXl.Id));
+Check(vm.SizeLabels[0].Contains("1024") && vm.AddedModels.Any(model => model.Id == addedXl.Id) && addedXl.Summary.StartsWith("Stable Diffusion XL · "),
+    "An added SDXL model offers SDXL's shapes and says what it is");
+vm.ModelIndex = 0;
+workbench.Models.Remove(addedXl);
+await vm.RefreshInstallationCommand.ExecuteAsync(null);
 // Short videos: chosen in Create, set up once, then made with the shared description and Advanced options.
 vm.CreateKindIndex = 1;
 Check(vm.IsVideoMode && vm.NeedsVideoSetup && !vm.GenerateVideoCommand.CanExecute(null) && vm.PromptHeader == "Describe the video" && vm.ShowsShape,
