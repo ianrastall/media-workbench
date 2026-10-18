@@ -144,6 +144,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial double GuidanceScale { get; set; } = 7.5;
     /// <summary>Index into <see cref="GenerationSettings.Sizes"/>.</summary>
     [ObservableProperty] public partial int SizeIndex { get; set; }
+    /// <summary>How many pictures one Generate makes, with consecutive seeds; after the first, each reuses the loaded model.</summary>
+    public static readonly int[] PictureCounts = [1, 2, 4];
+    public string[] PictureCountLabels { get; } = ["1 picture", "2 versions", "4 versions"];
+    [ObservableProperty] public partial int PictureCountIndex { get; set; }
     /// <summary>Index into <see cref="GenerationSettings.Samplers"/>.</summary>
     [ObservableProperty] public partial int SamplerIndex { get; set; }
     /// <summary>The shapes the chosen model and mode offer: Stable Diffusion XL pictures are larger.</summary>
@@ -471,6 +475,9 @@ public partial class MainViewModel : ObservableObject
         finally { _operation = null; IsBusy = false; ProgressIndeterminate = false; }
     }
 
+    private IProgress<OperationProgress> ObserveProgress(string prefix) => new Progress<OperationProgress>(value =>
+        ((IProgress<OperationProgress>)ObserveProgress()).Report(value with { Stage = prefix + " · " + value.Stage }));
+
     private IProgress<OperationProgress> ObserveProgress() => new Progress<OperationProgress>(value =>
     {
         Status = value.Total > 0 ? value.Unit == "bytes"
@@ -725,25 +732,51 @@ public partial class MainViewModel : ObservableObject
         if (painted && Mask?.HasPaint != true) throw new InvalidDataException("Paint over the part of the picture to change, or select Change the whole picture.");
         var change = painted ? GenerationSettings.PaintChangeLevels[Math.Clamp(PaintChangeIndex, 0, GenerationSettings.PaintChangeLevels.Length - 1)]
             : GenerationSettings.ChangeLevels[Math.Clamp(ChangeIndex, 0, GenerationSettings.ChangeLevels.Length - 1)];
-        // The worker copies the painted area into the job; this temporary file is only the hand-over.
+        int count = PictureCounts[Math.Clamp(PictureCountIndex, 0, PictureCounts.Length - 1)];
+        // The worker copies the painted area into each job; this temporary file is only the hand-over.
         string? mask = painted ? await WorkFolders.WritePaintedAsync(DataRoot, Mask!.EncodePng(), token) : null; // A crash leaves it; the next start sweeps it.
-        GeneratedImage image;
+        int made = 0;
+        List<string> problems = [];
         try
         {
-            image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps,
-                Math.Round(GuidanceScale, 2), size.Width, size.Height, sampler.Id, source, change.Strength, MaskImage: mask, Model: SelectedModelId), ObserveProgress(), token);
+            for (int index = 0; index < count; index++)
+            {
+                // Consecutive seeds: each version is reproducible on its own with Use settings.
+                long seed = ((long)Seed + index) % (1L + uint.MaxValue);
+                var progress = count == 1 ? ObserveProgress() : ObserveProgress($"Picture {index + 1} of {count}");
+                GeneratedImage image;
+                try
+                {
+                    image = await _service.GenerateAsync(DataRoot, new(Prompt, NegativePrompt, seed, (int)Steps, Math.Round(GuidanceScale, 2),
+                        size.Width, size.Height, sampler.Id, source, change.Strength, MaskImage: mask, Model: SelectedModelId), progress, token);
+                }
+                catch (InvalidOperationException ex) when (count > 1)
+                {
+                    // One rejected version (for example by the safety checker) does not stop the others.
+                    problems.Add($"Seed {seed}: {ex.Message}");
+                    Record(problems[^1]);
+                    continue;
+                }
+                made++;
+                PreviewPath = image.ImagePath;
+                LatestImage = image;
+                ImageDescription = image.Description;
+                await ShowNewImageAsync(image, token);
+                Notice = count == 1 ? image.SavedNotice : $"Picture {index + 1} of {count} saved. " + image.SavedNotice;
+                Record("Saved " + image.ImagePath);
+            }
         }
         finally
         {
             if (mask is not null) try { File.Delete(mask); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            _ = RefreshDriveAsync();
         }
-        PreviewPath = image.ImagePath;
-        LatestImage = image;
-        ImageDescription = image.Description;
-        await ShowNewImageAsync(image, token);
-        Notice = image.SavedNotice;
-        Record("Saved " + image.ImagePath);
-        _ = RefreshDriveAsync();
+        if (count > 1 && problems.Count > 0)
+        {
+            if (made == 0) throw new InvalidOperationException(string.Join(" ", problems));
+            Notice = $"Made {made} of {count} versions; the others were not saved. " + string.Join(" ", problems);
+        }
+        else if (count > 1) Notice = $"Made {count} versions with seeds {(long)Seed} to {((long)Seed + count - 1) % (1L + uint.MaxValue)}; see Library for all of them. " + LatestImage!.SavedNotice;
     }, longRunning: true);
     private Task RefreshLibraryAsync() => LoadLibraryPageAsync(0, new(LibrarySearch,
         LibraryKindIndex switch { 1 => "generate", 2 => "upscale", 3 => "video", _ => "all" }, Limit: LibraryPageSize));

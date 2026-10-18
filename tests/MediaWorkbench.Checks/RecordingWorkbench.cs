@@ -62,9 +62,14 @@ sealed class RecordingWorkbench : IWorkbenchService
     public GenerationSettings? LastGeneration { get; private set; }
     public byte[]? LastMaskBytes { get; private set; }
     public Task? GenerationGate { get; set; }
+    /// <summary>Every picture asked for, and an optional failure by seed (like the worker's safety-checker refusal).</summary>
+    public List<GenerationSettings> Generations { get; } = [];
+    public Func<long, Exception?>? GenerationFailure { get; set; }
     public async Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {
         LastGeneration = settings;
+        Generations.Add(settings);
+        if (GenerationFailure?.Invoke(settings.Seed) is { } failure) throw failure;
         // The view model deletes its temporary painted-area file after the call, so keep its bytes.
         LastMaskBytes = settings.MaskImage is { } mask && File.Exists(mask) ? File.ReadAllBytes(mask) : null;
         if (GenerationGate is { } gate) await gate.WaitAsync(cancellationToken);

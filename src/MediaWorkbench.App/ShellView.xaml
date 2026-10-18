@@ -259,6 +259,7 @@
                         <TextBox Header="Things to avoid (optional)" PlaceholderText="For example: blurry, text, extra fingers" Text="{x:Bind ViewModel.NegativePrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="2000" />
                         <StackPanel Orientation="Horizontal" Spacing="16">
                             <ComboBox Header="Shape" ItemsSource="{x:Bind ViewModel.SizeLabels}" SelectedIndex="{x:Bind ViewModel.SizeIndex, Mode=TwoWay}" Width="260" Visibility="{x:Bind ViewModel.ShowsShape, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
+                            <ComboBox Header="How many" ItemsSource="{x:Bind ViewModel.PictureCountLabels}" SelectedIndex="{x:Bind ViewModel.PictureCountIndex, Mode=TwoWay}" Width="160" Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                             <ComboBox Header="Length" ItemsSource="{x:Bind ViewModel.VideoLengthLabels}" SelectedIndex="{x:Bind ViewModel.VideoLengthIndex, Mode=TwoWay}" Width="260" Visibility="{x:Bind ViewModel.IsVideoMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                         </StackPanel>
                         <Expander Header="Advanced options" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">

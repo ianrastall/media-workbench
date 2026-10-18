@@ -1,5 +1,9 @@
 # Initial alpha validation
 
+## Several versions per Generate (unreleased)
+
+`scripts/check.ps1` passed 38 Rust tests, 210 Python tests and 270 C# checks; the five new view-model checks cover the single-picture default, four consecutive seeds and the summary, one refused version among four, all versions failing, and seed wrap-around. Not run interactively or on the GPU as a batch; each version uses the same verified generation path, and the kept model is covered by `tests/gpu_kept_model_check.py`.
+
 ## Image-to-image with memory-saving settings (0.3.0-alpha.6)
 
 18 October 2026, GTX 1660 Ti (6 GB), `fp32-offload`, 12 steps, 512 × 512, seed 20261017, one-shot coordinator each time; the same run without (old) and with (new) the VAE pre-hook:
