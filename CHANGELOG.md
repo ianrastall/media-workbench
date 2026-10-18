@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Source builds copy the MCP console host beside the GUI, so Settings-generated LLM client configuration also works with the normal development build.
+
 ## 0.2.0-alpha.8 — 2026-10-17
 
 - Rust now owns storage inventory: folder traversal, per-area bytes/file counts, installation totals, and available disk space. Settings, the developer CLI, and MCP call it directly without starting Python; worker clients use a thin native adapter.

@@ -29,6 +29,8 @@ Replace the placeholder with the actual path; copying from Settings does this fo
 
 Add `--allow-setup` and/or `--allow-inference` to `args` for the permissions you grant. They are independent: generation permission does not authorize downloading/installing a model, and setup permission does not authorize creative generation. The model cannot enable its own flags or change the selected folder. A newly copied configuration follows the app's saved folder, not an unsaved Settings draft; a running server stays scoped to its launch folder.
 
+For source development, `scripts/build.ps1` also copies the console host beside the GUI. Launch that build and copy configuration from Settings in the same way. Building requires the .NET SDK; the copied host shares the GUI's bundled runtime. The server still uses the generated launch-time folder and permissions.
+
 ## Tools and scope
 
 | Tool | Availability | Behavior |

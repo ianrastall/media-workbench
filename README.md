@@ -91,6 +91,8 @@ Prerequisites: Windows x64, PowerShell 7, .NET SDK 10, Rust/rustup with the MSVC
 ./scripts/run.ps1 -NoBuild
 ```
 
+Source builds also place the MCP console host beside the GUI, so Settings can generate usable client configuration for the development build. The .NET SDK remains a development prerequisite; published installers bundle their runtime.
+
 The Rust version is pinned in `rust-toolchain.toml`, dependencies in `native/Cargo.lock`, and downloaded runtime/compiler artifacts in `packaging/dependencies.json`. Initial builds fetch the official Python embeddable runtime and verify its SHA-256. The application never depends on a developer's global Python installation.
 
 Official releases are built and published by GitHub Actions when the version changes on `main` (see [development](docs/development.md#release-discipline)). Builds refresh the current-release summary above; checks require it to match the version and changelog before publication. Each release has generated installation/feature/license guidance in its release notes and a downloadable README alongside its installer and checksum. To create the self-contained application and installer locally:

@@ -29,6 +29,8 @@ Release builds generate the main README's version/date, release links, and chang
 
 Rust now owns storage inventory as well as export: cancellable traversal, logical bytes/file counts, installation totals, and Windows available disk space. Desktop, MCP, and CLI inspection call it directly without Python; worker clients use a thin adapter. The supported profile/model IDs come from the bundled storage layout. Links/reparse points are rejected in managed area ancestors and skipped inside trees; access failures do not produce partial totals. Removal retains the existing confirmed, locked worker implementation and readiness invalidation.
 
+Normal source builds also copy the console host beside the GUI for Settings-generated MCP configuration; published builds already bundle it with the runtime.
+
 ## Still planned
 
 

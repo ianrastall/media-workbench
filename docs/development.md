@@ -49,6 +49,8 @@ Run `scripts/check.ps1` for Rust formatting/tests/lints, Python tests, and C# bo
 
 ## MCP host
 
+Normal `build.ps1` builds compile the console host for the GUI's self-contained runtime and copy its launch files beside the GUI, sharing the runtime and Core/Infrastructure dependencies. Settings-generated client configuration therefore works from the development output as well as an installed/published application. Building still requires the .NET SDK; launching the resulting host uses the bundled runtime.
+
 The CLI also supports `MediaWorkbench.Cli.exe mcp --data-root <absolute-folder>` with optional `--allow-setup` and `--allow-inference`. `--root <absolute-application-root>` is available for a source-checkout host; installed clients infer the root beside the executable. All stdout is bounded JSON-RPC MCP traffic; errors go to stderr. Settings generates the local-client configuration. See [LLM tools](llm-tools.md).
 
 Publishing builds the console host self-contained in a separate staging folder, then merges its files into the GUI bundle so both use the same .NET/native/service payload. `test-publish.ps1` validates the shipped console host, default permissions, and actual bundled-worker status call. C# checks cover real stdio sessions, disabled capabilities, folder scoping, validation, cancellation, concurrent-operation refusal, client EOF, and bounded input. Temporary fixture data can be directed to a separate volume with `scripts/check.ps1 -Artifacts <absolute-check-directory>`; generated reports remain local.
