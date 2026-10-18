@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-alpha.6 — 2026-10-18
+
+- **Changing a picture is about four times faster on 6 GB graphics cards.** Starting from a picture and painted changes left part of the model on the graphics card while the rest worked, so Windows had to borrow system memory and every step slowed down. That part now steps aside first. On a GTX 1660 Ti, a 12-step change of a 512 × 512 picture went from 48 to 11 seconds and a painted change from 77 to 16 seconds. The pictures are exactly the same as before, byte for byte.
+- This applies to the memory-saving settings used on 6 GB cards and on cards without reliable half precision, for Stable Diffusion 1.5, models you added, and Stable Diffusion XL's faster settings. Existing installations stay verified.
+
 ## 0.3.0-alpha.5 — 2026-10-18
 
 - **Faster repeated pictures.** After a picture, Media Workbench keeps the model loaded for two minutes, so the next picture with the same model and mode starts straight away. On a GTX 1660 Ti, 12-step pictures went from about 25 seconds to about 16. The pictures are exactly the same as before: a check on that card compares them byte for byte. Create says when the model was still loaded from the last picture.

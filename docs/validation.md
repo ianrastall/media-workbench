@@ -1,5 +1,16 @@
 # Initial alpha validation
 
+## Image-to-image with memory-saving settings (0.3.0-alpha.6)
+
+18 October 2026, GTX 1660 Ti (6 GB), `fp32-offload`, 12 steps, 512 × 512, seed 20261017, one-shot coordinator each time; the same run without (old) and with (new) the VAE pre-hook:
+
+| Picture | Old inference / peak | New inference / peak | Picture SHA-256 (first 16) |
+| --- | --- | --- | --- |
+| Image-to-image, strength 0.6 | 47.9 s / 5166 MiB | 11.3 s / 4841 MiB | `0be6424bdca1f410` both |
+| Painted change of the left half, strength 1 | 77.0 s / 5166 MiB | 16.3 s / 4842 MiB | `1f4431e299648283` both |
+
+Per-step timing before the fix: 5.6 s per image-to-image step against 0.93 s per text step. Headless: three new torch-free tests (`tests/test_inference_worker.py`) cover the hook and the serve loop's refusals.
+
 ## Kept-loaded picture model (0.3.0-alpha.5)
 
 18 October 2026, Windows 11, GTX 1660 Ti (6 GB), development data folder verified with `fp32-offload`. `runtime/python/python.exe tests/gpu_kept_model_check.py <data>` (12-step 512 × 512 watercolor house, seed 20261017):
@@ -14,7 +25,7 @@
 | Euler-a picture, then an image-to-image picture (fresh load for the new mode), then the original settings | The original settings made the identical picture again: no sampler or mode state carried over |
 | After the coordinator ended | Data folder free, no `temp/` left |
 
-An earlier run that emptied PyTorch's CUDA cache after every kept picture measured 19.2–19.3 s per repeat (inference about 4 s slower); without it, three repeats took 15.5, 15.4 s. The final code does not empty the cache. The image-to-image picture took about 49 s of inference at strength 0.6 with a fresh load in both runs, unrelated to keeping the model loaded; not investigated yet.
+An earlier run that emptied PyTorch's CUDA cache after every kept picture measured 19.2–19.3 s per repeat (inference about 4 s slower); without it, three repeats took 15.5, 15.4 s. The final code does not empty the cache. The image-to-image picture took about 49 s of inference at strength 0.6 with a fresh load in both runs, unrelated to keeping the model loaded; fixed in 0.3.0-alpha.6 (next section above).
 
 Headless: `scripts/check.ps1` passed 38 Rust tests, 207 Python tests (five new kept-model tests with a fake serving child: reuse, folder ownership against another process, discard on failure and cancellation, replacement after exit and for another folder, routing of other work) and 265 C# checks (new: jobs share one kept coordinator, reads leave it, folder-exclusive work releases it, another folder gets its own, idle and explicit release, and Create's wording).
 

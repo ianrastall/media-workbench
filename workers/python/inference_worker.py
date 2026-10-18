@@ -189,8 +189,23 @@ def place(pipe, offload):
         pipe.enable_sequential_cpu_offload()  # Streams layers to the GPU; fits 6 GB in full precision.
     elif offload:
         pipe.enable_model_cpu_offload()  # Each part moves to the GPU only while it runs.
+        vae_off_while_denoising(pipe)
     else:
         pipe.to("cuda")
+
+
+def vae_off_while_denoising(pipe):
+    """Starting pictures and painted changes are encoded by the VAE before denoising. Model offloading only moves
+    a part off the GPU when the next part in its order (text encoder, UNet, VAE) runs, so the VAE stayed beside the
+    UNet; on a 6 GB card Windows then spilled graphics memory into system memory and each step took about six times
+    as long. Moving it back before the UNet runs changes no numbers; offloading moves it in again to decode."""
+    vae, unet = getattr(pipe, "vae", None), getattr(pipe, "unet", None)
+    if vae is None or unet is None:
+        return
+    def before_unet(module, args):
+        if next(vae.parameters()).device.type == "cuda":
+            vae.to("cpu")
+    unet.register_forward_pre_hook(before_unet)
 
 
 def video_folder(args, payload):

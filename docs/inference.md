@@ -141,6 +141,10 @@ The ML child loads the bundled SD 1.5 weights (offline, safetensors only) and th
 
 Not yet: videos from models the user added, starting a video from a picture, longer clips, other video models, and audio. Windows editions without Media Foundation (N editions without the Media Feature Pack) cannot finish video setup and are told how to add it.
 
+### Image-to-image with memory-saving settings
+
+Model offloading moves a pipeline part off the GPU only when the next part in its order (text encoder, UNet, VAE) runs. A starting picture (and a painted change's masked picture) is encoded by the VAE before denoising, so before 0.3.0-alpha.6 the VAE stayed on the GPU beside the UNet for every step; on a 6 GB card Windows then spilled graphics memory into shared system memory and each step took about six times as long. `vae_off_while_denoising` registers a pre-hook on the UNet that moves the VAE back to the CPU; offloading moves it in again to decode. The numbers are unchanged (byte-identical pictures in the real A/B check), so readiness is unaffected.
+
 ### Keeping the picture model loaded
 
 Since 0.3.0-alpha.5 the desktop (and the local MCP host) run picture, upscale and video jobs in one long-running coordinator started with `MEDIA_WORKBENCH_KEEP_MODEL=1` (`WorkbenchService`). For **pictures** that coordinator keeps one ML child alive between jobs (`inference_setup.KeptModel`, `inference_worker.py --operation serve`). The child keeps the PyTorch runtime and the last pipeline, and reuses it only when the next picture uses exactly the same model, runtime choice and mode (text, starting picture, or painted change). Anything else releases it and loads fresh, so two models are never in graphics memory at once. Every picture starts from a new instance of the model's own scheduler, its own seeded generator and reset peak-memory statistics; reused pictures record `keptLoaded`, zero `startupSeconds`/`loadSeconds`, and Create says the model was still loaded.
