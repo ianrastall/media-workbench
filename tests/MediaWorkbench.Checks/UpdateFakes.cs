@@ -12,7 +12,7 @@ sealed class FakeUpdates(UpdateInfo? available) : IUpdateService
         Checks++;
         return Offline ? throw new HttpRequestException("offline") : Task.FromResult(available);
     }
-    public Task<string> DownloadAsync(UpdateInfo update, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
+    public Task<string> DownloadAsync(UpdateInfo update, string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         Task.FromResult(@"C:\verified\MediaWorkbench-" + update.Version + "-win-x64-setup.exe");
 }
 

@@ -1,5 +1,18 @@
 # Initial alpha validation
 
+## Drive containment slice 1
+
+18 October 2026, Windows 11, development machine. Unreleased work after 0.3.0-alpha.1.
+
+| Check | Result |
+| --- | --- |
+| `scripts/check.ps1` | Passed: 35 Rust tests (new: crashed-worker folders removed, live/starting ones and other `temp` content kept), formatting/Clippy, 202 Python tests (new: child temp files and `CUDA_CACHE_PATH` inside the data folder and removed afterwards, pinned temp folder raises instead of falling back), 227 C# checks |
+| New C# checks | Real Python worker's `TEMP`, `TMP`, `tempfile` and a written temporary file are under `temp/work`; removed on stop; owner file cannot be deleted while running; read-only operations create no missing data folder; a data folder on an unassigned drive letter refuses the worker and a painted hand-over with the plain message; a junction at `temp` is refused and nothing reaches its target; updates download to `temp/updates` and are refused before writing when space is short; Create and MCP hand-overs are in `temp/painted` |
+| `scripts/build.ps1` | Passed, zero warnings/errors |
+| `scripts/build.ps1 -Configuration Release -Publish` (headless published checks) | Passed: x64 inventory, `--self-test` (health creates no data folder; storage lists the new Temporary work area), MCP host/worker |
+
+Not checked: a process-tree write trace, GPU setup/generation with the new child environment (`CUDA_CACHE_PATH`, `TORCH_HOME`, child `TEMP`), update install/relaunch, or the interactive app. Readiness stamps and adapter versions are unchanged because inference itself does not change.
+
 ## Storage milestone planning checkpoint
 
 18 October 2026, Windows 11. Documentation-only checkpoint at 0.3.0-alpha.1, based on inspection of `e493113`; no application behavior or version changed. [Storage locations](storage-locations.md) distinguishes confirmed paths from dependency-write hypotheses and defines the next milestone's acceptance gates.

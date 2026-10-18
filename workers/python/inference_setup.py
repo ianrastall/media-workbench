@@ -12,6 +12,7 @@ from pathlib import Path
 import queue
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.request
@@ -98,6 +99,47 @@ def owned(root, relative):
         if part.is_symlink() or (hasattr(part, "is_junction") and part.is_junction()):
             raise SetupError("An application-managed path contains a link or junction")
     return target
+
+
+# Set by the desktop app to the worker's own folder inside the data folder; children get their own.
+SCRATCH_VARIABLE = "MEDIA_WORKBENCH_TEMP"
+
+
+def pin_temporary_folder():
+    """Use exactly the temporary folder the parent chose. Python would otherwise try other folders
+    (a TEMP folder at the drive root, the working folder) when that one is missing; a missing data
+    folder must fail instead."""
+    folder = os.environ.get(SCRATCH_VARIABLE)
+    if folder:
+        tempfile.tempdir = folder
+
+
+@contextmanager
+def scratch(root):
+    """A child's own temporary folder under the data folder's temp/work, removed afterwards. While its
+    owner file is open, Windows refuses to delete it, so clean-up of crashed runs leaves it alone."""
+    folder = owned(root, f"temp/work/{uuid.uuid4().hex}")
+    folder.mkdir(parents=True)
+    owner = (folder / ".owner").open("xb")
+    try:
+        yield folder
+    finally:
+        owner.close()
+        shutil.rmtree(folder, ignore_errors=True)
+        for parent in (folder.parent, folder.parent.parent):
+            try:
+                parent.rmdir()  # Only when empty: another run's folder keeps it.
+            except OSError:
+                break
+
+
+def contained(environment, root, folder):
+    """Keeps a child's temporary files and GPU caches in the data folder rather than the Windows profile."""
+    for name in ("TEMP", "TMP", "TMPDIR", SCRATCH_VARIABLE):
+        environment[name] = str(folder)
+    environment["CUDA_CACHE_PATH"] = str(owned(root, "cache/cuda"))  # NVIDIA's compiled-kernel cache.
+    environment["TORCH_HOME"] = str(owned(root, "cache/torch"))
+    return environment
 
 
 @contextmanager
@@ -457,10 +499,11 @@ def inference(app, root, operation, payload, cancel, progress, log_id=None):
         HF_HUB_DISABLE_IMPLICIT_TOKEN="1", HF_HOME=str(owned(root, "cache/huggingface")),
         PYTHONUTF8="1", PYTHONIOENCODING="utf-8", TOKENIZERS_PARALLELISM="false",
         CUDA_DEVICE_ORDER="PCI_BUS_ID")  # cuda:0 is then the device check_hardware inspected.
-    return run_child([python, "-I", "-u", app / "workers/python/inference_worker.py", "--root", app,
-        "--data-root", root, "--operation", operation, "--payload", json.dumps(payload)],
-        cancel, progress, environment, protocol=True,
-        log_path=owned(root, f"logs/{operation}-{log_id or uuid.uuid4().hex}.log"))
+    with scratch(root) as folder:
+        return run_child([python, "-I", "-u", app / "workers/python/inference_worker.py", "--root", app,
+            "--data-root", root, "--operation", operation, "--payload", json.dumps(payload)],
+            cancel, progress, contained(environment, root, folder), protocol=True,
+            log_path=owned(root, f"logs/{operation}-{log_id or uuid.uuid4().hex}.log"))
 
 
 def verify_files(app, root, cancel, progress):
@@ -514,10 +557,12 @@ def install(app, payload, cancel, progress):
                 extract(bootstrap / "uv.zip", uvroot)
             environment = {k: v for k, v in os.environ.items() if not k.startswith(("UV_", "PIP_", "PYTHON"))}
             environment.update(UV_PYTHON_DOWNLOADS="never", UV_NO_CONFIG="1", PYTHONUTF8="1")
-            run_child([uvroot / "uv.exe", "pip", "sync", app / "profiles/sd15-cu126.lock",
-                "--python", runtime / "python.exe", "--target", owned(runtime, "Lib/site-packages"),
-                "--require-hashes", "--only-binary", ":all:", "--no-config", "--no-progress",
-                "--cache-dir", owned(root, "cache/uv"), "--link-mode", "copy"], cancel, progress, environment)
+            with scratch(root) as folder:  # uv unpacks wheels in its temporary folder before copying them.
+                run_child([uvroot / "uv.exe", "pip", "sync", app / "profiles/sd15-cu126.lock",
+                    "--python", runtime / "python.exe", "--target", owned(runtime, "Lib/site-packages"),
+                    "--require-hashes", "--only-binary", ":all:", "--no-config", "--no-progress",
+                    "--cache-dir", owned(root, "cache/uv"), "--link-mode", "copy"], cancel, progress,
+                    contained(environment, root, folder))
             runtime_marker(root).write_text(lock_digest(app), encoding="utf-8")
             stage("downloading", "Fetching pinned Hugging Face model files")
             inference(app, root, "download", {}, cancel, progress)

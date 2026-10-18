@@ -30,7 +30,7 @@ static class StorageChecks
         check(snapshot.InstallationBytes == 166 && snapshot.FreeBytes > 0 && snapshot.TotalBytes >= snapshot.FreeBytes,
             "Rust measures the supported installation and available disk space without Python");
         var items = snapshot.Items.ToDictionary(item => item.Id);
-        check(items.Count == 8 && items["images"].Bytes == 5 && items["library"].Bytes == 2 && items["model"].Files == 2 && items["imported"].Bytes == 9,
+        check(items.Count == 9 && items["temp"].Bytes == 0 && items["images"].Bytes == 5 && items["library"].Bytes == 2 && items["model"].Files == 2 && items["imported"].Bytes == 9,
             "Native storage inventory preserves per-area sizes/counts and Unicode paths");
         check(snapshot.Items.Where(item => item.Clearable).Select(item => item.Id).SequenceEqual(["caches", "logs"]),
             "Native inventory never offers images or job records for clearing");
@@ -44,10 +44,10 @@ static class StorageChecks
         try { NativeCore.GetStorageSnapshot(folder, layout with { RuntimeProfileId = "../escape" }, token); }
         catch (InvalidDataException) { refused = true; }
         check(refused && File.Exists(Path.Combine(folder, "artifacts", "image.png")), "Native storage rejects escaping profile IDs without changing images");
-        await using var worker = await PythonWorkerClient.StartAsync(Path.Combine(root, "runtime", "python", "python.exe"), root, token);
+        await using var worker = await PythonWorkerClient.StartAsync(Path.Combine(root, "runtime", "python", "python.exe"), root, folder, token);
         var result = await worker.ExecuteAsync("storage.summary", new { dataRoot = folder }, cancellationToken: token);
         check(result.Kind == "result" && result.Payload.GetProperty("installationBytes").GetInt64() == snapshot.InstallationBytes
-            && result.Payload.GetProperty("items").GetArrayLength() == 8,
+            && result.Payload.GetProperty("items").GetArrayLength() == 9,
             "Worker clients use the same Rust storage inventory as the desktop");
     }
 }

@@ -5,9 +5,9 @@ sealed class RecordingWorkbench : IWorkbenchService
 {
     public List<string> DataRoots { get; } = [];
 
-    public Task<IReadOnlyList<HubModel>> SearchAsync(string query, string task, CancellationToken cancellationToken) =>
+    public Task<IReadOnlyList<HubModel>> SearchAsync(string dataRoot, string query, string task, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<HubModel>>([]);
-    public Task<ModelDetails> GetDetailsAsync(string repoId, CancellationToken cancellationToken) => throw new NotSupportedException();
+    public Task<ModelDetails> GetDetailsAsync(string dataRoot, string repoId, CancellationToken cancellationToken) => throw new NotSupportedException();
     public HubDownloadPlan HubPlan { get; set; } = new(new("owner/model", new string('a', 40), "text-to-image", "diffusers", "openrail", "Public", []),
         [new("model.safetensors", 2L << 30, new string('b', 64))], new("model.safetensors", 2L << 30, new string('b', 64)), true, "Can download and test.", [], true, true);
     public Task? HubPlanGate { get; set; }
@@ -28,7 +28,7 @@ sealed class RecordingWorkbench : IWorkbenchService
     }
     public Task? HealthGate { get; set; }
     public TaskCompletionSource? HealthStarted { get; set; }
-    public async Task<string> GetHealthAsync(CancellationToken cancellationToken)
+    public async Task<string> GetHealthAsync(string dataRoot, CancellationToken cancellationToken)
     {
         HealthStarted?.TrySetResult();
         if (HealthGate is { } gate) await gate.WaitAsync(cancellationToken);
@@ -163,7 +163,7 @@ sealed class RecordingWorkbench : IWorkbenchService
         ModelRoots.Add(dataRoot);
         return Task.FromResult<IReadOnlyList<ModelChoice>>([BuiltIn, Xl, .. Models]);
     }
-    public Task<ModelInspection> InspectModelAsync(string path, CancellationToken cancellationToken) => path.EndsWith(".ckpt", StringComparison.OrdinalIgnoreCase)
+    public Task<ModelInspection> InspectModelAsync(string dataRoot, string path, CancellationToken cancellationToken) => path.EndsWith(".ckpt", StringComparison.OrdinalIgnoreCase)
         ? throw new InvalidOperationException(".ckpt files can run hidden code when they are opened.")
         : Task.FromResult(new ModelInspection("single-file", "dreamy style", 2L << 30, "Stable Diffusion 1.5-family model file · 2.00 GiB.", true));
     public Task<ModelChoice> ImportModelAsync(string dataRoot, string path, string name, IProgress<OperationProgress> progress, CancellationToken cancellationToken)

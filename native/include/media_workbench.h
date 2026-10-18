@@ -111,10 +111,12 @@ MW_API int32_t mw_drive_info(const uint8_t *input, size_t length,
    beyond the newest 50 (with their logs, private input copies, and half-written image, never a
    finished image.png); logs beyond the newest 300 or older than 30 days, except logs of running or
    kept unfinished jobs; ".partial"/".incomplete" files in bootstrap/ and models/<modelId>/ older
-   than 72 hours, or all of them when installationVerified; and, when removeDownloadCaches, cache/
+   than 72 hours, or all of them when installationVerified; temp/work/<32 hex> worker folders whose
+   ".owner" file can be deleted (a running worker holds it open) or, without one, older than 10
+   minutes; and, when removeDownloadCaches, cache/
    and bootstrap/ (renamed into ".removing/" first, which the next call finishes after a crash).
    Never follows links, refuses links in managed ancestors, and skips damaged or unknown files.
-   Returns JSON {removedFiles,removedBytes,logs,jobRecords,partialDownloads,downloadCaches,skipped,
+   Returns JSON {removedFiles,removedBytes,logs,jobRecords,partialDownloads,scratchFolders,downloadCaches,skipped,
    policy:{logs,logDays,problemJobs,partialHours}}; files that cannot be removed now are "skipped".
    output=NULL or capacity<1024 returns 2, required=1024, without filesystem work or callbacks.
    The optional synchronous callback returns nonzero to cancel (status 5); it must not unwind. */

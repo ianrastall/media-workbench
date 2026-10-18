@@ -230,10 +230,7 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             var (width, height) = PngSize(source);
             var canvas = MaskCanvas.ForPicture(width, height);
             canvas.FillRectangle(GetNumber(args, "changeLeft", 0), GetNumber(args, "changeTop", 0), GetNumber(args, "changeWidth", 0), GetNumber(args, "changeHeight", 0));
-            string folder = Path.Combine(Path.GetTempPath(), "MediaWorkbench", "painted");
-            Directory.CreateDirectory(folder);
-            mask = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".png");
-            await File.WriteAllBytesAsync(mask, canvas.EncodePng(), cancellationToken);
+            mask = await WorkFolders.WritePaintedAsync(dataRoot, canvas.EncodePng(), cancellationToken);
         }
         try
         {
@@ -272,7 +269,7 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             {
                 "workbench_models" => new { models = await service.GetModelsAsync(dataRoot, cancellationToken) },
                 "workbench_capabilities" => new { dataRoot, allowSetup, allowInference, model = ModelChoice.BuiltInId, addedModelsSupported = true, imageGenerationSupported = true, partialImageChangesSupported = true, upscalingSupported = true, videoGenerationSupported = true, videoNeedsSetup = true, requiresVerifiedInstallation = true },
-                "workbench_health" => new { summary = await service.GetHealthAsync(cancellationToken) },
+                "workbench_health" => new { summary = await service.GetHealthAsync(dataRoot, cancellationToken) },
                 "workbench_installation_plan" => service.GetBaselinePlan(),
                 "workbench_model_status" => await service.GetInstallationAsync(dataRoot, cancellationToken),
                 "workbench_video_status" => await service.GetVideoAsync(dataRoot, cancellationToken),
@@ -283,8 +280,8 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
                     GetInt(args, "width", 512), GetInt(args, "height", 512), "ddim", Frames: GetInt(args, "frames", 16)), progress, cancellationToken),
                 "workbench_storage" => await service.GetStorageAsync(dataRoot, cancellationToken),
                 "workbench_library" => await service.GetLibraryAsync(dataRoot, cancellationToken, new(GetString(args, "query"), GetString(args, "kind", "all"), GetInt(args, "offset", 0), GetInt(args, "limit", 48))),
-                "workbench_search_models" => new { models = await service.SearchAsync(GetString(args, "query"), GetString(args, "task"), cancellationToken) },
-                "workbench_model_details" => await service.GetDetailsAsync(GetString(args, "repoId"), cancellationToken),
+                "workbench_search_models" => new { models = await service.SearchAsync(dataRoot, GetString(args, "query"), GetString(args, "task"), cancellationToken) },
+                "workbench_model_details" => await service.GetDetailsAsync(dataRoot, GetString(args, "repoId"), cancellationToken),
                 "workbench_install_model" when allowSetup => await service.InstallAsync(dataRoot, progress, cancellationToken),
                 "workbench_generate_image" when allowInference => await GenerateAsync(args, progress, cancellationToken),
                 "workbench_upscale_image" when allowInference => await service.UpscaleAsync(dataRoot, (await SourceImage(args, true, cancellationToken))!, GetInt(args, "scale", 4), progress, cancellationToken),

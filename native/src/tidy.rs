@@ -2,8 +2,9 @@
 //!
 //! Runs only while holding the data-folder lock that setup and generation hold, so it never races
 //! them. It removes old logs, old failed/cancelled/interrupted job records beyond the ones Library
-//! lists, stale setup downloads, and (only once setup is verified) the download caches. It never
-//! removes images, listed job records, private inputs those records need, or files it did not make.
+//! lists, stale setup downloads, temporary folders of workers that crashed, and (only once setup is
+//! verified) the download caches. It never removes images, listed job records, private inputs those
+//! records need, or files it did not make.
 use crate::{
     INVALID, IO_ERROR,
     path_policy::{is_link, no_links},
@@ -32,6 +33,11 @@ const KEEP_PROBLEM_JOBS: usize = 50;
 const PARTIAL_MAX_AGE_HOURS: u64 = 72;
 const PROBLEM_STATUSES: [&str; 3] = ["failed", "cancelled", "interrupted"];
 const MAX_RECORD_BYTES: u64 = 1_048_576;
+/// A worker creates its temporary folder and opens its owner file straight away; a folder without
+/// one is only removed once it is older than this, so a worker starting right now keeps it.
+const SCRATCH_GRACE_MINUTES: u64 = 10;
+/// A running worker holds this file open in its temporary folder, so Windows refuses to delete it.
+const SCRATCH_OWNER: &str = ".owner";
 /// Caches are renamed here first, so a crash mid-removal never leaves a half-deleted cache in use.
 const DISCARD: &str = ".removing";
 
@@ -62,6 +68,8 @@ struct Report {
     logs: u64,
     job_records: u64,
     partial_downloads: u64,
+    /// Temporary folders of workers that crashed or were stopped.
+    scratch_folders: u64,
     download_caches: bool,
     /// Files that could not be removed now (for example, open in another program); tried again next time.
     skipped: u64,
@@ -76,6 +84,7 @@ impl Report {
             logs: 0,
             job_records: 0,
             partial_downloads: 0,
+            scratch_folders: 0,
             download_caches: false,
             skipped: 0,
             policy: Policy {
@@ -515,6 +524,49 @@ fn tidy_partials(
     Ok(())
 }
 
+/// Removes `temp/work/<32 hex>` folders whose worker is gone. A live worker's open owner file cannot be
+/// deleted, which is what marks the folder as in use; nothing else in `temp` is touched here.
+fn tidy_scratch(
+    root: &Path,
+    now: SystemTime,
+    report: &mut Report,
+    cancel: Cancel,
+    context: *mut c_void,
+) -> Result<(), i32> {
+    let temp = root.join("temp");
+    let work = temp.join("work");
+    no_links(&work)?;
+    for (path, name, metadata) in entries(&work)? {
+        cancelled(cancel, context)?;
+        if !metadata.is_dir() || !valid_job_id(&name) {
+            continue;
+        }
+        let owner = path.join(SCRATCH_OWNER);
+        match fs::symlink_metadata(&owner) {
+            Ok(found) if found.is_file() && !is_link(&found) => match fs::remove_file(&owner) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(_) => continue, // Held open: its worker is still running.
+            },
+            Ok(_) => continue, // Not a file this application made.
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                if age(&metadata, now) < Duration::from_secs(SCRATCH_GRACE_MINUTES * 60) {
+                    continue;
+                }
+            }
+            Err(_) => continue,
+        }
+        remove_tree(&path, report, cancel, context)?;
+        if !path.exists() {
+            report.scratch_folders += 1;
+        }
+    }
+    // Only empty folders go; anything still inside keeps them.
+    let _ = fs::remove_dir(&work);
+    let _ = fs::remove_dir(&temp);
+    Ok(())
+}
+
 fn tidy_caches(
     root: &Path,
     report: &mut Report,
@@ -575,7 +627,7 @@ pub(crate) fn tidy(input: &[u8], cancel: Cancel, context: *mut c_void) -> Result
     if root.parent().is_none() || !root.is_dir() {
         return Err(INVALID);
     }
-    for area in ["jobs", "logs", "artifacts", DISCARD] {
+    for area in ["jobs", "logs", "artifacts", "temp", DISCARD] {
         no_links(&root.join(area))?;
     }
     let _lock = Lock::acquire(&root)?;
@@ -585,6 +637,7 @@ pub(crate) fn tidy(input: &[u8], cancel: Cancel, context: *mut c_void) -> Result
     let mut protected = HashSet::new();
     tidy_jobs(&root, &mut protected, &mut report, cancel, context)?;
     tidy_logs(&root, &protected, now, &mut report, cancel, context)?;
+    tidy_scratch(&root, now, &mut report, cancel, context)?;
     let mut folders = vec!["bootstrap".to_owned()];
     folders.extend(request.model_ids.iter().map(|id| format!("models/{id}")));
     tidy_partials(
@@ -654,6 +707,64 @@ mod tests {
         .unwrap();
         tidy(&input, None, std::ptr::null_mut())
             .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+    }
+
+    #[test]
+    fn removes_temporary_folders_of_crashed_workers_but_not_running_or_starting_ones() {
+        let root = folder("scratch");
+        let (crashed, running, starting, old_empty) = (id(1), id(2), id(3), id(4));
+        write(&root, &format!("temp/work/{crashed}/.owner"), b"", 3600);
+        write(
+            &root,
+            &format!("temp/work/{crashed}/pip-unpack/wheel.bin"),
+            b"12345",
+            3600,
+        );
+        write(&root, &format!("temp/work/{running}/.owner"), b"", 3600);
+        write(
+            &root,
+            &format!("temp/work/{running}/frame.png"),
+            b"123",
+            3600,
+        );
+        // A worker holds its owner file open without sharing delete, as the C# and Python owners do.
+        use std::os::windows::fs::OpenOptionsExt;
+        let held = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(root.join(format!("temp/work/{running}/.owner")))
+            .unwrap();
+        fs::create_dir_all(root.join(format!("temp/work/{starting}"))).unwrap();
+        fs::create_dir_all(root.join(format!("temp/work/{old_empty}"))).unwrap();
+        // FILE_WRITE_ATTRIBUTES with FILE_FLAG_BACKUP_SEMANTICS opens the folder itself to age it.
+        OpenOptions::new()
+            .access_mode(0x100)
+            .custom_flags(0x0200_0000)
+            .open(root.join(format!("temp/work/{old_empty}")))
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(3600))
+            .unwrap();
+        write(&root, "temp/work/not-a-worker/keep.txt", b"user", 3600);
+        write(&root, "temp/painted/0123.png", b"x", 3600);
+        let report = run(&root, false, false).unwrap();
+        assert!(!root.join(format!("temp/work/{crashed}")).exists());
+        assert!(root.join(format!("temp/work/{running}/frame.png")).exists());
+        assert!(root.join(format!("temp/work/{starting}")).exists());
+        assert!(!root.join(format!("temp/work/{old_empty}")).exists());
+        assert!(root.join("temp/work/not-a-worker/keep.txt").exists());
+        assert!(root.join("temp/painted/0123.png").exists());
+        assert_eq!(report["scratchFolders"], 2);
+        assert_eq!(report["removedBytes"], 5);
+        drop(held);
+        let report = run(&root, false, false).unwrap();
+        assert!(!root.join(format!("temp/work/{running}")).exists());
+        assert_eq!(report["scratchFolders"], 1);
+        // Removing the last worker folders leaves no empty temp folders, while other content keeps them.
+        fs::remove_dir_all(root.join("temp/work/not-a-worker")).unwrap();
+        fs::remove_dir_all(root.join(format!("temp/work/{starting}"))).unwrap();
+        run(&root, false, false).unwrap();
+        assert!(!root.join("temp/work").exists() && root.join("temp/painted/0123.png").exists());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

@@ -185,6 +185,7 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
             "Inference logs. The newest 300 from the last 30 days are kept automatically, and logs of unfinished jobs listed in Library are never removed automatically. Clearing removes them all; Library's Open log buttons stop working for removed logs.",
         ),
         ("jobs", "Job records", vec!["jobs".into()], ""),
+        ("temp", "Temporary work", vec!["temp".into()], ""),
         ("library", "Library index", vec!["library".into()], ""),
     ];
     let mut items = Vec::new();

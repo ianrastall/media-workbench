@@ -46,7 +46,10 @@ public partial class App : Application
                 string root = AppContext.BaseDirectory;
                 var service = new MediaWorkbench.Infrastructure.WorkbenchService(root, Path.Combine(root, "runtime", "python", "python.exe"));
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                string health = await service.GetHealthAsync(deadline.Token);
+                // Health reads only; it neither creates a missing data folder nor uses Windows' temporary folder for it.
+                string healthData = Path.Combine(Path.GetTempPath(), "MediaWorkbench-health-smoke-" + Guid.NewGuid().ToString("N"));
+                string health = await service.GetHealthAsync(healthData, deadline.Token);
+                if (Directory.Exists(healthData)) throw new InvalidDataException("The health check created a data folder.");
                 var plan = service.GetBaselinePlan();
                 if (!plan.CanExecute) throw new InvalidDataException("Published baseline recipe does not permit local verification.");
                 var hub = MediaWorkbench.Infrastructure.NativeCore.PlanHubFiles("owner/model", new string('a', 40), "openrail", false,
@@ -80,7 +83,7 @@ public partial class App : Application
                     var library = await service.GetLibraryAsync(libraryCheck, deadline.Token);
                     if (library.Total != 0 || library.Images.Count != 0) throw new InvalidDataException("The bundled Library index check failed.");
                     var storage = await service.GetStorageAsync(libraryCheck, deadline.Token);
-                    if (storage.Items.Count != 8 || storage.FreeBytes <= 0 || storage.InstallationBytes != 0)
+                    if (storage.Items.Count != 9 || storage.FreeBytes <= 0 || storage.InstallationBytes != 0)
                         throw new InvalidDataException("The bundled native storage check failed.");
                     var models = await service.GetModelsAsync(libraryCheck, deadline.Token);
                     if (models.Count != 2 || !models[0].BuiltIn || models[0].IsReady || !models[1].IsXl || models[1].IsReady)

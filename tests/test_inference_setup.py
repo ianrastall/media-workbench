@@ -247,6 +247,49 @@ class SetupTests(unittest.TestCase):
             worker.stderr.close()
 
 
+class ContainmentTests(unittest.TestCase):
+    """Children keep temporary files and GPU caches inside the data folder, never in Windows' own folders."""
+
+    def test_child_temporary_files_stay_in_the_data_folder_and_are_removed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            seen = []
+            code = ("import json,os,tempfile; os.environ['MEDIA_WORKBENCH_TEMP'] and setattr(tempfile,'tempdir',os.environ['MEDIA_WORKBENCH_TEMP']); "
+                    "handle=tempfile.NamedTemporaryFile(delete=False); handle.close(); "
+                    "print(json.dumps({'kind':'result','payload':{'file':handle.name,'temp':os.environ['TEMP'],'cuda':os.environ['CUDA_CACHE_PATH']}}),flush=True)")
+            with setup.scratch(root) as work:
+                self.assertTrue((work / ".owner").is_file())
+                with self.assertRaises(OSError):
+                    (work / ".owner").unlink()  # Held open: clean-up cannot remove a running child's folder.
+                environment = setup.contained(dict(os.environ), root, work)
+                result = setup.run_child([sys.executable, "-u", "-c", code], threading.Event(), seen.append, environment, protocol=True)
+            for key in ["file", "temp"]:
+                self.assertTrue(Path(result[key]).is_relative_to(root / "temp/work"), result)
+            self.assertEqual(Path(result["cuda"]), root / "cache/cuda")
+            self.assertFalse((root / "temp").exists(), "finished children leave no temporary folders")
+
+    def test_an_other_running_childs_folder_keeps_the_shared_parent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with setup.scratch(root) as first:
+                with setup.scratch(root) as second:
+                    self.assertNotEqual(first, second)
+                self.assertFalse(second.exists())
+                self.assertTrue(first.is_dir())
+            self.assertFalse((root / "temp").exists())
+
+    def test_pinned_temporary_folder_never_falls_back(self):
+        with tempfile.TemporaryDirectory() as folder:
+            missing = Path(folder) / "unplugged/temp/work/abc"
+            code = ("import sys,tempfile; sys.path.insert(0,sys.argv[1]); import inference_setup as s; s.pin_temporary_folder(); "
+                    "tempfile.NamedTemporaryFile()")
+            result = subprocess.run([sys.executable, "-c", code, str(ROOT / "workers/python")], capture_output=True, text=True,
+                                    env=dict(os.environ, MEDIA_WORKBENCH_TEMP=str(missing)), timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("FileNotFoundError", result.stderr)
+            self.assertFalse(missing.parent.parent.exists())
+
+
 class ReadinessTests(unittest.TestCase):
     def test_profile_stamp_ignores_adapter_source_and_line_endings(self):
         with tempfile.TemporaryDirectory() as folder:

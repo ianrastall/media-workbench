@@ -25,6 +25,8 @@ import artifact_export
 import sdxl
 import video
 
+inference_setup.pin_temporary_folder()
+
 PROTOCOL = 1
 MAX_REQUEST_BYTES = 1_048_576
 OUTPUT_LOCK = threading.Lock()

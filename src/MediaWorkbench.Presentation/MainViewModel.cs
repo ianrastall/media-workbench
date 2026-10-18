@@ -479,7 +479,7 @@ public partial class MainViewModel : ObservableObject
         if (string.IsNullOrEmpty(path) || !Path.IsPathFullyQualified(path)) return;
         try
         {
-            var found = await _service.InspectModelAsync(path, token);
+            var found = await _service.InspectModelAsync(DataRoot, path, token);
             ImportName = found.SuggestedName;
             ImportText = found.Summary;
             ImportPath = path;
@@ -647,7 +647,7 @@ public partial class MainViewModel : ObservableObject
         var change = painted ? GenerationSettings.PaintChangeLevels[Math.Clamp(PaintChangeIndex, 0, GenerationSettings.PaintChangeLevels.Length - 1)]
             : GenerationSettings.ChangeLevels[Math.Clamp(ChangeIndex, 0, GenerationSettings.ChangeLevels.Length - 1)];
         // The worker copies the painted area into the job; this temporary file is only the hand-over.
-        string? mask = painted ? WriteTemporaryMask(Mask!) : null;
+        string? mask = painted ? await WorkFolders.WritePaintedAsync(DataRoot, Mask!.EncodePng(), token) : null; // A crash leaves it; the next start sweeps it.
         GeneratedImage image;
         try
         {
@@ -710,15 +710,6 @@ public partial class MainViewModel : ObservableObject
             if (Images.Count > LibraryPageSize) Images.RemoveAt(Images.Count - 1);
         }
     }
-    private static string WriteTemporaryMask(MaskCanvas mask)
-    {
-        string folder = Housekeeping.PaintedFolder; // A crash leaves the file; the next start sweeps it.
-        Directory.CreateDirectory(folder);
-        string path = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".png");
-        File.WriteAllBytes(path, mask.EncodePng());
-        return path;
-    }
-
     /// <summary>Starts painting over the starting picture, given its displayed (EXIF-oriented) pixel size.</summary>
     public bool StartPainting(int pictureWidth, int pictureHeight)
     {
@@ -946,7 +937,7 @@ public partial class MainViewModel : ObservableObject
 
     private Task SearchAsync() => RunAsync("Searching Hugging Face…", async token =>
     {
-        var models = await _service.SearchAsync(SearchQuery, TaskFilter ?? "", token);
+        var models = await _service.SearchAsync(DataRoot, SearchQuery, TaskFilter ?? "", token);
         Models.Clear();
         SelectedModel = null;
         foreach (var model in models) Models.Add(model);
@@ -999,7 +990,7 @@ public partial class MainViewModel : ObservableObject
 
     private Task DiagnoseAsync() => RunAsync("Checking components…", async token =>
     {
-        DiagnosticsText = await _service.GetHealthAsync(token);
+        DiagnosticsText = await _service.GetHealthAsync(DataRoot, token);
         WorkerStatus = "Python worker connected";
         await UpdateSystemProfile(token, refresh: true);
         Record("Native core and worker responded");
@@ -1059,7 +1050,8 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Once per start: removes this app's own leftovers in %TEMP% (painted-area hand-overs from a crash,
+    /// Once per start: removes this app's own leftovers in the data folder's temp folder and, from earlier versions,
+    /// in %TEMP% (painted-area hand-overs from a crash,
     /// installers of an update that has finished), then tidies the saved data folder under its lock.
     /// Download caches go only when setup is verified and Settings does not keep them. Quiet unless it frees space.
     /// </summary>
@@ -1067,8 +1059,12 @@ public partial class MainViewModel : ObservableObject
     {
         await Task.Run(() =>
         {
-            Housekeeping.SweepPaintedHandOvers(Housekeeping.PaintedFolder, Housekeeping.PaintedMaxAge, DateTime.UtcNow);
-            Housekeeping.RemoveFinishedInstallers(Housekeeping.UpdateFolder, AppVersion, DateTime.UtcNow);
+            // Earlier versions kept these in Windows' temporary folder; only this app's own file names are touched.
+            foreach (var (painted, updates) in new[] { (WorkFolders.LegacyPainted, WorkFolders.LegacyUpdates), (WorkFolders.Painted(DataRoot), WorkFolders.Updates(DataRoot)) })
+            {
+                Housekeeping.SweepPaintedHandOvers(painted, Housekeeping.PaintedMaxAge, DateTime.UtcNow);
+                Housekeeping.RemoveFinishedInstallers(updates, AppVersion, DateTime.UtcNow);
+            }
         });
         await RunAsync("Tidying the data folder…", async token =>
         {
@@ -1122,7 +1118,7 @@ public partial class MainViewModel : ObservableObject
     private Task InstallUpdateAsync() => RunAsync("Downloading the update…", async token =>
     {
         if (_update is null) return;
-        string installer = await _updates.DownloadAsync(_update, ObserveProgress(), token);
+        string installer = await _updates.DownloadAsync(_update, DataRoot, ObserveProgress(), token);
         Record($"Verified the {_update.Version} installer; starting it");
         InstallerReady?.Invoke(installer);
     }, longRunning: true);

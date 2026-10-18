@@ -81,7 +81,7 @@ try {
     if ($taskState.isError -or $taskState.structuredContent.status -ne 'not_installed') { throw 'Published MCP worker status check failed.' }
     $taskMcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"workbench_storage","arguments":{}}}')
     $taskStorage = (Read-McpSmokeResponse).result
-    if ($taskStorage.isError -or $taskStorage.structuredContent.items.Count -ne 8 -or $taskStorage.structuredContent.freeBytes -le 0) { throw 'Published MCP native storage check failed.' }
+    if ($taskStorage.isError -or $taskStorage.structuredContent.items.Count -ne 9 -or $taskStorage.structuredContent.freeBytes -le 0) { throw 'Published MCP native storage check failed.' }
     $taskMcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"workbench_models","arguments":{}}}')
     $taskModels = (Read-McpSmokeResponse).result
     if ($taskModels.isError -or $taskModels.structuredContent.models[0].id -ne 'sd15-baseline' -or $taskModels.structuredContent.models.Count -ne 2 -or $taskModels.structuredContent.models[1].id -ne 'sdxl-base') { throw 'Published MCP model listing failed.' }

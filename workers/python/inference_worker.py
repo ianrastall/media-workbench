@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hardware  # noqa: E402
 import inference_setup  # noqa: E402
 
+inference_setup.pin_temporary_folder()
+
 WIRE_OUT = sys.stdout
 OUTPUT_LOCK = threading.Lock()
 

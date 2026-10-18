@@ -50,7 +50,7 @@ static class McpChecks
                 check(!videoStatus.GetProperty("isError").GetBoolean() && videoStatus.GetProperty("structuredContent").GetProperty("status").GetString() == "not_installed",
                     "MCP reads the real video setup state of the scoped folder");
                 var storage = (await Call("storage", "workbench_storage", new { })).GetProperty("result");
-                check(!storage.GetProperty("isError").GetBoolean() && storage.GetProperty("structuredContent").GetProperty("items").GetArrayLength() == 8,
+                check(!storage.GetProperty("isError").GetBoolean() && storage.GetProperty("structuredContent").GetProperty("items").GetArrayLength() == 9,
                     "MCP inspects the scoped data folder through the Rust storage service");
                 var listedModels = (await Call("models", "workbench_models", new { })).GetProperty("result");
                 check(!listedModels.GetProperty("isError").GetBoolean() && listedModels.GetProperty("structuredContent").GetProperty("models")[0].GetProperty("id").GetString() == ModelChoice.BuiltInId
@@ -143,7 +143,7 @@ static class McpChecks
             arguments = new { prompt = "a boat", sourceJobId = new string('b', 32), changeLeft = 0.25, changeTop = 0.5, changeWidth = 0.5, changeHeight = 0.5 } } });
         var area = (await Read()).GetProperty("result");
         check(!area.GetProperty("isError").GetBoolean() && workbench.LastGeneration is { SourceImage: var areaSource, Strength: 1.0, MaskImage: { } areaMask }
-            && areaSource == sourcePicture && !File.Exists(areaMask) && workbench.LastMaskBytes is { } areaBytes
+            && areaSource == sourcePicture && !File.Exists(areaMask) && Path.GetDirectoryName(areaMask) == WorkFolders.Painted(root) && workbench.LastMaskBytes is { } areaBytes
             && MaskCanvas.DecodePng(areaBytes) is { Width: 300, Height: 200 } areaCells && areaCells.Cells.ToArray().Count(cell => cell != 0) == 15000
             && areaCells.Cells[150 * 300 + 150] == 255 && areaCells.Cells[50 * 300 + 150] == 0,
             "MCP turns a change area into a painted area shaped like the source image and removes the hand-over file");

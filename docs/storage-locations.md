@@ -1,6 +1,19 @@
 # Next milestone: choose where Media Workbench works
 
-Recorded 18 October 2026. **Planned; not implemented or released.** Development is paused at 0.3.0-alpha.1. Drive containment is the next release milestone, ahead of queue/warm-worker work and further model expansion. The intended release is **0.4.0-alpha.1**, subject to the acceptance checks below; do not bump the shipped version or add a release changelog entry until it works.
+Recorded 18 October 2026. **In progress; not complete or released as 0.4.0-alpha.1.** Drive containment is the next release milestone, ahead of queue/warm-worker work and further model expansion. The intended release is **0.4.0-alpha.1**, subject to the acceptance checks below; do not label a release as that milestone until it works. Intermediate alpha releases may ship completed, headless-verified slices.
+
+**Slice 1 implemented (unreleased, after 0.3.0-alpha.1):** app-owned temporary work now lives in the saved data folder's `temp/` folder. Each Python worker gets `temp/work/<id>` as its `TEMP`/`TMP`/`TMPDIR`; setup and GPU children get their own folder there, and NVIDIA's compiled-kernel cache (`CUDA_CACHE_PATH`) and `TORCH_HOME` move under `cache/`. Painted-area hand-overs (Create and MCP) use `temp/painted`, and update installers download to `temp/updates` after a free-space check. A data folder that is missing, unwritable, or reached through a junction stops the operation with a plain explanation; nothing falls back to Windows temp. Read-only operations (health, hardware profile, Hub search/details, model inspection) still never create a missing data folder. Crashed workers' folders are removed by Rust clean-up unless a live worker holds them open, and the old `%TEMP%` locations are only swept. Headless checks only; no process-write trace or GPU run has been made with these changes.
+
+| Area | Status after slice 1 |
+| --- | --- |
+| Worker temporary files | Data folder `temp/work/<id>`, owner file held open; removed on exit and by `mw_tidy_data_folder` after a crash (`WorkFolders.cs`, `PythonWorkerClient.cs`, `inference_setup.scratch`) |
+| Python fallback search | `MEDIA_WORKBENCH_TEMP` pins `tempfile.tempdir`, so a missing folder raises instead of trying another one |
+| uv package extraction, ML child temp | Child's own `temp/work/<id>`; uv cache already `cache/uv`, Hugging Face already `cache/huggingface` |
+| CUDA kernel / torch hub caches | `cache/cuda`, `cache/torch` (removed with the other caches after a verified setup unless kept) |
+| Painted hand-overs | `temp/painted` (`WorkFolders.WritePaintedAsync`) |
+| Update downloads | `temp/updates`, refused when the drive would keep less than 512 MiB free after the download |
+| Preferences, startup log, installation, installer extraction | **Unchanged**: still Local AppData / Inno Setup defaults |
+| Settings location display, volume restrictions, Move existing data | **Not started** |
 
 ## Problem and current evidence
 
@@ -48,4 +61,4 @@ The promise covers Media Workbench and its owned processes. Windows may independ
 
 ## Resume here
 
-First implement the shared location policy and propagate it through the worker/update/painted-hand-over paths, with meaningful headless checks. Then complete migration, installer/update behavior, and real write-trace acceptance before releasing the milestone. Use ignored build/check output on a suitable development volume; development tools' own caches are a separate audit from the shipped application.
+Slice 1 (worker/update/painted paths) is done; see the table at the top. Next, in order: (2) Settings shows the actual locations and their volumes, and long operations re-check the data folder's volume before heavy writes; (3) **Move existing data** with preflight, copy-verify, atomic switch and crash recovery; (4) installer destination retention and the all-app-owned-files arrangement; (5) real write-trace acceptance on a two-volume machine with the user available. Location/volume validation is still C# (`WorkFolders.Prepare`) and Python (`owned`); moving it behind the Rust ABI belongs with the migration slice, which needs the same checks. Use ignored build/check output on a suitable development volume; development tools' own caches are a separate audit from the shipped application.

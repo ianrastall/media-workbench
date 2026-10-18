@@ -15,7 +15,7 @@ void Check(bool condition, string message)
 }
 
 using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-await using (var client = await PythonWorkerClient.StartAsync(python, root, deadline.Token))
+await using (var client = await PythonWorkerClient.StartAsync(python, root, null, deadline.Token))
 {
     Check(client.Handshake.Protocol == 1 && client.Handshake.Kind == "hello", "C# validates real Python handshake");
     var health = await client.ExecuteAsync("health", new { }, cancellationToken: deadline.Token);
@@ -187,6 +187,7 @@ vm.BrushIndex = 2;
 vm.PaintStroke(0.2, 0.2, 0.8, 0.8);
 await vm.GenerateCommand.ExecuteAsync(null);
 Check(workbench.LastGeneration is { SourceImage: var paintedSource, Strength: 1.0, MaskImage: { } sentMask } && paintedSource == otherPicture && !File.Exists(sentMask)
+    && Path.GetDirectoryName(sentMask) == WorkFolders.Painted(vm.DataRoot)
     && workbench.LastMaskBytes is { } sentBytes && MaskCanvas.DecodePng(sentBytes).Cells.SequenceEqual(vm.Mask!.Cells),
     "Generation hands over the painted area and then removes its temporary copy");
 Check(workbench.LastGeneration!.Summary.StartsWith("Painted part of your picture changed completely"), "Summaries say when only a painted part changed");
@@ -394,19 +395,24 @@ using (var releases = System.Text.Json.JsonDocument.Parse("[" + string.Join(",",
 }
 byte[] installerBytes = "fake installer"u8.ToArray();
 string installerName = "MediaWorkbench-0.3.0-alpha.2-win-x64-setup.exe", installerUrl = prefix + "v0.3.0-alpha.2/" + installerName;
-async Task<Exception?> TryDownload(string checksumLine)
+string updateData = Path.Combine(output, "update-data");
+async Task<Exception?> TryDownload(string checksumLine, long free = long.MaxValue)
 {
     var http = new HttpClient(new StubHttp(new() { [installerUrl] = installerBytes, [installerUrl + ".sha256"] = System.Text.Encoding.ASCII.GetBytes(checksumLine) }));
-    try { await new UpdateService(http, "0.2.0-alpha.2").DownloadAsync(new("0.3.0-alpha.2", "", installerUrl, installerUrl + ".sha256", ""), new Progress<OperationProgress>(), deadline.Token); return null; }
+    try { await new UpdateService(http, "0.2.0-alpha.2", _ => free).DownloadAsync(new("0.3.0-alpha.2", "", installerUrl, installerUrl + ".sha256", ""), updateData, new Progress<OperationProgress>(), deadline.Token); return null; }
     catch (Exception ex) { return ex; }
 }
 string goodHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(installerBytes));
-string downloaded = Path.Combine(Path.GetTempPath(), "MediaWorkbench-update", installerName);
-Check(await TryDownload($"{goodHash}  {installerName}") is null && File.ReadAllBytes(downloaded).SequenceEqual(installerBytes), "A download matching its published checksum is kept");
+string downloaded = Path.Combine(WorkFolders.Updates(updateData), installerName);
+Check(await TryDownload($"{goodHash}  {installerName}") is null && File.ReadAllBytes(downloaded).SequenceEqual(installerBytes),
+    "A download matching its published checksum is kept in the data folder's temp/updates");
 File.Delete(downloaded);
 Check(await TryDownload($"{new string('0', 64)}  {installerName}") is InvalidDataException && !File.Exists(downloaded) && !File.Exists(downloaded + ".partial"),
     "A download that fails its checksum is discarded");
+Check(await TryDownload($"{goodHash}  {installerName}", UpdateService.DownloadReserveBytes) is IOException { Message: var lowSpace } && lowSpace.Contains("free on the drive that holds the data folder")
+    && !File.Exists(downloaded) && !File.Exists(downloaded + ".partial"), "An update that would leave the data folder's drive too full is refused before writing");
 await HousekeepingChecks.RunAsync(Check, root, output, deadline.Token);
+await WorkFolderChecks.RunAsync(Check, python, output, deadline.Token);
 
 
 async Task<string> Fixture(string name, string body)
@@ -419,13 +425,13 @@ async Task<string> Fixture(string name, string body)
 }
 var incompatibleRoot = await Fixture("bad-handshake", "import json\nprint(json.dumps({'protocol':2,'id':None,'kind':'hello','payload':{}}),flush=True)\n");
 bool incompatibleRejected = false;
-try { await using var bad = await PythonWorkerClient.StartAsync(python, incompatibleRoot, deadline.Token); }
+try { await using var bad = await PythonWorkerClient.StartAsync(python, incompatibleRoot, null, deadline.Token); }
 catch (InvalidDataException) { incompatibleRejected = true; }
 Check(incompatibleRejected, "Incompatible worker handshake is rejected");
 
 var crashRoot = await Fixture("crash", "import json,sys,os\nprint(json.dumps({'protocol':1,'id':None,'kind':'hello','payload':{}}),flush=True)\nsys.stdin.readline()\nos._exit(7)\n");
 bool crashReported = false;
-await using (var crash = await PythonWorkerClient.StartAsync(python, crashRoot, deadline.Token))
+await using (var crash = await PythonWorkerClient.StartAsync(python, crashRoot, null, deadline.Token))
 {
     try { await crash.ExecuteAsync("health", new { }, cancellationToken: deadline.Token); }
     catch (IOException) { crashReported = true; }
@@ -437,7 +443,7 @@ var orphanRoot = await Fixture("orphan", "import json,sys,os,subprocess\nprint(j
     "request=json.loads(sys.stdin.readline())\nchild=subprocess.Popen([sys.executable,'-c','import time; time.sleep(120)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n" +
     "print(json.dumps({'protocol':1,'id':request['id'],'kind':'progress','payload':{'stage':'child','completed':child.pid}}),flush=True)\nos._exit(9)\n");
 int orphanPid = 0;
-await using (var orphan = await PythonWorkerClient.StartAsync(python, orphanRoot, deadline.Token))
+await using (var orphan = await PythonWorkerClient.StartAsync(python, orphanRoot, null, deadline.Token))
 {
     try { await orphan.ExecuteAsync("health", new { }, e => orphanPid = e.Payload.GetProperty("completed").GetInt32(), deadline.Token); }
     catch (IOException) { }
@@ -562,7 +568,7 @@ await hubVm.DetailsCommand.ExecuteAsync(null);
 hubVm.HubLicenseReviewed = true;
 hubVm.SaveSettingsCommand.Execute(null);
 Check(!hubVm.DownloadModelCommand.CanExecute(null), "Saving a different data folder invalidates a Hub plan tied to the old folder");
-await using (var hubWorker = await PythonWorkerClient.StartAsync(python, root, deadline.Token))
+await using (var hubWorker = await PythonWorkerClient.StartAsync(python, root, null, deadline.Token))
 {
     string noCreate = Path.Combine(output, "invalid-hub-request");
     var invalidHub = await hubWorker.ExecuteAsync("catalog.plan", new { dataRoot = noCreate, repoId = "../outside" }, cancellationToken: deadline.Token);

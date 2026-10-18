@@ -53,14 +53,18 @@ try
     }
     if (args[2] == "update-check")
     {
-        // Optional: pretend to be an older version, and --download to fetch and verify the installer (never runs it).
+        // Optional: pretend to be an older version, and --download <absolute-data-folder> to fetch and verify the
+        // installer into that folder's temp/updates (never runs it).
         string version = args.Length > 3 && !args[3].StartsWith("--") ? args[3] : UpdateService.ApplicationVersion();
+        int download = Array.IndexOf(args, "--download");
+        string? downloadRoot = download < 0 ? null : download + 1 < args.Length && Path.IsPathFullyQualified(args[download + 1]) ? args[download + 1]
+            : throw new ArgumentException("--download requires an absolute data folder.");
         var updates = new UpdateService(UpdateService.CreateClient(version), version);
         using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var update = await updates.CheckAsync(limit.Token);
         Console.WriteLine(update is null ? $"{version} is up to date." : $"{update.Version} is available: {update.PageUrl}");
-        if (update is not null && args.Contains("--download"))
-            Console.WriteLine("Verified installer: " + await updates.DownloadAsync(update, new Progress<OperationProgress>(), limit.Token));
+        if (update is not null && downloadRoot is not null)
+            Console.WriteLine("Verified installer: " + await updates.DownloadAsync(update, downloadRoot, new Progress<OperationProgress>(), limit.Token));
         return 0;
     }
     if (args[2] == "install")
@@ -75,7 +79,10 @@ try
         throw new ArgumentException("Demo requires an explicit absolute output directory.");
     using var cancellation = new CancellationTokenSource(TimeSpan.FromHours(4));
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
-    await using var worker = await PythonWorkerClient.StartAsync(args[0], root, cancellation.Token);
+    // Commands given a data folder keep their temporary files in it; health, catalog and demo need none.
+    string? dataRoot = operation is "health" or "catalog.list" or "demo.run" ? null
+        : args.Length > 3 && Path.IsPathFullyQualified(args[3]) ? args[3] : throw new ArgumentException("This command requires an explicit absolute data folder.");
+    await using var worker = await PythonWorkerClient.StartAsync(args[0], root, dataRoot, cancellation.Token);
     var result = await worker.ExecuteAsync(operation,
         new { label = "Protocol demonstration — no image generation", outputDirectory = args.Length > 3 ? args[3] : "",
             dataRoot = args.Length > 3 ? args[3] : "", prompt = args.Length > 4 ? args[4] : "A red ceramic house beside a green tree, watercolor illustration, daylight",

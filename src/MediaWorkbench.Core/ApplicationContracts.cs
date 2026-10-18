@@ -236,21 +236,23 @@ public interface IUpdateService
     string CurrentVersion { get; }
     /// <summary>The newest applicable release, or null when this version is current. Throws when GitHub cannot be reached.</summary>
     Task<UpdateInfo?> CheckAsync(CancellationToken cancellationToken);
-    /// <summary>Downloads the installer and verifies its published SHA-256; returns the verified file's path.</summary>
-    Task<string> DownloadAsync(UpdateInfo update, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Downloads the installer into the data folder's temp folder after checking its drive has room, and
+    /// verifies its published SHA-256; returns the verified file's path.</summary>
+    Task<string> DownloadAsync(UpdateInfo update, string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
 }
 public interface ISettingsStore
 {
     AppSettings Load();
     void Save(AppSettings settings);
 }
+/// <summary>Every operation names the data folder: its temporary work stays there, never in Windows' temporary folder.</summary>
 public interface IWorkbenchService
 {
-    Task<IReadOnlyList<HubModel>> SearchAsync(string query, string task, CancellationToken cancellationToken);
-    Task<ModelDetails> GetDetailsAsync(string repoId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<HubModel>> SearchAsync(string dataRoot, string query, string task, CancellationToken cancellationToken);
+    Task<ModelDetails> GetDetailsAsync(string dataRoot, string repoId, CancellationToken cancellationToken);
     Task<HubDownloadPlan> PlanHubModelAsync(string dataRoot, string repoId, string revision, string file, CancellationToken cancellationToken);
     Task<ModelChoice> DownloadModelAsync(string dataRoot, HubDownloadPlan plan, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
-    Task<string> GetHealthAsync(CancellationToken cancellationToken);
+    Task<string> GetHealthAsync(string dataRoot, CancellationToken cancellationToken);
     InstallationPlan GetBaselinePlan();
     Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Reads the GPU, memory, and data-folder drive, and the settings chosen from them; creates nothing.</summary>
@@ -279,7 +281,7 @@ public interface IWorkbenchService
     /// <summary>The bundled model first, then models the user added, each with its tested state.</summary>
     Task<IReadOnlyList<ModelChoice>> GetModelsAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Identifies a .safetensors file or Diffusers folder from its headers; throws with a plain reason when it cannot be added.</summary>
-    Task<ModelInspection> InspectModelAsync(string path, CancellationToken cancellationToken);
+    Task<ModelInspection> InspectModelAsync(string dataRoot, string path, CancellationToken cancellationToken);
     /// <summary>Copies the model into the data folder, verifies the copy, and tests it on the GPU; nothing is kept if a step fails.</summary>
     Task<ModelChoice> ImportModelAsync(string dataRoot, string path, string name, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     /// <summary>Verifies an added model's copied files and tests it on the GPU again.</summary>

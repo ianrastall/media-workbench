@@ -13,6 +13,7 @@ public sealed class PythonWorkerClient : IWorkerClient
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Task _stderrPump;
     private readonly Queue<string> _diagnostics = new();
+    private ScratchFolder? _scratch;
     private bool _disposed;
     public WorkerEvent Handshake { get; private set; } = null!;
 
@@ -31,8 +32,14 @@ public sealed class PythonWorkerClient : IWorkerClient
         });
     }
 
-    public static async Task<PythonWorkerClient> StartAsync(string pythonExecutable, string root,
-        CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Starts the coordinator. With <paramref name="dataRoot"/>, its temporary files go to its own folder inside
+    /// that data folder (removed when the worker ends); the start fails rather than fall back to Windows' temporary
+    /// folder when the data folder cannot be used. Null keeps the inherited folder, for development tools only.
+    /// <paramref name="createDataFolder"/> false is for read-only operations that must not create a missing data folder.
+    /// </summary>
+    public static async Task<PythonWorkerClient> StartAsync(string pythonExecutable, string root, string? dataRoot,
+        CancellationToken cancellationToken = default, bool createDataFolder = true)
     {
         root = Path.GetFullPath(root);
         var worker = Path.Combine(root, "workers", "python", "media_worker.py");
@@ -51,13 +58,15 @@ public sealed class PythonWorkerClient : IWorkerClient
         start.ArgumentList.Add("--root");
         start.ArgumentList.Add(root);
         start.Environment["PYTHONUTF8"] = "1";
+        var scratch = dataRoot is null ? null : ScratchFolder.Create(dataRoot, createDataFolder);
+        scratch?.Apply(start.Environment);
         var job = new ProcessTreeJob();
         Process process;
         try
         {
             process = Process.Start(start) ?? throw new IOException("Python did not start.");
         }
-        catch { job.Dispose(); throw; }
+        catch { job.Dispose(); scratch?.Dispose(); throw; }
         try
         {
             // The worker starts no children before its first request, so assignment here covers its whole tree.
@@ -68,9 +77,10 @@ public sealed class PythonWorkerClient : IWorkerClient
             try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
             process.Dispose();
             job.Dispose();
+            scratch?.Dispose();
             throw;
         }
-        var client = new PythonWorkerClient(process, job);
+        var client = new PythonWorkerClient(process, job) { _scratch = scratch };
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -172,6 +182,6 @@ public sealed class PythonWorkerClient : IWorkerClient
             _job.Dispose();
             await _stderrPump;
         }
-        finally { _job.Dispose(); _process.Dispose(); _gate.Dispose(); }
+        finally { _job.Dispose(); _process.Dispose(); _gate.Dispose(); _scratch?.Dispose(); }
     }
 }

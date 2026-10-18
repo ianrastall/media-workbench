@@ -10,8 +10,10 @@ namespace MediaWorkbench.Infrastructure;
 /// Finds newer releases on GitHub and downloads a checksum-verified installer. It never installs on its own:
 /// the caller starts the installer only after the user chooses to update.
 /// </summary>
-public sealed partial class UpdateService(HttpClient http, string currentVersion) : IUpdateService
+public sealed partial class UpdateService(HttpClient http, string currentVersion, Func<string, long>? freeSpace = null) : IUpdateService
 {
+    private readonly Func<string, long> _freeSpace = freeSpace ?? (folder => NativeCore.GetDriveStatus(folder).FreeBytes);
+
     public const string ReleasesApi = "https://api.github.com/repos/ianrastall/media-workbench/releases?per_page=20";
     private const string DownloadPrefix = "https://github.com/ianrastall/media-workbench/releases/download/";
 
@@ -71,7 +73,10 @@ public sealed partial class UpdateService(HttpClient http, string currentVersion
         return best;
     }
 
-    public async Task<string> DownloadAsync(UpdateInfo update, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    /// <summary>Room kept free beyond the installer itself, so the download never fills the drive.</summary>
+    public const long DownloadReserveBytes = 512L << 20;
+
+    public async Task<string> DownloadAsync(UpdateInfo update, string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {
         string name = $"MediaWorkbench-{update.Version}-win-x64-setup.exe";
         if (!Semver().IsMatch(update.Version) || !update.InstallerUrl.StartsWith(DownloadPrefix, StringComparison.Ordinal))
@@ -81,8 +86,8 @@ public sealed partial class UpdateService(HttpClient http, string currentVersion
         if (!match.Success || match.Groups[2].Value != name) throw new InvalidDataException("The update's checksum file is not in the expected format.");
         string expected = match.Groups[1].Value.ToLowerInvariant();
 
-        string folder = Housekeeping.UpdateFolder; // Emptied by Housekeeping once the new version starts.
-        Directory.CreateDirectory(folder);
+        // Emptied by Housekeeping once the new version starts.
+        string folder = WorkFolders.Prepare(dataRoot, WorkFolders.Updates(dataRoot));
         string target = Path.Combine(folder, name), partial = target + ".partial";
         try
         {
@@ -90,6 +95,10 @@ public sealed partial class UpdateService(HttpClient http, string currentVersion
             {
                 response.EnsureSuccessStatusCode();
                 long total = response.Content.Headers.ContentLength ?? 0, completed = 0;
+                long free = _freeSpace(folder);
+                if (free < total + DownloadReserveBytes)
+                    throw new IOException($"The update needs {StorageSnapshot.Format(total + DownloadReserveBytes)} free on the drive that holds the data folder, " +
+                        $"but only {StorageSnapshot.Format(free)} is free. Free up space there, or move the data folder in Settings, then try again.");
                 await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
                 await using var output = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
                 var buffer = new byte[1 << 16];

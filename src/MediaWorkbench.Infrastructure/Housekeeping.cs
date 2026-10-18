@@ -3,14 +3,12 @@ using System.Text.RegularExpressions;
 namespace MediaWorkbench.Infrastructure;
 
 /// <summary>
-/// Removes the desktop app's own temporary files from %TEMP%: painted-area hand-over files a crash left
-/// behind and update installers that are no longer needed. Only names this app makes are touched, and a
-/// file another program holds open is left for the next start.
+/// Removes the desktop app's own temporary files (see <see cref="WorkFolders"/>): painted-area hand-over files
+/// a crash left behind and update installers that are no longer needed. Only names this app makes are touched,
+/// and a file another program holds open is left for the next start.
 /// </summary>
 public static partial class Housekeeping
 {
-    public static string PaintedFolder => Path.Combine(Path.GetTempPath(), "MediaWorkbench", "painted");
-    public static string UpdateFolder => Path.Combine(Path.GetTempPath(), "MediaWorkbench-update");
     /// <summary>A hand-over is copied into its job within seconds; anything older was left by a crash.</summary>
     public static readonly TimeSpan PaintedMaxAge = TimeSpan.FromHours(1);
     /// <summary>A newer installer that never ran (the update failed or was interrupted) is downloaded again when needed.</summary>
