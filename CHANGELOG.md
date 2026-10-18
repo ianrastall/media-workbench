@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0-alpha.11 — 2026-10-18
+
+- **Cancelled pictures are listed as cancelled.** Stopping a picture partway could list it in Library as interrupted, as though the app had crashed, because Media Workbench stopped waiting before the graphics card was released. It now waits until the picture is properly stopped, and Library shows it as cancelled.
+
 ## 0.3.0-alpha.10 — 2026-10-18
 
 - **Nothing written into the app's own folder.** A full trace of every file Media Workbench changes found one thing outside your data folder: Python's cache files (about 100 KB) in the installation folder. They are no longer written, and this update removes the old ones. Uninstalling now also leaves no folder behind. Everything else (downloads, caches, temporary work and update downloads) already stays in your data folder.

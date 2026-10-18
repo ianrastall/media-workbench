@@ -7,11 +7,11 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.3.0-alpha.10](https://github.com/ianrastall/media-workbench/releases/tag/v0.3.0-alpha.10)** · 2026-10-18 · Pre-release · Windows x64
+**[0.3.0-alpha.11](https://github.com/ianrastall/media-workbench/releases/tag/v0.3.0-alpha.11)** · 2026-10-18 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.10/MediaWorkbench-0.3.0-alpha.10-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.10/MediaWorkbench-0.3.0-alpha.10-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.10/MediaWorkbench-0.3.0-alpha.10-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.11/MediaWorkbench-0.3.0-alpha.11-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.11/MediaWorkbench-0.3.0-alpha.11-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.11/MediaWorkbench-0.3.0-alpha.11-README.md)
 
-- **Nothing written into the app's own folder.** A full trace of every file Media Workbench changes found one thing outside your data folder: Python's cache files (about 100 KB) in the installation folder. They are no longer written, and this update removes the old ones. Uninstalling now also leaves no folder behind. Everything else (downloads, caches, temporary work and update downloads) already stays in your data folder.
+- **Cancelled pictures are listed as cancelled.** Stopping a picture partway could list it in Library as interrupted, as though the app had crashed, because Media Workbench stopped waiting before the graphics card was released. It now waits until the picture is properly stopped, and Library shows it as cancelled.
 <!-- release-summary:end -->
 
 **In progress: [control over where Media Workbench works](docs/storage-locations.md)** (milestone 0.4.0-alpha.1): keep large files, caches and temporary work on the chosen drive, with no silent fallback to another drive. Since 0.3.0-alpha.2, temporary work, painted-area hand-overs, update downloads and the GPU kernel cache go into the data folder's `temp/` and `cache/` folders, a missing data-folder drive stops work instead of falling back to Windows temp, Settings shows where everything is kept and lists your drives (with **Never use this drive** for ones you want left alone), setup asks which drive to use before its first download, and **Move my data there…** copies the data folder to another drive with every file checked, then offers to remove the old copy. Preferences, the startup log and the installation itself still use Local AppData, and the old folder is kept after a move until you remove it.

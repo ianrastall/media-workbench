@@ -1,6 +1,6 @@
 # Media Workbench handoff
 
-Updated 18 October 2026 for **0.3.0-alpha.10**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 18 October 2026 for **0.3.0-alpha.11**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
 
 ## Plateau at 0.3.0-alpha.9 (18 October 2026)
 
@@ -12,7 +12,7 @@ This is a deliberate resting point before further careful development. The user 
 
 **Needs other hardware or outside help:** the faster runtime choices (`fp16-*`, `fp32-gpu`, `*-model`) on RTX or 10 GB+ Pascal cards, SD 3/FLUX-class models, and non-NVIDIA GPUs. Every install already runs its own GPU test and falls back to the conservative choice, so these are speed and coverage gaps, not untested paths reaching users as "ready". Community hardware reports with `tests/gpu_hardware_profile_check.py` or a short rented Windows GPU machine can close the first gap.
 
-**Next: drive-containment acceptance (started after the plateau).** Tooling and decisions are in [storage locations](docs/storage-locations.md#acceptance-decisions-and-tooling-18-october-2026). The short and full traces ran on the installed 0.3.0-alpha.9 ([results](docs/validation.md#drive-containment-write-trace-installed-030-alpha9-18-october-2026)). The only app leak, bytecode caches in the app folder, is fixed with `-B` (unreleased). Next: release that fix as an intermediate alpha, install it, and repeat `./scripts/containment/trace.ps1` (one UAC prompt from the user). Then do the low-space and disconnected-drive checks, and look into the cancelled-shown-as-interrupted finding. Do not start the interactive window session until the user says they are available.
+**Next: drive-containment acceptance (started after the plateau).** Tooling and decisions are in [storage locations](docs/storage-locations.md#acceptance-decisions-and-tooling-18-october-2026). The short and full traces ran on the installed 0.3.0-alpha.9 ([results](docs/validation.md#drive-containment-write-trace-installed-030-alpha9-18-october-2026)). The only app leak, bytecode caches in the app folder, is fixed with `-B` (0.3.0-alpha.10), and a cancelled picture is recorded as cancelled again (0.3.0-alpha.11: 15 s cancel grace). Next: install alpha.11 and repeat `./scripts/containment/trace.ps1` (one UAC prompt from the user), then the low-space and disconnected-drive checks. Do not start the interactive window session until the user says they are available.
 
 ## Where development stopped and resumed
 
