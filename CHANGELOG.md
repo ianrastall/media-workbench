@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-alpha.9 — 2026-10-17
+
+- Rust now verifies the pinned SD 1.5 and Real-ESRGAN files during Install / verify: safe contained paths, expected sizes, streamed SHA-256, unchanged metadata, and read-only file sharing on Windows. Hashing reports byte progress and checks cancellation every 64 KiB, so a large model file no longer has to finish hashing before cancellation is observed. Downloads are retained for retry.
+- The setup worker uses a thin native adapter and keeps the existing readiness stamps. Files, runtime imports, and actual GPU inference must still pass before a model becomes ready; this release does not change the inference profile or invalidate existing verified installations.
+- Published-app self-tests now exercise the shipped file verifier. The smoke-test harness allows startup/report time beyond the application's operation deadline, avoids a process-exit race on timeout, and accepts a separate report folder.
 
 - Source builds copy the MCP console host beside the GUI, so Settings-generated LLM client configuration also works with the normal development build.
 

@@ -1,4 +1,4 @@
-# Development direction after 0.2.0-alpha.8
+# Development direction after 0.2.0-alpha.9
 
 This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 
@@ -10,7 +10,7 @@ The hosted build does not provision models or run GPU inference. A green CI run 
 
 ## Expand the native core
 
-Artifact export and storage inventory are now Rust services, called directly by the desktop/MCP/CLI and through thin Python adapters by worker clients. Continue moving owned-storage pruning, artifact/job validation and indexing, durable queue state, and package/file verification into narrow, documented C ABI services. Keep path containment, atomic commit, cancellation, and file ownership inside Rust with meaningful boundary tests. C# should own presentation and host coordination; Python should focus on Hub integration, runtime provisioning, and the ML libraries that require it. Avoid adding a second implementation of domain policy in each client.
+Artifact export, storage inventory, and pinned model-file verification are now Rust services. Inventory/export are called directly by the desktop/MCP/CLI; setup uses a thin Python adapter for model-file verification. Continue moving owned-storage pruning, artifact/job validation and indexing, durable queue state, and bootstrap/package verification into narrow, documented C ABI services. Keep path containment, atomic commit, cancellation, and file ownership inside Rust with meaningful boundary tests. C# should own presentation and host coordination; Python should focus on Hub integration, runtime provisioning, and the ML libraries that require it. Avoid adding a second implementation of domain policy in each client.
 
 ## LLM tool access
 

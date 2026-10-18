@@ -454,13 +454,14 @@ def inference(app, root, operation, payload, cancel, progress, log_id=None):
 
 def verify_files(app, root, cancel, progress):
     """Full SHA-256 verification; returns the size/mtime stamps that later runs compare against."""
+    from file_verification import verify
     files = model_files(app, root)
     stamps = {}
-    for i, (key, path, entry) in enumerate(files):
+    for key, path, entry in files:
         check_cancel(cancel)
-        progress({"stage": "Verifying " + key, "completed": i, "total": len(files), "unit": "files"})
         before = file_stamp(path) if path.is_file() else None
-        if not before or before["size"] != entry["size"] or digest(path) != entry["sha256"] or file_stamp(path) != before:
+        verify(app, root, path, entry, cancel, progress, key)
+        if not before or file_stamp(path) != before:
             raise SetupError("Model verification failed: " + key + ". Install / verify again.")
         stamps[key] = before
     return stamps

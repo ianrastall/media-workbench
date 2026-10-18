@@ -1,27 +1,35 @@
-param([string]$ApplicationDirectory, [switch]$SkipUI)
+param([string]$ApplicationDirectory, [switch]$SkipUI, [string]$ReportsDirectory)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 if (-not $ApplicationDirectory) { $ApplicationDirectory = Join-Path $taskRoot 'artifacts/publish/win-x64' }
 $taskRequired = @('MediaWorkbench.exe','MediaWorkbench.pri','App.xbf','MainWindow.xbf','ShellView.xbf','media_workbench_core.dll','runtime/python/python.exe','runtime/python/_sqlite3.pyd','runtime/python/sqlite3.dll','workers/python/media_worker.py','workers/python/hub_catalog.py','workers/python/inference_setup.py','workers/python/inference_worker.py','workers/python/library_index.py','workers/python/artifact_export.py','workers/python/storage.py','workers/python/upscaler.py','profiles/upscaler-files.json','profiles/sd15-cu126.json','profiles/sd15-cu126.lock','profiles/sd15-files.json','LICENSE.txt')
 $taskRequired += 'profiles/storage-layout.json'
+$taskRequired += 'workers/python/file_verification.py'
 foreach ($taskFile in $taskRequired) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published application is incomplete: $taskFile" }
 }
 foreach ($taskFile in @('MediaWorkbench.Cli.exe','MediaWorkbench.Cli.dll','MediaWorkbench.Cli.runtimeconfig.json','MediaWorkbench.Cli.deps.json')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published MCP host is incomplete: $taskFile" }
 }
-$taskReports = Join-Path $taskRoot 'artifacts/publish-checks'
+$taskReports = if ($ReportsDirectory) { [IO.Path]::GetFullPath($ReportsDirectory) } else { Join-Path $taskRoot 'artifacts/publish-checks' }
 New-Item -ItemType Directory -Path $taskReports -Force | Out-Null
 $taskModes = @('--self-test')
 if (-not $SkipUI) { $taskModes += '--ui-self-test' }
 foreach ($taskMode in $taskModes) {
     $taskReport = Join-Path $taskReports ($taskMode.TrimStart('-') + '-' + [guid]::NewGuid().ToString('N') + '.json')
     $taskProcess = Start-Process -FilePath (Join-Path $ApplicationDirectory 'MediaWorkbench.exe') -ArgumentList @($taskMode, ('"' + $taskReport + '"')) -WindowStyle Hidden -PassThru
-    if (-not $taskProcess.WaitForExit(30000)) { Stop-Process -Id $taskProcess.Id; throw "Published application timed out: $taskMode" }
-    if ($taskProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $taskReport)) { throw "Published application failed: $taskMode" }
-    $taskResult = Get-Content -LiteralPath $taskReport -Raw | ConvertFrom-Json
-    if (-not $taskResult.success) { throw "Published application reported failure: $taskMode" }
-    Write-Output "PASS: published application $taskMode"
+    try {
+        # The app's own operation deadline is 30 seconds. Allow startup/report/exit time too.
+        if (-not $taskProcess.WaitForExit(90000) -and -not $taskProcess.HasExited) {
+            try { $taskProcess.Kill($true) } catch [InvalidOperationException] { } # May exit between checks.
+            throw "Published application timed out: $taskMode"
+        }
+        if ($taskProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $taskReport)) { throw "Published application failed: $taskMode" }
+        $taskResult = Get-Content -LiteralPath $taskReport -Raw | ConvertFrom-Json
+        if (-not $taskResult.success) { throw "Published application reported failure: $taskMode" }
+        if ($taskMode -eq '--self-test' -and -not $taskResult.nativeVerification) { throw 'Published native verification was not exercised.' }
+        Write-Output "PASS: published application $taskMode"
+    } finally { $taskProcess.Dispose() }
 }
 # A persistent stdio session verifies the shipped console host, shared runtime, and real worker.
 $taskMcpInfo = [Diagnostics.ProcessStartInfo]::new((Join-Path $ApplicationDirectory 'MediaWorkbench.Cli.exe'))

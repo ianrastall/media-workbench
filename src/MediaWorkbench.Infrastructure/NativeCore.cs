@@ -26,6 +26,10 @@ public static unsafe partial class NativeCore
     private static partial int Storage(byte* input, nuint length,
         delegate* unmanaged[Cdecl]<nint, int> cancel, nint context,
         byte* output, nuint capacity, out nuint required);
+    [LibraryImport(Library, EntryPoint = "mw_verify_file")]
+    private static partial int VerifyFile(byte* input, nuint length,
+        delegate* unmanaged[Cdecl]<ulong, ulong, nint, int> progress, nint context,
+        byte* output, nuint capacity, out nuint required);
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int OnStorageCancel(nint context)
@@ -61,21 +65,22 @@ public static unsafe partial class NativeCore
         finally { handle.Free(); }
     }
 
-    private sealed class ExportState(IProgress<OperationProgress> progress, CancellationToken cancellation)
+    private sealed class FileProgressState(IProgress<OperationProgress> progress, CancellationToken cancellation, string stage)
     {
+        public string Stage { get; } = stage;
         public IProgress<OperationProgress> Progress { get; } = progress;
         public CancellationToken Cancellation { get; } = cancellation;
         public Exception? Failure { get; set; }
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static int OnExportProgress(ulong completed, ulong total, nint context)
+    private static int OnFileProgress(ulong completed, ulong total, nint context)
     {
-        var state = (ExportState)GCHandle.FromIntPtr(context).Target!;
+        var state = (FileProgressState)GCHandle.FromIntPtr(context).Target!;
         try
         {
             if (state.Cancellation.IsCancellationRequested) return 1;
-            state.Progress.Report(new("Saving a copy", (long)completed, (long)total, "bytes"));
+            state.Progress.Report(new(state.Stage, checked((long)completed), checked((long)total), "bytes"));
             return state.Cancellation.IsCancellationRequested ? 1 : 0;
         }
         catch (Exception ex) { state.Failure = ex; return 1; } // Never unwind through Rust/C.
@@ -88,14 +93,14 @@ public static unsafe partial class NativeCore
         VerifyAbi();
         var input = JsonSerializer.SerializeToUtf8Bytes(new { dataRoot, request.JobId, request.Destination }, Wire.Json);
         var output = new byte[64];
-        var state = new ExportState(progress, cancellationToken);
+        var state = new FileProgressState(progress, cancellationToken, "Saving a copy");
         var handle = GCHandle.Alloc(state);
         try
         {
             fixed (byte* pointer = input)
             fixed (byte* result = output)
             {
-                int code = Export(pointer, (nuint)input.Length, &OnExportProgress, GCHandle.ToIntPtr(handle), result, 64, out nuint written);
+                int code = Export(pointer, (nuint)input.Length, &OnFileProgress, GCHandle.ToIntPtr(handle), result, 64, out nuint written);
                 if (state.Failure is { } failure) throw new IOException("Could not report export progress.", failure);
                 if (code == 5) throw new OperationCanceledException("Saving the copy was cancelled; the destination was kept.", cancellationToken);
                 if (code == 6) throw new InvalidDataException("This image changed since it was generated. The copy was not saved; the destination was kept.");
@@ -103,6 +108,36 @@ public static unsafe partial class NativeCore
                 if (code != 0 || written != 64) throw new IOException($"The native export service could not save the copy ({code}). Check the original and destination folder access. The destination was kept.");
             }
             return Path.GetFullPath(request.Destination);
+        }
+        finally { handle.Free(); }
+    }
+
+    /// <summary>Verify pinned file bytes only; this never certifies runtime or inference readiness.</summary>
+    public static string VerifyPinnedFile(string dataRoot, string relativePath, long size, string sha256,
+        IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { dataRoot, relativePath, size, sha256 }, Wire.Json);
+        var output = new byte[64];
+        var state = new FileProgressState(progress, cancellationToken, "Verifying " + relativePath);
+        var handle = GCHandle.Alloc(state);
+        try
+        {
+            fixed (byte* pointer = input)
+            fixed (byte* result = output)
+            {
+                int code = VerifyFile(pointer, (nuint)input.Length, &OnFileProgress, GCHandle.ToIntPtr(handle), result, 64, out nuint written);
+                if (state.Failure is { } failure) throw new IOException("Could not report verification progress.", failure);
+                if (code == 5) throw new OperationCanceledException("File verification was cancelled.", cancellationToken);
+                if (code == 6) throw new InvalidDataException("The file does not match its pinned size and SHA-256, or changed during verification.");
+                if (code == 1) throw new InvalidDataException("The pinned file declaration or owned folder path is invalid.");
+                if (code != 0 || written != 64) throw new IOException($"The native file verifier could not read the file ({code}). Check folder access and close any program writing the file.");
+            }
+            string hash = Encoding.ASCII.GetString(output);
+            if (hash != sha256) throw new InvalidDataException("The native file verifier returned an unexpected checksum.");
+            return hash;
         }
         finally { handle.Free(); }
     }

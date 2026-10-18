@@ -5,6 +5,7 @@ use std::{fs::File, io::Read, panic::catch_unwind, slice, str};
 mod artifact;
 mod path_policy;
 mod storage;
+mod verification;
 
 const OK: i32 = 0;
 const INVALID: i32 = 1;
@@ -319,6 +320,44 @@ pub unsafe extern "C" fn mw_storage_summary(
         };
         // SAFETY: caller supplies capacity writable bytes; result is live through this copy.
         unsafe { copy_output(&result, output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
+/// Verify a pinned file without changing it or installation readiness.
+/// # Safety
+/// Input/output follow the header contract. Callback/context remain live for this call;
+/// callbacks must not unwind. Size queries do no filesystem work or callbacks.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_verify_file(
+    input: *const u8,
+    length: usize,
+    progress: artifact::Progress,
+    context: *mut std::ffi::c_void,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: required is caller-owned writable memory.
+        unsafe { *required = 64 };
+        if output.is_null() || capacity < 64 {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: caller supplies readable input.
+        let input = match unsafe { input_bytes(input, length) } {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        let hash = match verification::verify(input, progress, context) {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        // SAFETY: output has sufficient writable capacity and hash remains live.
+        unsafe { copy_output(hash.as_bytes(), output, capacity, required) }
     })
     .unwrap_or(INTERNAL)
 }

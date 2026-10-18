@@ -50,6 +50,9 @@ public partial class App : Application
                 var plan = service.GetBaselinePlan();
                 if (!plan.CanExecute) throw new InvalidDataException("Published baseline recipe does not permit local verification.");
                 string hash = MediaWorkbench.Infrastructure.NativeCore.Sha256File(Path.Combine(root, "workers", "python", "media_worker.py"));
+                MediaWorkbench.Infrastructure.NativeCore.VerifyPinnedFile(root, "workers/python/media_worker.py",
+                    new FileInfo(Path.Combine(root, "workers", "python", "media_worker.py")).Length, hash,
+                    new Progress<MediaWorkbench.Core.OperationProgress>(), deadline.Token);
                 string report = arguments[checkIndex + 1];
                 Directory.CreateDirectory(Path.GetDirectoryName(report)!);
                 string libraryCheck = Path.Combine(Path.GetTempPath(), "MediaWorkbench-library-smoke-" + Guid.NewGuid().ToString("N"));
@@ -62,7 +65,7 @@ public partial class App : Application
                         throw new InvalidDataException("The bundled native storage check failed.");
                 }
                 finally { if (Directory.Exists(libraryCheck)) Directory.Delete(libraryCheck, recursive: true); }
-                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash, libraryIndex = true }));
+                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash, libraryIndex = true, nativeVerification = true }));
                 Environment.ExitCode = 0;
             }
             catch (Exception ex)

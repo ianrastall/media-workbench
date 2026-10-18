@@ -305,5 +305,6 @@ if (args.Length > 3)
 }
 using var mcpDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 await StorageChecks.RunAsync(Check, root, output, mcpDeadline.Token);
+await FileVerificationChecks.RunAsync(Check, output, mcpDeadline.Token);
 await McpChecks.RunAsync(Check, root, output, mcpDeadline.Token);
 Console.WriteLine($"All {checks} C# checks including MCP passed. Test artifacts: {output}");

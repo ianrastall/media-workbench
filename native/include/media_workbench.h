@@ -46,6 +46,20 @@ typedef int32_t (*mw_should_cancel)(void *context);
 MW_API int32_t mw_storage_summary(const uint8_t *input, size_t length,
     mw_should_cancel cancel, void *context,
     uint8_t *output, size_t capacity, size_t *required);
+/* Additive ABI 1 pinned-file verification. JSON: {dataRoot,relativePath,size,sha256}.
+   dataRoot must exist and be an absolute non-drive-root folder. relativePath uses safe
+   forward-slash components; links/reparse points in its ancestors are refused.
+   sha256 is 64 lowercase hex digits; size is an unsigned byte count.
+   Checks regular-file size, streamed SHA-256, and unchanged metadata/path. On Windows
+   the file is opened with read sharing only, refusing concurrent writers/deletion.
+   Output is the verified 64-byte hash. Status 6 means size/hash/file changed.
+   Does not write files or alter model readiness; runtime/inference checks remain required.
+   output=NULL or capacity<64 returns 2, required=64, without filesystem work/callbacks.
+   The optional synchronous callback receives byte counts initially and every 64 KiB;
+   nonzero returns 5. No pointers are retained; callbacks must not throw/unwind. */
+MW_API int32_t mw_verify_file(const uint8_t *input, size_t length,
+    mw_export_progress progress, void *context,
+    uint8_t *output, size_t capacity, size_t *required);
 #ifdef __cplusplus
 }
 #endif

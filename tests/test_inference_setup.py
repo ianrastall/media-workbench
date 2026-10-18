@@ -47,7 +47,8 @@ def ready_install(app, root):
     weights = root / "models" / setup.UPSCALER / "RealESRGAN_x4plus.pth"
     weights.parent.mkdir(parents=True, exist_ok=True)
     weights.write_bytes(UPSCALER_BYTES)
-    stamps = setup.verify_files(app, root, threading.Event(), lambda _: None)
+    with patch("file_verification.native_core_path", return_value=setup.native_core_path(ROOT)):
+        stamps = setup.verify_files(app, root, threading.Event(), lambda _: None)
     runtime = root / "runtimes" / setup.PROFILE / "python" / "python.exe"
     runtime.parent.mkdir(parents=True, exist_ok=True)
     runtime.write_bytes(b"")

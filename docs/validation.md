@@ -160,3 +160,9 @@ Validated on the same Windows 11 host, 17 October 2026: 9 Rust tests plus format
 The self-contained published app and MCP host also queried native storage using the bundled layout. Measurements are logical file sizes, not allocated disk usage; no additional GPU/driver compatibility or clean-machine claim follows from these checks.
 
 The normal Debug GUI output also passed core, GUI initialization, and real MCP/worker smoke checks after the build copied a console host compiled for the same bundled .NET runtime. A framework-dependent host placed beside the GUI's local runtime could not resolve the system framework; building it self-contained fixes that source-build launch path. The full 9 Rust / 91 Python / 106 C# checks passed with this build change.
+
+## Native pinned-file verification (0.2.0-alpha.9)
+
+Validated on Windows 11, 17 October 2026: 11 Rust tests plus formatting/Clippy, 100 Python tests, and 111 C# integration checks passed. A self-contained Release publish completed with no warnings/errors; published core, GUI initialization, and MCP/worker smoke checks passed. These checks used disposable fixtures on system temporary storage, with no model downloads or GPU inference.
+
+Real ABI checks covered Unicode paths, correct bytes, size mismatch and same-size checksum corruption, missing files/core, unsafe declarations, short-buffer queries without filesystem work/callbacks, Windows junction refusal, blocked write/delete access while hashing, cancellation within a large file, retained downloads, and exception containment for Python and C# callbacks. Setup fixtures used Rust rather than Python model hashing and retained the existing size/mtime stamp shape. The shipped app verified a bundled file through the new native export. The inference profile and GPU verification requirements were unchanged; these checks do not add hardware compatibility evidence.

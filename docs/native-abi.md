@@ -42,7 +42,15 @@ Root/managed-area ancestors must not contain links or reparse points. Links/repa
 
 A null output or capacity below 8192 returns status 2 with `required=8192`, a fixed upper bound, before any filesystem work or callback. A successful call reports the actual JSON length. The optional synchronous `mw_should_cancel` callback is polled between directories and entries; nonzero returns status 5. No callback/context is retained and foreign exceptions must be contained. The GUI/MCP/CLI service calls this from a background task with a managed cancellation token and no Python process. Worker clients use a thin ctypes adapter to the same implementation. Confirmed removal still runs under the existing worker's exclusive data-folder lock and invalidates readiness before deleting installation files.
 
+## Pinned-file verification
+
+`mw_verify_file` accepts bounded UTF-8 JSON with `dataRoot`, `relativePath`, unsigned byte `size`, and lowercase 64-digit `sha256`. The root must exist and be an absolute non-drive-root directory. The core validates the safe relative path, refuses links/reparse-point ancestors, checks containment and regular-file size, streams SHA-256 in 64 KiB blocks, and checks unchanged metadata and path before returning the verified hash. On Windows, [read-only file sharing](https://doc.rust-lang.org/std/os/windows/fs/trait.OpenOptionsExt.html#tymethod.share_mode) refuses existing writers and prevents new write/delete access while the file is open.
+
+A null/short output buffer returns status 2 and `required=64` without reading input, touching files, or invoking callbacks. The synchronous optional progress callback reports bytes initially and after each block; returning nonzero cancels with status 5. Status 6 reports a size/hash mismatch or a file changed during reading. Errors leave the output buffer untouched. No state or file is written and no pointer is retained; callbacks must contain foreign exceptions.
+
+The setup worker's `file_verification.py` adapter forwards the pinned manifest entry, throttles visible byte progress, and contains callback exceptions. The coordinator keeps its pre/post size/mtime stamps and still requires the separate runtime and GPU inference checks before committing ready state. C# provides a matching binding with cancellation and exception containment; published-app self-tests call the shipped verifier. This moves the existing file-proof work into Rust without changing the inference profile or existing readiness-stamp format.
+
 ## Future additions
 
 
-Move performance-sensitive file verification and owned-storage operations into this core as they are needed. Keep new exports narrow and append-only within ABI 1, or bump the ABI when compatibility breaks. Native exports should have matching header documentation and meaningful Rust plus C# boundary checks.
+Move bootstrap/package verification and owned-storage operations into this core as they are needed. Keep new exports narrow and append-only within ABI 1, or bump the ABI when compatibility breaks. Native exports should have matching header documentation and meaningful Rust plus C# boundary checks.

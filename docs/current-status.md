@@ -27,7 +27,9 @@ The installer also includes a self-contained local MCP stdio console host. Setti
 
 Release builds generate the main README's version/date, release links, and changelog summary before committing; checks and the release job reject stale summaries. GitHub Actions publishes the checked installer, its SHA-256, and a generated release README. The release body includes current installation requirements, features, MCP guidance, licensing, and checksum steps from the public README with version-pinned documentation links. The public repository also has relevant GitHub topics and a descriptive summary.
 
-Rust now owns storage inventory as well as export: cancellable traversal, logical bytes/file counts, installation totals, and Windows available disk space. Desktop, MCP, and CLI inspection call it directly without Python; worker clients use a thin adapter. The supported profile/model IDs come from the bundled storage layout. Links/reparse points are rejected in managed area ancestors and skipped inside trees; access failures do not produce partial totals. Removal retains the existing confirmed, locked worker implementation and readiness invalidation.
+Rust owns storage inventory, export, and pinned model-file verification. Inventory includes cancellable traversal, logical bytes/file counts, installation totals, and Windows available disk space. Desktop, MCP, and CLI inspection call inventory directly without Python; worker clients use a thin adapter. The supported profile/model IDs come from the bundled storage layout. Links/reparse points are rejected in managed area ancestors and skipped inside trees; access failures do not produce partial totals. Removal retains the existing confirmed, locked worker implementation and readiness invalidation.
+
+Install / verify calls the native pinned-file verifier through a thin Python adapter. It validates contained paths, sizes, SHA-256, and unchanged metadata, uses read-only sharing on Windows to refuse concurrent writers/deletion, and checks cancellation every 64 KiB with throttled byte progress. Existing size/mtime readiness stamps are preserved. The runtime and actual GPU inference tests remain mandatory; no inference profile or adapter-version change is needed for moving the same file checks into Rust.
 
 Normal source builds also copy the console host beside the GUI for Settings-generated MCP configuration; published builds already bundle it with the runtime.
 
@@ -39,6 +41,7 @@ Authenticated remote/cloud MCP access, protected Hugging Face account access, ar
 ## Verification
 
 - Rust unit tests, formatting, and Clippy are part of `scripts/check.ps1`.
+- File-verifier checks use real Python/C# ABI calls for correct bytes, Unicode paths, size and checksum failures, invalid declarations, missing files/core, streaming cancellation, callback exception containment, Windows file sharing/junctions, retained downloads, and unchanged readiness-stamp shape. Published self-tests exercise the bundled verifier too.
 - Storage checks cover real native C#/Python calls, operation without a Python executable, profile-specific counts, Unicode roots, cancellation before/during traversal, buffer queries without folder creation, Windows junction containment, and the published app/MCP payload.
 - Python unit tests cover request validation, cancellation, search normalization, input rejection, and repository metadata.
 - Python tests also cover recovery of orphaned generation jobs, preserving jobs whose owner is alive, and skipping damaged records.

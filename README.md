@@ -7,13 +7,15 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.2.0-alpha.8](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.8)** · 2026-10-17 · Pre-release · Windows x64
+**[0.2.0-alpha.9](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.9)** · 2026-10-17 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.8/MediaWorkbench-0.2.0-alpha.8-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.8/MediaWorkbench-0.2.0-alpha.8-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.8/MediaWorkbench-0.2.0-alpha.8-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.9/MediaWorkbench-0.2.0-alpha.9-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.9/MediaWorkbench-0.2.0-alpha.9-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.9/MediaWorkbench-0.2.0-alpha.9-README.md)
 
-- Rust now owns storage inventory: folder traversal, per-area bytes/file counts, installation totals, and available disk space. Settings, the developer CLI, and MCP call it directly without starting Python; worker clients use a thin native adapter.
-- Storage measurement checks cancellation between entries, rejects linked/reparse-point managed roots, skips links inside trees, and reports an error rather than partial totals on access failures. Sizes are logical file sizes; only the bundled model/runtime profiles are counted as installation components.
-- Native artifact export and storage inventory share filesystem path checks. Published-payload tests now exercise native storage through both the app and the shipped MCP host. Existing model readiness and confirmed storage-removal behavior are preserved.
+- Rust now verifies the pinned SD 1.5 and Real-ESRGAN files during Install / verify: safe contained paths, expected sizes, streamed SHA-256, unchanged metadata, and read-only file sharing on Windows. Hashing reports byte progress and checks cancellation every 64 KiB, so a large model file no longer has to finish hashing before cancellation is observed. Downloads are retained for retry.
+- The setup worker uses a thin native adapter and keeps the existing readiness stamps. Files, runtime imports, and actual GPU inference must still pass before a model becomes ready; this release does not change the inference profile or invalidate existing verified installations.
+- Published-app self-tests now exercise the shipped file verifier. The smoke-test harness allows startup/report time beyond the application's operation deadline, avoids a process-exit race on timeout, and accepts a separate report folder.
+
+- Source builds copy the MCP console host beside the GUI, so Settings-generated LLM client configuration also works with the normal development build.
 <!-- release-summary:end -->
 
 ## Install
@@ -35,6 +37,8 @@ For image generation, this first profile requires an **NVIDIA GPU with at least 
 
 **Tools** makes any picture 2× or 4× bigger and sharper, offline. Choose or drag a picture there, or select **Make it bigger** on a Library image.
 
+During **Install / verify**, Rust checks every pinned model file's size and SHA-256 with byte progress and cancellation during large-file hashing. Cancelling keeps downloaded files for retry. File checks alone never mark a model ready; runtime and GPU inference checks must also pass.
+
 **Updates:** when you're online, Media Workbench checks for a new version at startup and shows what changed on **Home**. Select **Update now** to download it, verify it against its published checksum, and reopen the updated app; nothing installs until you click. After setup, generating images needs no internet.
 
 **Settings → Storage** shows what the data folder uses. Rust measures logical file sizes and available space directly, without starting Python, and checks cancellation while traversing folders. You can clear the download caches (about 4 GiB that only speed up repairs) and logs, or remove Stable Diffusion 1.5 entirely; your images and their records are always kept.
@@ -49,6 +53,7 @@ Cancel stops the owned worker operation. Retrying setup reuses completed downloa
 - Rust installation-plan validation, relative-path policy, and streaming SHA-256 through C ABI 1.
 - Rust-owned completed-job validation and cancellable, checksum-verified PNG export with atomic replacement.
 - Rust-owned cancellable storage inventory, shared by desktop, MCP, CLI, and worker clients.
+- Rust-owned pinned model-file verification with byte progress, cancellation, and protection against concurrent writes while hashing.
 - Bundled Python worker diagnostics and read-only NVIDIA GPU detection.
 - Persistent storage settings, cancellation, and session activity.
 - Pinned SD 1.5 model files with SHA-256 checks and an exact, hash-locked inference dependency set.
@@ -75,6 +80,7 @@ WinUI 3 views → MVVM view models → Core contracts / Infrastructure
                    Rust DLL / C ABI          Python child workers
                    plans · path policy       Hugging Face metadata/setup
                    export · storage inventory isolated Diffusers/CUDA child
+                   pinned file verification
 ```
 
 The Rust ABI uses caller-owned UTF-8 buffers; allocation ownership never crosses language boundaries. Workers use versioned JSON lines over owned child-process streams. Native executable adapters can be added alongside Python workers.
