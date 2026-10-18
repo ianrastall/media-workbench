@@ -374,7 +374,7 @@ fn remove_job_files(root: &Path, id: &str, keep_inputs: bool, report: &mut Repor
         Ok(metadata) if !is_link(&metadata) && metadata.is_dir() => {}
         _ => return,
     }
-    let finished = folder.join("image.png").exists();
+    let finished = folder.join("image.png").exists() || folder.join("video.mp4").exists();
     let Ok(listing) = entries(&folder) else {
         report.skipped += 1;
         return;
@@ -384,7 +384,13 @@ fn remove_job_files(root: &Path, id: &str, keep_inputs: bool, report: &mut Repor
             name.as_str(),
             "mask.png" | "source.png" | "source.jpg" | "source.jpeg" | "source.webp" | "source.bmp"
         );
-        if metadata.is_file() && (name == "image.partial" || (input && !keep_inputs && !finished)) {
+        // A video job's raw frames, partial MP4, and a poster without its video are never results.
+        let leftover = matches!(
+            name.as_str(),
+            "image.partial" | "frames.rgb" | "frames.rgb.partial" | "poster.partial"
+        ) || (name.starts_with(".video.mp4.") && name.ends_with(".partial"))
+            || (name == "poster.png" && !finished);
+        if metadata.is_file() && (leftover || (input && !keep_inputs && !finished)) {
             report.remove_file(&path, metadata.len());
         }
     }
@@ -419,7 +425,7 @@ fn tidy_jobs(
         }
         // Inputs and log first, record last: an interruption leaves a record, never orphaned files.
         remove_job_files(root, &job.id, false, report);
-        for kind in ["generate", "upscale"] {
+        for kind in ["generate", "upscale", "video"] {
             let log = root.join("logs").join(format!("{kind}-{}.log", job.id));
             if let Ok(metadata) = fs::symlink_metadata(&log)
                 && metadata.is_file()
@@ -648,6 +654,51 @@ mod tests {
         .unwrap();
         tidy(&input, None, std::ptr::null_mut())
             .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+    }
+
+    #[test]
+    fn unfinished_video_jobs_lose_their_frames_and_partial_files_but_finished_videos_keep_theirs() {
+        let root = folder("video");
+        let (unfinished, finished) = (id(1), id(2));
+        record(&root, &unfinished, "interrupted", 10);
+        record(&root, &finished, "failed", 20);
+        for name in [
+            "frames.rgb",
+            "frames.rgb.partial",
+            "poster.png",
+            ".video.mp4.42.partial",
+        ] {
+            write(&root, &format!("artifacts/{unfinished}/{name}"), b"x", 0);
+        }
+        write(
+            &root,
+            &format!("artifacts/{finished}/poster.png"),
+            b"png",
+            0,
+        );
+        write(&root, &format!("artifacts/{finished}/video.mp4"), b"mp4", 0);
+        write(
+            &root,
+            &format!("artifacts/{finished}/frames.rgb"),
+            b"raw",
+            0,
+        );
+        let report = run(&root, false, false).unwrap();
+        assert_eq!(report["removedFiles"], 5);
+        assert!(
+            !root
+                .join(format!("artifacts/{unfinished}/poster.png"))
+                .exists()
+        );
+        assert!(
+            !root
+                .join(format!("artifacts/{finished}/frames.rgb"))
+                .exists()
+        );
+        for name in ["poster.png", "video.mp4"] {
+            assert!(root.join(format!("artifacts/{finished}/{name}")).is_file());
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

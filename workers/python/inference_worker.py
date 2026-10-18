@@ -161,11 +161,103 @@ def load_added(data_root, payload, torch, dtype):
         text_encoder=CLIPTextModel.from_pretrained(str(folder / "text_encoder"), **weights), **parts)
 
 
+def video_folder(args, payload):
+    """Where the child writes a clip: its job's artifact folder, or setup's test folder under cache/."""
+    if args.operation == "video":
+        job_id = payload["jobId"]
+        if len(job_id) != 32 or any(c not in "0123456789abcdef" for c in job_id):
+            raise ValueError("Invalid artifact identifier")
+        folder = args.data_root / "artifacts" / job_id
+    else:
+        folder = Path(payload["outputFolder"]).resolve()
+        if not folder.is_relative_to((args.data_root / "cache" / "video-test").resolve()):
+            raise ValueError("The video test must write inside the data folder's cache")
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def make_video(args, payload, torch, gpu, total, startup):
+    """A short AnimateDiff clip from the verified SD 1.5 weights: raw frames and a poster, checked frame by frame."""
+    import numpy
+    from diffusers import AnimateDiffPipeline, DDIMScheduler, MotionAdapter, StableDiffusionPipeline
+    from PIL import ImageStat
+    runtime = payload.get("runtime")
+    if runtime not in hardware.VIDEO_RUNTIMES:
+        raise ValueError("Unknown video runtime choice")
+    major, minor = torch.cuda.get_device_capability(0)
+    if not hardware.allows(runtime, dict(name=gpu, computeCapability=f"{major}.{minor}", vramMiB=total), hardware.VIDEO_RUNTIMES):
+        raise RuntimeError(f"The video settings tested here do not suit {gpu}. Select Set up videos again.")
+    settings = hardware.VIDEO_RUNTIMES[runtime]
+    dtype = torch.float16 if settings["precision"] == "float16" else torch.float32
+    folder = video_folder(args, payload)
+    frames, width, height = payload["frames"], payload["width"], payload["height"]
+    progress("Loading Stable Diffusion 1.5 and its motion layers")
+    loading = time.monotonic()
+    base = StableDiffusionPipeline.from_pretrained(str(args.data_root / "models" / inference_setup.RECIPE), torch_dtype=dtype,
+        variant="fp16", use_safetensors=True, local_files_only=True)
+    adapter = MotionAdapter.from_pretrained(str(args.data_root / "models" / "animatediff-v1-5-3"), torch_dtype=dtype,
+        use_safetensors=True, local_files_only=True)
+    # AnimateDiff has no safety checker of its own; the model's checker reviews every frame on the CPU.
+    checker, extractor = base.safety_checker.to("cpu", torch.float32), base.feature_extractor
+    pipe = AnimateDiffPipeline.from_pipe(base, motion_adapter=adapter)
+    del base
+    # The scheduler settings AnimateDiff was trained with.
+    pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config, beta_schedule="linear", clip_sample=False,
+        timestep_spacing="linspace", steps_offset=1)
+    if settings["offload"] == "sequential":
+        pipe.enable_sequential_cpu_offload()  # Streams layers to the GPU; fits 6 GB in full precision.
+    else:
+        pipe.enable_model_cpu_offload()
+    pipe.enable_vae_slicing()
+    pipe.set_progress_bar_config(disable=True)
+    loaded = round(time.monotonic() - loading, 2)
+
+    def step_end(pipeline, step, timestep, callback_kwargs):
+        progress("Making the video", step + 1, getattr(pipeline, "num_timesteps", None) or len(pipeline.scheduler.timesteps))
+        return callback_kwargs
+    started = time.monotonic()
+    try:
+        output = pipe(prompt=payload["prompt"], negative_prompt=payload["negativePrompt"], num_frames=frames,
+            width=width, height=height, num_inference_steps=payload["steps"], guidance_scale=payload.get("guidanceScale", 7.5),
+            generator=torch.Generator(device="cpu").manual_seed(payload["seed"]), callback_on_step_end=step_end)
+    except torch.cuda.OutOfMemoryError:
+        raise RuntimeError("The graphics card ran out of memory making this video. Try the square shape or the shorter "
+                           "length, and close other programs that use the graphics card.") from None
+    seconds = round(time.monotonic() - started, 2)
+    pictures = [picture.convert("RGB") for picture in output.frames[0]]
+    if len(pictures) != frames or any(picture.size != (width, height) for picture in pictures) \
+            or max(ImageStat.Stat(pictures[0]).stddev) < 1:
+        raise RuntimeError("Inference produced an empty or invalid video; it was not saved.")
+    progress("Checking the frames")
+    arrays = numpy.stack([numpy.asarray(picture, dtype=numpy.float32) / 255 for picture in pictures])
+    with torch.no_grad():
+        clip = extractor(pictures, return_tensors="pt").pixel_values.to(torch.float32)
+        _, flagged = checker(images=arrays, clip_input=clip)
+    if any(flagged):
+        raise RuntimeError("The model safety checker rejected part of the video. Try a different prompt.")
+    raw = folder / "frames.rgb.partial"
+    with raw.open("wb") as stream:
+        for picture in pictures:
+            stream.write(numpy.asarray(picture, dtype=numpy.uint8).tobytes())
+    os.replace(raw, folder / "frames.rgb")
+    poster = folder / "poster.partial"
+    pictures[0].save(poster, format="PNG")
+    os.replace(poster, folder / "poster.png")
+    result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda, precision=settings["precision"],
+        offload=settings["offload"], runtime=runtime, seconds=seconds, loadSeconds=loaded, startupSeconds=startup,
+        width=width, height=height, frames=frames, sampler="ddim",
+        peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2), python=sys.version.split()[0])
+    if args.operation == "video":
+        target = folder / "poster.png"
+        result.update(imagePath=f"{payload['jobId']}/poster.png", imageSha256=hashlib.sha256(target.read_bytes()).hexdigest())
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--data-root", type=Path, required=True)
-    parser.add_argument("--operation", choices=["download", "verify", "verify-model", "generate", "upscale"], required=True)
+    parser.add_argument("--operation", choices=["download", "verify", "verify-model", "generate", "upscale", "video", "verify-video"], required=True)
     parser.add_argument("--payload", required=True)
     args = parser.parse_args()
     if not sys.flags.isolated or not sys.flags.no_user_site:
@@ -207,6 +299,9 @@ def main():
         startup = round(time.monotonic() - launched, 2)
         if args.operation == "upscale":
             emit("result", dict(enlarge(payload, args.data_root, upscaler_weights, gpu, torch, upscaler), startupSeconds=startup))
+            return
+        if args.operation in ("video", "verify-video"):
+            emit("result", make_video(args, payload, torch, gpu, total, startup))
             return
         # The coordinator sends the runtime choice that passed this installation's (or this model's) GPU test, or the
         # one under test. Check it again against the card CUDA sees, so a swapped GPU cannot run untested settings.

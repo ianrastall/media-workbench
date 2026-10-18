@@ -37,8 +37,13 @@ public sealed record OperationProgress(string Stage, long Completed = 0, long To
 /// <summary>Defaults match records written before guidance, size, and sampler were selectable.</summary>
 public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps,
     double GuidanceScale = 7.5, int Width = 512, int Height = 512, string Sampler = "pndm",
-    string? SourceImage = null, double Strength = 0.6, int Scale = 0, string? MaskImage = null, string? Model = null)
+    string? SourceImage = null, double Strength = 0.6, int Scale = 0, string? MaskImage = null, string? Model = null,
+    int Frames = 0, int Fps = 0)
 {
+    /// <summary>Short videos carry a frame count; pictures have none.</summary>
+    public bool IsVideo => Frames > 0;
+    /// <summary>Video lengths at 8 frames a second; longer videos take proportionally longer to make.</summary>
+    public static readonly (int Frames, string Label)[] VideoLengths = [(16, "2 seconds (16 frames)"), (24, "3 seconds (24 frames, slower)")];
     /// <summary>Upscale jobs carry a scale and a source picture instead of a prompt.</summary>
     public bool IsUpscale => Scale > 0;
     public static readonly (int Scale, string Label)[] UpscaleChoices = [(2, "2× larger"), (4, "4× larger")];
@@ -51,7 +56,8 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
     public static readonly string[] PictureExtensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp"];
     public static readonly (int Width, int Height, string Label)[] Sizes = [(512, 512, "Square · 512 × 512 (fastest)"), (512, 768, "Portrait · 512 × 768 (slower)"), (768, 512, "Landscape · 768 × 512 (slower)")];
     public static readonly (string Id, string Label)[] Samplers = [("pndm", "Balanced (model default, PNDM)"), ("dpmpp-2m", "Crisp detail (DPM++ 2M Karras)"), ("euler-a", "Softer and more varied (Euler ancestral)")];
-    public string Summary => (SourceImage is null ? "" : IsPaintedChange
+    public string Summary => (IsVideo ? $"Short video, {Frames / (double)Math.Max(1, Fps == 0 ? 8 : Fps):0.#} seconds ({Frames} frames) · "
+            : SourceImage is null ? "" : IsPaintedChange
             ? $"Painted part of your picture changed {PaintChangeLevels.MinBy(level => Math.Abs(level.Strength - Strength)).Label.ToLowerInvariant()} · "
             : $"From your picture, changed {ChangeLevels.MinBy(level => Math.Abs(level.Strength - Strength)).Label.ToLowerInvariant()} · ")
         + $"{Width} × {Height} · seed {Seed} · {Steps} steps · prompt strength {GuidanceScale:0.##}" + Sampler switch
@@ -64,10 +70,13 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
 /// and LoadNote says in plain words when that load was slow and why it probably was.</summary>
 public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha256, GenerationSettings Settings,
     string CompletedUtc, double Seconds, string Gpu, string Kind = "generate", int Width = 0, int Height = 0, string? ModelName = null,
-    double? LoadSeconds = null, string? LoadNote = null)
+    double? LoadSeconds = null, string? LoadNote = null, string? VideoPath = null, int Frames = 0, int Fps = 0)
 {
-    /// <summary>What Create says once the picture is saved.</summary>
-    public string SavedNotice => $"Image saved in {Seconds:N1} seconds of inference"
+    /// <summary>A short video: ImagePath is its first frame, used as its picture everywhere a picture is shown.</summary>
+    public bool IsVideo => Kind == "video" && !string.IsNullOrEmpty(VideoPath);
+    public bool IsPicture => !IsVideo;
+    /// <summary>What Create says once the picture or video is saved.</summary>
+    public string SavedNotice => $"{(IsVideo ? "Video" : "Image")} saved in {Seconds:N1} seconds of inference"
         + (LoadSeconds is { } load ? $", after {load:N1} seconds loading the model." : ".")
         + (string.IsNullOrEmpty(LoadNote) ? "" : " " + LoadNote);
     public bool CanReuseSettings => Settings.IsUpscale ? !string.IsNullOrEmpty(Settings.SourceImage) : !string.IsNullOrWhiteSpace(Settings.Prompt);
@@ -76,6 +85,11 @@ public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha
     public string Description => Kind == "upscale"
         ? $"Upscaled {Settings.Scale}× to {Width} × {Height} · {Seconds:N1}s · {Gpu}"
         : $"{Settings.Prompt}\n{ModelLabel}{Settings.Summary} · {Seconds:N1}s · {Gpu}";
+}
+/// <summary>Whether short videos are set up and verified here; Settings names the runtime choice that passed.</summary>
+public sealed record VideoState(string Status, string Message, RuntimeSettings? Settings = null)
+{
+    public bool IsReady => Status == "ready";
 }
 /// <summary>The bundled Stable Diffusion 1.5 or a model the user added; only ready models can generate.</summary>
 public sealed record ModelChoice(string Id, string Name, string Status, string Message, string Format = "", long Bytes = 0,
@@ -239,6 +253,14 @@ public interface IWorkbenchService
     /// <summary>Sets up and verifies the bundled model; afterwards removes the download caches unless keepDownloadCaches.</summary>
     Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false);
     Task<GeneratedImage> GenerateAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Whether short videos are set up and still verified; creates nothing but the data folder.</summary>
+    Task<VideoState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>Downloads the pinned motion adapter (1.7 GB), verifies it, and tests a short video on the GPU.</summary>
+    Task<VideoState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
+    /// <summary>Removes the motion adapter; videos already made are kept.</summary>
+    Task<VideoState> RemoveVideoAsync(string dataRoot, CancellationToken cancellationToken);
+    /// <summary>Makes a short video (Frames 16 or 24) with Stable Diffusion 1.5; the result is a Library item with a poster frame.</summary>
+    Task<GeneratedImage> GenerateVideoAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     Task<LibrarySnapshot> GetLibraryAsync(string dataRoot, CancellationToken cancellationToken, LibraryQuery? query = null);
     /// <summary>Copies a completed image outside the data folder after verifying its recorded checksum.</summary>
     Task<string> ExportImageAsync(string dataRoot, ImageExportRequest request, IProgress<OperationProgress> progress, CancellationToken cancellationToken);

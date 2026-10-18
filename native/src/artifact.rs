@@ -31,6 +31,10 @@ struct CompletedJob {
     status: String,
     image_path: String,
     image_sha256: String,
+    #[serde(default)]
+    video_path: Option<String>,
+    #[serde(default)]
+    video_sha256: Option<String>,
 }
 
 fn valid_id(value: &str) -> bool {
@@ -99,11 +103,12 @@ pub(crate) fn export(
             .map_err(|_| IO_ERROR)?
             .join(request.destination.file_name().ok_or(INVALID)?)
     };
-    if destination.starts_with(&root)
-        || !destination
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
-    {
+    let extension = destination
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase);
+    let video = extension.as_deref() == Some("mp4");
+    if destination.starts_with(&root) || !(video || extension.as_deref() == Some("png")) {
         return Err(INVALID);
     }
     let job_path = root.join("jobs").join(format!("{}.json", request.job_id));
@@ -118,23 +123,32 @@ pub(crate) fn export(
         return Err(INVALID);
     }
     let job: CompletedJob = serde_json::from_slice(&bytes).map_err(|_| INVALID)?;
+    // A video job exports its MP4; its poster frame is the image of every other client path.
+    let (stored_path, expected) = if video {
+        (
+            job.video_path.as_deref().ok_or(INVALID)?,
+            job.video_sha256.as_deref().ok_or(INVALID)?,
+        )
+    } else {
+        (job.image_path.as_str(), job.image_sha256.as_str())
+    };
     if job.id != request.job_id
         || job.status != "succeeded"
-        || job.image_sha256.len() != 64
-        || !job
-            .image_sha256
+        || expected.len() != 64
+        || !expected
             .bytes()
             .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        || (video && Path::new(stored_path).is_absolute())
     {
         return Err(INVALID);
     }
-    let stored = Path::new(&job.image_path);
+    let stored = Path::new(stored_path);
     let relative = if stored.is_absolute() {
         // Legacy absolute records re-root by their trailing job ID and filename.
         PathBuf::from(stored.parent().and_then(Path::file_name).ok_or(INVALID)?)
             .join(stored.file_name().ok_or(INVALID)?)
     } else {
-        PathBuf::from(&job.image_path)
+        PathBuf::from(stored_path)
     };
     let relative_text = relative.to_str().ok_or(INVALID)?.replace('\\', "/");
     if !valid_relative_path(&relative_text)
@@ -167,7 +181,7 @@ pub(crate) fn export(
         report(progress, context, completed, total)?;
     }
     let actual = format!("{:x}", hash.finalize());
-    if actual != job.image_sha256 {
+    if actual != expected {
         return Err(HASH_MISMATCH);
     }
     output.sync_all().map_err(|_| IO_ERROR)?;

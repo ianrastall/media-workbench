@@ -30,20 +30,22 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
     private List<Tool> Tools()
     {
         List<Tool> tools = [
-            Define("workbench_capabilities", "Read the supported pipelines and launch-time permissions. Video is not supported.", Schema(new { })),
+            Define("workbench_capabilities", "Read the supported pipelines and launch-time permissions. Short videos (2-3 seconds, Stable Diffusion 1.5 with AnimateDiff) need their own verified setup.", Schema(new { })),
             Define("workbench_health", "Inspect the native core, bundled worker, and detected GPU. Detection does not certify inference readiness.", Schema(new { })),
             Define("workbench_installation_plan", "Read the native installation plan for the bundled SD 1.5 profile; this does not install anything.", Schema(new { })),
             Define("workbench_model_status", "Read the saved folder's actual model readiness and recover interrupted work when idle.", Schema(new { })),
+            Define("workbench_video_status", "Read whether short videos are set up and verified on this computer, and with which settings.", Schema(new { })),
             Define("workbench_storage", "Inspect storage usage in the selected data folder. No deletion is offered.", Schema(new { })),
             Define("workbench_models", "List the models in the selected data folder: the bundled Stable Diffusion 1.5 (id sd15-baseline) and SD 1.5-family models the user added, with their test status. Only models with status ready can generate; adding or removing models is done by the user in the app.", Schema(new { })),
-            Define("workbench_library", "Search completed images by prompt, seed or job ID and inspect recent unfinished jobs. Returns paths/settings, not image bytes.",
-                Schema(new { query = Text(), kind = Choice("all", "generate", "upscale"), offset = Integer(0, int.MaxValue), limit = Integer(1, 48) })),
+            Define("workbench_library", "Search completed images and videos by prompt, seed or job ID and inspect recent unfinished jobs. Returns paths/settings, not image or video bytes.",
+                Schema(new { query = Text(), kind = Choice("all", "generate", "upscale", "video"), offset = Integer(0, int.MaxValue), limit = Integer(1, 48) })),
             Define("workbench_search_models", "Search public Hugging Face metadata. Results do not imply runnable model support.",
                 Schema(new { query = Text(200), task = Choice("", "text-to-image", "image-to-image", "text-to-video", "image-to-video") }, ["query"]), network: true),
             Define("workbench_model_details", "Read public model repository metadata and license information. This does not install a model.",
                 Schema(new { repoId = Text(200) }, ["repoId"]), network: true)
         ];
         if (allowSetup) tools.Add(Define("workbench_install_model", "Install/verify only the bundled SD 1.5 and upscaler profile. Can download several GiB and run GPU verification. Review the model license first; readiness is reported only after verification.", Schema(new { }), false, true));
+        if (allowSetup) tools.Add(Define("workbench_install_video", "Set up short videos: downloads the pinned AnimateDiff motion adapter (1.7 GB, Apache-2.0), verifies it, and makes a test video on the GPU, which can take several minutes. Needs a verified SD 1.5 installation.", Schema(new { }), false, true));
         if (allowInference)
         {
             tools.Add(Define("workbench_generate_image", "Generate a local SD 1.5 image using an already verified installation. Optional sourceJobId starts from a completed Library image; arbitrary input paths are not accepted. "
@@ -52,6 +54,8 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
                 Schema(new { prompt = Text(), negativePrompt = Text(), seed = Integer(0, uint.MaxValue), steps = Integer(1, 50), guidanceScale = Number(1, 20), width = IntegerChoice(512, 768, 512, 768), height = IntegerChoice(512, 768, 512, 768), sampler = Choice("pndm", "dpmpp-2m", "euler-a"), sourceJobId = Text(32, "^[a-f0-9]{32}$"), strength = Number(0.05, 1),
                     model = Text(32, "^(sd15-baseline|[a-f0-9]{32})$"),
                     changeLeft = Number(0, 1), changeTop = Number(0, 1), changeWidth = Number(0, 1), changeHeight = Number(0, 1) }, ["prompt"]), false));
+            tools.Add(Define("workbench_generate_video", "Make a short video (16 frames = 2 seconds or 24 frames = 3 seconds at 8 frames a second) with the bundled SD 1.5 and the verified motion adapter. Returns the MP4 path and a poster frame; on 6 GB graphics cards this can take several minutes.",
+                Schema(new { prompt = Text(), negativePrompt = Text(), seed = Integer(0, uint.MaxValue), steps = Integer(1, 50), guidanceScale = Number(1, 20), width = IntegerChoice(512, 768, 512, 768), height = IntegerChoice(512, 768, 512, 768), frames = IntegerChoice(16, 24, 16, 24) }, ["prompt"]), false));
             tools.Add(Define("workbench_upscale_image", "Upscale a completed Library image 2× or 4× with the verified Real-ESRGAN profile. The result is another Library image.",
                 Schema(new { sourceJobId = Text(32, "^[a-f0-9]{32}$"), scale = IntegerChoice(2, 4, 2, 4) }, ["sourceJobId"]), false));
         }
@@ -265,10 +269,15 @@ public sealed class McpServer(IWorkbenchService service, string dataRoot, bool a
             object result = name switch
             {
                 "workbench_models" => new { models = await service.GetModelsAsync(dataRoot, cancellationToken) },
-                "workbench_capabilities" => new { dataRoot, allowSetup, allowInference, model = ModelChoice.BuiltInId, addedModelsSupported = true, imageGenerationSupported = true, partialImageChangesSupported = true, upscalingSupported = true, videoGenerationSupported = false, requiresVerifiedInstallation = true },
+                "workbench_capabilities" => new { dataRoot, allowSetup, allowInference, model = ModelChoice.BuiltInId, addedModelsSupported = true, imageGenerationSupported = true, partialImageChangesSupported = true, upscalingSupported = true, videoGenerationSupported = true, videoNeedsSetup = true, requiresVerifiedInstallation = true },
                 "workbench_health" => new { summary = await service.GetHealthAsync(cancellationToken) },
                 "workbench_installation_plan" => service.GetBaselinePlan(),
                 "workbench_model_status" => await service.GetInstallationAsync(dataRoot, cancellationToken),
+                "workbench_video_status" => await service.GetVideoAsync(dataRoot, cancellationToken),
+                "workbench_install_video" when allowSetup => await service.InstallVideoAsync(dataRoot, progress, cancellationToken),
+                "workbench_generate_video" when allowInference => await service.GenerateVideoAsync(dataRoot, new(GetString(args, "prompt"), GetString(args, "negativePrompt"),
+                    args.TryGetProperty("seed", out var videoSeed) ? videoSeed.GetInt64() : 20261018, GetInt(args, "steps", 20), GetNumber(args, "guidanceScale", 7.5),
+                    GetInt(args, "width", 512), GetInt(args, "height", 512), "ddim", Frames: GetInt(args, "frames", 16)), progress, cancellationToken),
                 "workbench_storage" => await service.GetStorageAsync(dataRoot, cancellationToken),
                 "workbench_library" => await service.GetLibraryAsync(dataRoot, cancellationToken, new(GetString(args, "query"), GetString(args, "kind", "all"), GetInt(args, "offset", 0), GetInt(args, "limit", 48))),
                 "workbench_search_models" => new { models = await service.SearchAsync(GetString(args, "query"), GetString(args, "task"), cancellationToken) },

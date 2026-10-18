@@ -11,6 +11,7 @@ mod path_policy;
 mod storage;
 mod tidy;
 mod verification;
+mod video;
 
 const OK: i32 = 0;
 const INVALID: i32 = 1;
@@ -544,6 +545,44 @@ pub unsafe extern "C" fn mw_tidy_data_folder(
         };
         // SAFETY: caller supplies capacity writable bytes; result is live through this copy.
         unsafe { copy_output(&result, output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
+
+/// Encode a short clip's raw RGB frames into an MP4 with Windows' own H.264 encoder.
+/// # Safety
+/// Input/output follow the header contract. The optional callback/context must remain live;
+/// no callback may unwind across the ABI. Size queries do no filesystem work.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_encode_video(
+    input: *const u8,
+    length: usize,
+    cancel: storage::Cancel,
+    context: *mut std::ffi::c_void,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: required is caller-owned writable memory.
+        unsafe { *required = 64 };
+        if output.is_null() || capacity < 64 {
+            return BUFFER_SMALL;
+        }
+        // SAFETY: caller supplies readable input.
+        let input = match unsafe { input_bytes(input, length) } {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        let hash = match video::encode(input, cancel, context) {
+            Ok(value) => value,
+            Err(code) => return code,
+        };
+        // SAFETY: output has sufficient writable capacity and hash remains live.
+        unsafe { copy_output(hash.as_bytes(), output, capacity, required) }
     })
     .unwrap_or(INTERNAL)
 }

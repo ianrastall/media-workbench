@@ -29,6 +29,20 @@ RUNTIMES = {
     CONSERVATIVE: dict(precision="float32", offload=True, minimumVramMiB=6144, label="Memory-saving",
                        description="full precision, parts of the model wait in system memory until needed"),
 }
+# Short videos run the SD 1.5 model with AnimateDiff's motion layers, about 1.5 times its size, across
+# 16 or more frames at once. "model" moves each part to the graphics card while it runs; "sequential"
+# streams it layer by layer, which fits 6 GB in full precision but is slower. Each choice is verified.
+VIDEO_CONSERVATIVE = "video-fp32-sequential"
+VIDEO_RUNTIMES = {
+    "video-fp16-model": dict(precision="float16", offload="model", minimumVramMiB=8192, label="Fast",
+                             description="half precision, each part of the model moves to the graphics card while it runs"),
+    "video-fp16-sequential": dict(precision="float16", offload="sequential", minimumVramMiB=6144, label="Fast, memory-saving",
+                                  description="half precision, the model streams to the graphics card layer by layer"),
+    "video-fp32-model": dict(precision="float32", offload="model", minimumVramMiB=12288, label="Full precision",
+                             description="full precision, each part of the model moves to the graphics card while it runs"),
+    VIDEO_CONSERVATIVE: dict(precision="float32", offload="sequential", minimumVramMiB=6144, label="Memory-saving",
+                             description="full precision, the model streams to the graphics card layer by layer"),
+}
 MINIMUM_RAM_MIB = 8192  # Below this, loading the model alone would push Windows into heavy paging.
 RECOMMENDED_RAM_MIB = 16384  # Memory-saving settings keep the model in system memory between steps.
 GPU_FIELDS = ["index", "uuid", "name", "memory.total", "memory.free", "compute_cap", "driver_version"]
@@ -64,9 +78,9 @@ def fits(vram_mib, minimum_mib):
     return vram_mib + VRAM_MARGIN_MIB >= minimum_mib
 
 
-def allows(runtime, gpu):
+def allows(runtime, gpu, table=None):
     """Whether a runtime choice may run on this GPU (used again by the ML child before loading)."""
-    settings = RUNTIMES.get(runtime)
+    settings = (RUNTIMES if table is None else table).get(runtime)
     if settings is None or not gpu:
         return False
     if settings["precision"] == "float16" and not half_precision_ok(gpu):
@@ -113,6 +127,24 @@ def choose(hardware, minimum_vram_mib):
     if settings["offload"] and type(ram) in (int, float) and ram + RAM_MARGIN_MIB < RECOMMENDED_RAM_MIB:
         warnings.append(f"This computer has {gib(ram)} of memory. Pictures may be slow because the model waits in "
                         f"system memory; close other programs while making pictures. {gib(RECOMMENDED_RAM_MIB)} or more is recommended.")
+    return dict(runtime=runtime, blocked=None, reasons=reasons, warnings=warnings)
+
+
+def choose_video(hardware, minimum_vram_mib):
+    """The video runtime for this computer, in the shape `choose` returns; slow choices say so plainly."""
+    base = choose(hardware, minimum_vram_mib)
+    if base["blocked"]:
+        return base
+    gpu = hardware["gpu"]
+    runtime = next(name for name in VIDEO_RUNTIMES if allows(name, gpu, VIDEO_RUNTIMES))
+    reasons, warnings = [], list(base["warnings"])
+    if VIDEO_RUNTIMES[runtime]["offload"] == "sequential":
+        reasons.append(f"With {gib(float(gpu.get('vramMiB') or 0))} of graphics memory, videos stream the model to the graphics "
+                       "card layer by layer. That fits, but a 2-second video can take several minutes.")
+    else:
+        reasons.append("Each part of the video model moves to the graphics card while it runs.")
+    if not half_precision_ok(gpu):
+        reasons.append("Videos use full precision on this graphics card, like pictures.")
     return dict(runtime=runtime, blocked=None, reasons=reasons, warnings=warnings)
 
 

@@ -19,7 +19,20 @@ public sealed partial class ShellView : UserControl
         InitializeComponent();
         ViewModel.PropertyChanged += SyncNavigation;
         ViewModel.PropertyChanged += RedrawMask;
+        ViewModel.PropertyChanged += ShowVideo;
         _ready = true;
+    }
+    // Create plays the latest video on a loop; a new video replaces the one playing.
+    private void ShowVideo(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName != nameof(MainViewModel.VideoPreviewPath)) return;
+        var previous = VideoPlayer.MediaPlayer;
+        string path = ViewModel.VideoPreviewPath;
+        if (path.Length == 0 || !File.Exists(path)) { VideoPlayer.SetMediaPlayer(null); previous?.Dispose(); return; }
+        var player = new Windows.Media.Playback.MediaPlayer { IsLoopingEnabled = true, AutoPlay = true, IsMuted = true };
+        player.Source = Windows.Media.Core.MediaSource.CreateFromUri(new Uri(path));
+        VideoPlayer.SetMediaPlayer(player);
+        previous?.Dispose();
     }
     private void Navigate(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
@@ -118,6 +131,12 @@ public sealed partial class ShellView : UserControl
     private void RetryJob(object sender, RoutedEventArgs args) => ViewModel.RetryJobCommand.Execute((sender as FrameworkElement)?.Tag as JobSummary);
     private void UseImageSettings(object sender, RoutedEventArgs args) => ViewModel.UseImageSettingsCommand.Execute((sender as FrameworkElement)?.Tag as GeneratedImage);
     private void OpenLibraryImage(object sender, RoutedEventArgs args) => ViewModel.OpenImageCommand.Execute((sender as FrameworkElement)?.Tag as string);
+    private void OpenLibraryVideo(object sender, RoutedEventArgs args) => ViewModel.OpenVideoCommand.Execute((sender as FrameworkElement)?.Tag as string);
+    private void RemoveVideo(object sender, RoutedEventArgs args)
+    {
+        ClosePopups();
+        ViewModel.RemoveVideoCommand.Execute(null);
+    }
     private void CopyMcpConfiguration(object sender, RoutedEventArgs args)
     {
         var content = new Windows.ApplicationModel.DataTransfer.DataPackage();
@@ -136,12 +155,13 @@ public sealed partial class ShellView : UserControl
             // This lets the worker validate the destination and checksum before committing anything.
             var picker = new Microsoft.Windows.Storage.Pickers.FileSavePicker(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(WindowHandle))
             {
-                SuggestedStartLocation = Microsoft.Windows.Storage.Pickers.PickerLocationId.PicturesLibrary,
+                SuggestedStartLocation = image.IsVideo ? Microsoft.Windows.Storage.Pickers.PickerLocationId.VideosLibrary : Microsoft.Windows.Storage.Pickers.PickerLocationId.PicturesLibrary,
                 SuggestedFileName = "MediaWorkbench-" + image.Id,
-                DefaultFileExtension = ".png",
+                DefaultFileExtension = image.IsVideo ? ".mp4" : ".png",
                 ShowOverwritePrompt = true
             };
-            picker.FileTypeChoices.Add("PNG image", new List<string> { ".png" });
+            if (image.IsVideo) picker.FileTypeChoices.Add("MP4 video", new List<string> { ".mp4" });
+            else picker.FileTypeChoices.Add("PNG image", new List<string> { ".png" });
             if (await picker.PickSaveFileAsync() is { } file)
             {
                 var request = new ImageExportRequest(image.Id, file.Path);

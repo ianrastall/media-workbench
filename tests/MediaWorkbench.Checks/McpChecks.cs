@@ -39,11 +39,16 @@ static class McpChecks
                 await Send(new { jsonrpc = "2.0", method = "notifications/initialized" });
                 await Send(new { jsonrpc = "2.0", id = 3, method = "tools/list" });
                 var tools = (await Read()).GetProperty("result").GetProperty("tools").EnumerateArray().Select(tool => tool.GetProperty("name").GetString()).ToArray();
-                check(tools.Contains("workbench_install_model") == allowSetup && tools.Contains("workbench_generate_image") == allowInference && tools.Contains("workbench_upscale_image") == allowInference,
+                check(tools.Contains("workbench_install_model") == allowSetup && tools.Contains("workbench_generate_image") == allowInference && tools.Contains("workbench_upscale_image") == allowInference
+                    && tools.Contains("workbench_install_video") == allowSetup && tools.Contains("workbench_generate_video") == allowInference && tools.Contains("workbench_video_status"),
                     "MCP advertises setup and inference only when granted at launch");
                 var capabilities = (await Call("caps", "workbench_capabilities", new { })).GetProperty("result").GetProperty("structuredContent");
-                check(!capabilities.GetProperty("videoGenerationSupported").GetBoolean() && capabilities.GetProperty("allowSetup").GetBoolean() == allowSetup,
-                    "MCP reports unsupported video and actual launch permissions");
+                check(capabilities.GetProperty("videoGenerationSupported").GetBoolean() && capabilities.GetProperty("videoNeedsSetup").GetBoolean()
+                    && capabilities.GetProperty("allowSetup").GetBoolean() == allowSetup,
+                    "MCP reports that videos need their own setup, and the actual launch permissions");
+                var videoStatus = (await Call("video", "workbench_video_status", new { })).GetProperty("result");
+                check(!videoStatus.GetProperty("isError").GetBoolean() && videoStatus.GetProperty("structuredContent").GetProperty("status").GetString() == "not_installed",
+                    "MCP reads the real video setup state of the scoped folder");
                 var storage = (await Call("storage", "workbench_storage", new { })).GetProperty("result");
                 check(!storage.GetProperty("isError").GetBoolean() && storage.GetProperty("structuredContent").GetProperty("items").GetArrayLength() == 8,
                     "MCP inspects the scoped data folder through the Rust storage service");
@@ -70,6 +75,11 @@ static class McpChecks
                     check(unknownModel.GetProperty("error").GetProperty("code").GetInt32() == -32602, "MCP accepts only listed model identifiers");
                     var addedModel = (await Call("added", "workbench_generate_image", new { prompt = "a house", model = new string('a', 32) })).GetProperty("result");
                     check(addedModel.GetProperty("isError").GetBoolean(), "MCP cannot generate with a model that is not added and tested");
+                    var clip = (await Call("clip", "workbench_generate_video", new { prompt = "waves", frames = 24 })).GetProperty("result");
+                    check(clip.GetProperty("isError").GetBoolean() && clip.GetProperty("content")[0].GetProperty("text").GetString()!.Contains("Install / verify"),
+                        "MCP videos still require the actual verified installation");
+                    var badLength = await Call("length", "workbench_generate_video", new { prompt = "waves", frames = 12 });
+                    check(badLength.GetProperty("error").GetProperty("code").GetInt32() == -32602, "MCP offers only the supported video lengths");
                 }
                 await process.StandardInput.WriteLineAsync("{broken");
                 await process.StandardInput.FlushAsync(token);
@@ -113,6 +123,11 @@ static class McpChecks
             && workbench.LastGeneration is { Prompt: "café forest", Seed: 4294967295L, Steps: 5, Width: 768, Height: 512, GuidanceScale: 4.5, Sampler: "euler-a" }
             && workbench.LastGeneration.Model == ModelChoice.BuiltInId
             && workbench.DataRoots[^1] == root, "MCP passes generation settings and large seeds to the scoped service without alteration");
+        Send(new { jsonrpc = "2.0", id = "video", method = "tools/call", @params = new { name = "workbench_generate_video", arguments = new { prompt = "waves at dusk", frames = 24, width = 768, seed = 7 } } });
+        var made = (await Read()).GetProperty("result");
+        check(!made.GetProperty("isError").GetBoolean() && workbench.LastVideo is { Prompt: "waves at dusk", Frames: 24, Width: 768, Height: 512, Seed: 7, Steps: 20 }
+            && workbench.VideoRoots[^1] == root && made.GetProperty("structuredContent").GetProperty("videoPath").GetString()!.EndsWith("video.mp4"),
+            "MCP passes video settings to the scoped service and returns the MP4 path");
         Send(new { jsonrpc = "2.0", id = "with-model", method = "tools/call", @params = new { name = "workbench_generate_image", arguments = new { prompt = "café forest", model = new string('e', 32) } } });
         check(!(await Read()).GetProperty("result").GetProperty("isError").GetBoolean() && workbench.LastGeneration?.Model == new string('e', 32),
             "MCP generation can name an added model");

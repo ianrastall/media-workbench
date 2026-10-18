@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import inference_setup as setup
+import video
 
 
 def export(app, payload, cancel, progress):
@@ -14,8 +15,8 @@ def export(app, payload, cancel, progress):
     if not isinstance(destination, str) or not Path(destination).is_absolute():
         raise ValueError("Choose a full destination path for the image")
     target = Path(destination).resolve()
-    if target.suffix.lower() != ".png":
-        raise ValueError("Save the image as a PNG file")
+    if target.suffix.lower() not in (".png", ".mp4"):
+        raise ValueError("Save the image as a PNG file, or a video as an MP4 file")
     if not target.parent.is_dir():
         raise ValueError("The destination folder is no longer available")
     setup.check_cancel(cancel)
@@ -25,10 +26,13 @@ def export(app, payload, cancel, progress):
     record = setup.read_record(setup.owned(root, f"jobs/{job_id}.json"))
     if not record or record.get("id") != job_id or record.get("status") != "succeeded":
         raise setup.SetupError("This image's completed job record is no longer available. Refresh Library.")
-    image = setup.artifact_image(root, record)
+    moving = target.suffix.lower() == ".mp4"
+    if moving != (record.get("kind") == "video"):
+        raise ValueError("Save a video as an MP4 file and a picture as a PNG file")
+    image = video.artifact_video(root, record) if moving else setup.artifact_image(root, record)
     if image is None:
         raise setup.SetupError("This image is no longer available. Refresh Library.")
-    expected = record.get("imageSha256")
+    expected = record.get("videoSha256" if moving else "imageSha256")
     if not isinstance(expected, str) or len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
         raise setup.SetupError("This image has no valid recorded checksum; a verified copy cannot be saved.")
     path = setup.native_core_path(app)

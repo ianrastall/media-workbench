@@ -157,7 +157,7 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
         ),
         (
             "model",
-            "Image models (Stable Diffusion 1.5 and upscaler)",
+            "Bundled models (Stable Diffusion 1.5, upscaler, and video motion)",
             request
                 .model_ids
                 .iter()
@@ -177,7 +177,7 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
             vec!["models/imported".into()],
             "",
         ),
-        ("images", "Images", vec!["artifacts".into()], ""),
+        ("images", "Images and videos", vec!["artifacts".into()], ""),
         (
             "logs",
             "Logs",

@@ -310,8 +310,11 @@ def recover_interrupted(root, job_paths=None):
             continue
         if job_id_valid(record.get("id")):
             owned(root, f"artifacts/{record['id']}/image.partial").unlink(missing_ok=True)
+            if record.get("kind") == "video":
+                from video import discard  # Local import: video imports this module.
+                discard(root, record["id"])
         record.update(status="interrupted", interruptedUtc=now,
-                      message="Generation stopped before it finished; no image was added to Library.")
+                      message=f"Generation stopped before it finished; no {'video' if record.get('kind') == 'video' else 'image'} was added to Library.")
         atomic_json(path, record)
         recovered += 1
     from model_library import recover as recover_imports  # Local import: model_library imports this module.
@@ -754,7 +757,11 @@ def run_job(app, root, kind, settings, cancel, progress):
             raise SetupError("Install / verify Stable Diffusion 1.5 before generating.")
         if not files_unchanged(app, root, ready):
             raise SetupError("Model files changed since they were verified. Install / verify again.")
-        check_space(root, space_needed(kind, settings))  # Before the record, input copies, or log.
+        video = None
+        if kind == "video":
+            import video  # Local import: video imports this module.
+            video_extra = video.child_payload(app, root)  # Its own verified setup and runtime choice.
+        check_space(root, video.space_needed(settings) if video else space_needed(kind, settings))  # Before the record, input copies, or log.
         job_id = uuid.uuid4().hex
         manifest = json.loads((app / "profiles/sd15-files.json").read_text())
         source = dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"])
@@ -768,11 +775,13 @@ def run_job(app, root, kind, settings, cancel, progress):
             source = added.get("source") or dict(provider="local", name=added.get("sourceName", ""), sha256=added["files"][0]["sha256"])
         if kind == "upscale":
             extra = {}  # The upscaler always runs in full precision; its tile size follows free graphics memory.
+        elif video:
+            extra = video_extra
         record = dict(schemaVersion=1, id=job_id, kind=kind, status="running", settings=settings,
                       startedUtc=datetime.now(timezone.utc).isoformat(), recipeId=RECIPE,
                       profileStamp=ready["profileStamp"], runtimeProfileId=PROFILE, source=source,
                       log=f"{kind}-{job_id}.log")
-        if kind == "generate":
+        if kind in ("generate", "video"):
             record.update(model=model, modelName=model_name, runtime=extra["runtime"])
         job = owned(root, f"jobs/{job_id}.json")
         child = dict(settings, jobId=job_id, **extra)
@@ -789,17 +798,27 @@ def run_job(app, root, kind, settings, cancel, progress):
         try:
             result = inference(app, root, kind, child, cancel, progress, log_id=job_id)
             check_cancel(cancel)
+            if video:
+                result = video.finish(app, root, job_id, result, settings, cancel, progress)
             record.update(status="succeeded", completedUtc=datetime.now(timezone.utc).isoformat(), **result)
-            note = timing_note(app, root, result, model_bytes) if kind == "generate" else ""  # The 64 MB upscaler loads in moments.
+            if video:
+                model_bytes += sum(entry["size"] for _, _, entry in video.model_files(app, root))
+            note = timing_note(app, root, result, model_bytes) if kind != "upscale" else ""  # The 64 MB upscaler loads in moments.
             if note:
                 record["loadNote"] = note
             settings.update(width=result.get("width", settings.get("width")), height=result.get("height", settings.get("height")))
             image = artifact_image(root, record)
             if image is None:
                 raise SetupError("The inference child reported an image outside this job's artifact folder.")
+            moving = video.artifact_video(root, record) if video else None
+            if video and moving is None:
+                raise SetupError("The video was not saved inside this job's artifact folder.")
             atomic_json(job, record)
-            return dict(record, imagePath=str(image), settings=resolve_settings(root, record))
+            return dict(record, imagePath=str(image), settings=resolve_settings(root, record),
+                        **({"videoPath": str(moving)} if moving else {}))
         except Exception as exc:
+            if video:
+                video.discard(root, job_id)
             record.update(status="cancelled" if isinstance(exc, Cancelled) else "failed", message=str(exc))
             atomic_json(job, record)
             raise
@@ -829,7 +848,7 @@ def artifact_image(root, record):
 
 def job_log(root, record):
     """The generation's own child log, if it exists; the name is fixed by the job ID, never taken from the record."""
-    if not job_id_valid(record.get("id")) or record.get("log") not in (f"generate-{record['id']}.log", f"upscale-{record['id']}.log"):
+    if not job_id_valid(record.get("id")) or record.get("log") not in (f"{kind}-{record['id']}.log" for kind in ("generate", "upscale", "video")):
         return None
     path = owned(root, "logs") / record["log"]
     return path if path.is_file() else None

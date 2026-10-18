@@ -58,6 +58,10 @@ public partial class MainViewModel : ObservableObject
         CancelImportCommand = new RelayCommand(ClearImportCandidate);
         RetestModelCommand = new AsyncRelayCommand<ModelChoice?>(RetestModelAsync, model => !IsBusy && model is { BuiltIn: false });
         RemoveModelCommand = new AsyncRelayCommand<ModelChoice?>(RemoveModelAsync, model => !IsBusy && model is { BuiltIn: false });
+        InstallVideoCommand = new AsyncRelayCommand(InstallVideoAsync, () => !IsBusy && ModelReady);
+        GenerateVideoCommand = new AsyncRelayCommand(GenerateVideoAsync, () => !IsBusy && ModelReady && VideoReady);
+        RemoveVideoCommand = new AsyncRelayCommand(RemoveVideoAsync, () => !IsBusy);
+        OpenVideoCommand = new RelayCommand<string?>(OpenVideo, path => !string.IsNullOrEmpty(path));
         ModelChoices.Add(BuiltInChoice);
         DataRootDraft = DataRoot;
         try
@@ -91,7 +95,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string Status { get; set; } = "Ready";
     [ObservableProperty] public partial string Notice { get; set; } = "Start in Create to install and verify Stable Diffusion 1.5. Requires an NVIDIA GPU with 6 GB VRAM and 20 GiB free space.";
     [ObservableProperty] public partial string InstallationText { get; set; } = "Check model status, or install / verify to prepare image generation.";
-    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand), nameof(ImportModelCommand)), NotifyPropertyChangedFor(nameof(NeedsSetup))] public partial bool ModelReady { get; set; }
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand), nameof(ImportModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand)),
+     NotifyPropertyChangedFor(nameof(NeedsSetup), nameof(NeedsVideoSetup), nameof(CanMakeVideo), nameof(CanMakePicture))] public partial bool ModelReady { get; set; }
     public bool NeedsSetup => !ModelReady;
     /// <summary>"This computer" for Create's setup card: hardware and the settings chosen from it.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSystemProfile))] public partial string SystemProfileText { get; set; } = "";
@@ -130,7 +135,7 @@ public partial class MainViewModel : ObservableObject
     public IReadOnlyList<string> SizeLabels { get; } = [.. GenerationSettings.Sizes.Select(size => size.Label)];
     public IReadOnlyList<string> SamplerLabels { get; } = [.. GenerationSettings.Samplers.Select(sampler => sampler.Label)];
     /// <summary>An optional picture to start from (image-to-image); empty for a description only.</summary>
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSourceImage), nameof(HasNoSourceImage), nameof(SourceImageName), nameof(IsChangingWholePicture))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSourceImage), nameof(HasNoSourceImage), nameof(SourceImageName), nameof(IsChangingWholePicture), nameof(ShowsShape))]
     public partial string SourceImagePath { get; set; } = "";
     public bool HasSourceImage => SourceImagePath.Length > 0;
     public bool HasNoSourceImage => !HasSourceImage;
@@ -168,7 +173,36 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasLatestUpscale))] public partial GeneratedImage? LatestUpscale { get; set; }
     public bool HasLatestImage => LatestImage is not null;
     public bool HasLatestUpscale => LatestUpscale is not null;
-    [ObservableProperty] public partial string ImageDescription { get; set; } = "Your generated image will appear here.";
+    /// <summary>What Create makes: 0 a picture, 1 a short video.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsVideoMode), nameof(IsPictureMode), nameof(NeedsVideoSetup), nameof(CanMakeVideo), nameof(CanMakePicture), nameof(PromptHeader), nameof(ShowsShape))]
+    public partial int CreateKindIndex { get; set; }
+    public string PromptHeader => IsVideoMode ? "Describe the video" : "Describe the picture";
+    /// <summary>Pictures from a starting picture keep its proportions; videos and new pictures choose a shape.</summary>
+    public bool ShowsShape => IsVideoMode || HasNoSourceImage;
+    public IReadOnlyList<string> CreateKindLabels { get; } = ["A picture", "A short video"];
+    public bool IsVideoMode => CreateKindIndex == 1;
+    public bool IsPictureMode => !IsVideoMode;
+    /// <summary>Whether the motion adapter is set up and passed its GPU test here.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(NeedsVideoSetup), nameof(CanMakeVideo)), NotifyCanExecuteChangedFor(nameof(GenerateVideoCommand))]
+    public partial bool VideoReady { get; set; }
+    [ObservableProperty] public partial string VideoText { get; set; } = "Videos are not set up yet.";
+    /// <summary>Settings' one-line summary of the video setup.</summary>
+    [ObservableProperty] public partial string VideoSettingsText { get; set; } = "Videos are not set up. Create sets them up when you choose A short video.";
+    public bool NeedsVideoSetup => IsVideoMode && ModelReady && !VideoReady;
+    public bool CanMakeVideo => IsVideoMode && ModelReady && VideoReady;
+    public bool CanMakePicture => IsPictureMode;
+    /// <summary>Index into <see cref="GenerationSettings.VideoLengths"/>.</summary>
+    [ObservableProperty] public partial int VideoLengthIndex { get; set; }
+    public IReadOnlyList<string> VideoLengthLabels { get; } = [.. GenerationSettings.VideoLengths.Select(length => length.Label)];
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasLatestVideo))] public partial GeneratedImage? LatestVideo { get; set; }
+    public bool HasLatestVideo => LatestVideo is not null;
+    /// <summary>The latest video's MP4, which Create plays on a loop.</summary>
+    [ObservableProperty] public partial string VideoPreviewPath { get; set; } = "";
+    [ObservableProperty] public partial string VideoDescription { get; set; } = "Your video will appear here.";
+    public IAsyncRelayCommand InstallVideoCommand { get; }
+    public IAsyncRelayCommand GenerateVideoCommand { get; }
+    public IAsyncRelayCommand RemoveVideoCommand { get; }
+    public IRelayCommand<string?> OpenVideoCommand { get; }    [ObservableProperty] public partial string ImageDescription { get; set; } = "Your generated image will appear here.";
     [ObservableProperty] public partial double ProgressPercent { get; set; }
     [ObservableProperty] public partial bool ProgressIndeterminate { get; set; } = true;
     [ObservableProperty] public partial string DetailsText { get; set; } = "Select a model to inspect its source, revision, and files.";
@@ -176,7 +210,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial string PlanText { get; set; } = "Preview the baseline installation plan to see its prerequisites.";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
-    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -257,7 +291,7 @@ public partial class MainViewModel : ObservableObject
     private LibraryQuery _libraryQuery = new();
     [ObservableProperty] public partial string LibrarySearch { get; set; } = "";
     [ObservableProperty] public partial int LibraryKindIndex { get; set; }
-    public IReadOnlyList<string> LibraryKindLabels { get; } = ["All images", "Generated images", "Upscaled images"];
+    public IReadOnlyList<string> LibraryKindLabels { get; } = ["Everything", "Generated pictures", "Upscaled pictures", "Videos"];
     [ObservableProperty] public partial string LibraryText { get; set; } = "Open Library to browse your saved images.";
     [ObservableProperty, NotifyCanExecuteChangedFor(nameof(NextLibraryPageCommand))] public partial bool LibraryHasMore { get; set; }
     public IRelayCommand<JobSummary?> RetryJobCommand { get; }
@@ -312,7 +346,7 @@ public partial class MainViewModel : ObservableObject
     public string PageDescription => SelectedPage switch
     {
         "discover" => "Search public Hugging Face models and inspect their metadata before choosing a local pipeline.",
-        "create" => "Generate images locally with Stable Diffusion 1.5, or a compatible model you already downloaded. The first setup downloads a private runtime and model, then tests your GPU.",
+        "create" => "Make pictures and short videos locally with Stable Diffusion 1.5, or pictures with a compatible model you already downloaded. The first setup downloads a private runtime and model, then tests your GPU.",
         "library" => "Images and their prompts, seeds, and runtime evidence are saved in your data folder.",
         "tools" => "Make a picture bigger and sharper, offline. Works on your own pictures and on images from Library.",
         "settings" => "Choose where models, private environments, and media are stored.",
@@ -351,6 +385,24 @@ public partial class MainViewModel : ObservableObject
         ModelReady = state.Status == "ready";
         await UpdateModels(token);
         await UpdateSystemProfile(token);
+        await UpdateVideo(token);
+    }
+
+    /// <summary>Whether videos are set up here; they need a ready Stable Diffusion 1.5 first.</summary>
+    private async Task UpdateVideo(CancellationToken token)
+    {
+        if (!ModelReady) { ShowVideo(new("needs_base", "Set up Stable Diffusion 1.5 first (Install / verify under A picture); videos use it.")); return; }
+        try { ShowVideo(await _service.GetVideoAsync(DataRoot, token)); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { ShowVideo(new("unknown", "Video setup could not be read: " + ex.Message)); }
+    }
+
+    private void ShowVideo(VideoState state)
+    {
+        VideoReady = state.IsReady;
+        VideoText = state.Message;
+        VideoSettingsText = state.Settings is { } settings
+            ? $"Videos are set up and tested with {settings.Label.ToLowerInvariant()} settings ({settings.Description})."
+            : state.IsReady ? "Videos are set up and tested." : "Videos are not set up. Create sets them up when you choose A short video.";
     }
 
     /// <summary>Reads the hardware once per data folder in a session; setup and Diagnostics read it again.</summary>
@@ -479,13 +531,60 @@ public partial class MainViewModel : ObservableObject
             if (!ModelReady) InstallationText = "Setup did not finish. Check model status for details; install / verify resumes retained downloads.";
         }
     }, longRunning: true);
-    private Task GenerateAsync() => RunAsync("Preparing image generation…", async token =>
+    /// <summary>The Advanced options shared by pictures and videos, checked before any work starts.</summary>
+    private void CheckRefinement()
     {
         if (!double.IsFinite(Seed) || Seed != Math.Truncate(Seed) || Seed < 0 || Seed > uint.MaxValue ||
             !double.IsFinite(Steps) || Steps != Math.Truncate(Steps) || Steps < 1 || Steps > 50)
             throw new InvalidDataException("Use a whole-number seed (0–4294967295) and 1–50 steps.");
         if (!double.IsFinite(GuidanceScale) || GuidanceScale < 1 || GuidanceScale > 20)
             throw new InvalidDataException("Use a guidance value from 1 to 20.");
+    }
+
+    private Task InstallVideoAsync() => RunAsync("Setting up videos…", async token =>
+    {
+        VideoReady = false;
+        try
+        {
+            var state = await _service.InstallVideoAsync(DataRoot, ObserveProgress(), token);
+            ShowVideo(state);
+            Notice = state.Message;
+            Record(state.Message);
+        }
+        finally
+        {
+            if (!VideoReady) VideoText = "Video setup did not finish. Select Set up videos to try again; finished downloads are kept.";
+            _ = RefreshDriveAsync();
+        }
+    }, longRunning: true);
+
+    private Task RemoveVideoAsync() => RunAsync("Removing the video setup…", async token =>
+    {
+        ShowVideo(await _service.RemoveVideoAsync(DataRoot, token));
+        ShowStorage(await _service.GetStorageAsync(DataRoot, token));
+        Notice = "Removed the video setup (about 1.7 GB). Videos you made were kept; Set up videos in Create downloads it again.";
+        Record(Notice);
+    });
+
+    private Task GenerateVideoAsync() => RunAsync("Preparing the video…", async token =>
+    {
+        CheckRefinement();
+        var size = GenerationSettings.Sizes[Math.Clamp(SizeIndex, 0, GenerationSettings.Sizes.Length - 1)];
+        int frames = GenerationSettings.VideoLengths[Math.Clamp(VideoLengthIndex, 0, GenerationSettings.VideoLengths.Length - 1)].Frames;
+        var clip = await _service.GenerateVideoAsync(DataRoot, new(Prompt, NegativePrompt, (long)Seed, (int)Steps,
+            Math.Round(GuidanceScale, 2), size.Width, size.Height, "ddim", Frames: frames), ObserveProgress(), token);
+        LatestVideo = clip;
+        VideoPreviewPath = clip.VideoPath ?? "";
+        VideoDescription = clip.Description;
+        await ShowNewImageAsync(clip, token);
+        Notice = clip.SavedNotice;
+        Record("Saved " + clip.VideoPath);
+        _ = RefreshDriveAsync();
+    }, longRunning: true);
+
+    private Task GenerateAsync() => RunAsync("Preparing image generation…", async token =>
+    {
+        CheckRefinement();
         var size = GenerationSettings.Sizes[Math.Clamp(SizeIndex, 0, GenerationSettings.Sizes.Length - 1)];
         var sampler = GenerationSettings.Samplers[Math.Clamp(SamplerIndex, 0, GenerationSettings.Samplers.Length - 1)];
         string? source = HasSourceImage ? SourceImagePath : null;
@@ -515,7 +614,7 @@ public partial class MainViewModel : ObservableObject
         _ = RefreshDriveAsync();
     }, longRunning: true);
     private Task RefreshLibraryAsync() => LoadLibraryPageAsync(0, new(LibrarySearch,
-        LibraryKindIndex switch { 1 => "generate", 2 => "upscale", _ => "all" }, Limit: LibraryPageSize));
+        LibraryKindIndex switch { 1 => "generate", 2 => "upscale", 3 => "video", _ => "all" }, Limit: LibraryPageSize));
 
     private Task LoadLibraryPageAsync(int offset, LibraryQuery? query = null) => RunAsync("Loading saved images…",
         token => LoadLibraryAsync((query ?? _libraryQuery) with { Offset = offset }, token));
@@ -604,7 +703,8 @@ public partial class MainViewModel : ObservableObject
         ClearHubPlan();
         ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = "";
         UpscalePreviewPath = ""; SourceImagePath = ""; UpscaleSourcePath = "";
-        LatestImage = null; LatestUpscale = null;
+        LatestImage = null; LatestUpscale = null; LatestVideo = null; VideoPreviewPath = "";
+        ShowVideo(new("unknown", "Videos are not set up yet."));
         _libraryOffset = 0; LibraryHasMore = false; LibrarySearch = ""; LibraryKindIndex = 0; _libraryQuery = new();
         PreviousLibraryPageCommand.NotifyCanExecuteChanged();
         LibraryText = "Open Library to browse images in the new data folder.";
@@ -633,7 +733,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (area == "installation") ModelReady = false;
         var storage = await _service.ClearStorageAsync(DataRoot, area!, ObserveProgress(), token);
-        if (area == "installation") await UpdateModels(token);
+        if (area == "installation") { await UpdateModels(token); await UpdateVideo(token); }
         ShowStorage(storage);
         Notice = area == "installation"
             ? "Stable Diffusion 1.5 was removed. Your images, their records, and models you added were kept; Install / verify sets it up again."
@@ -644,13 +744,13 @@ public partial class MainViewModel : ObservableObject
     private void RetryJob(JobSummary? job)
     {
         if (job?.Settings is not { } settings || !job.CanRetry) return;
-        if (ApplySettings(settings)) Notice = $"Loaded the settings of a {job.Status} job. Select {(settings.IsUpscale ? "Make it bigger" : "Generate image")} to try again.{_restoreNote}";
+        if (ApplySettings(settings)) Notice = $"Loaded the settings of a {job.Status} job. Select {(settings.IsUpscale ? "Make it bigger" : settings.IsVideo ? "Make video" : "Generate image")} to try again.{_restoreNote}";
     }
 
     private void UseImageSettings(GeneratedImage? image)
     {
         if (image?.Settings is not { } settings || !image.CanReuseSettings) return;
-        if (ApplySettings(settings)) Notice = "Loaded this image's settings. You can repeat it or change them for a variation." + _restoreNote;
+        if (ApplySettings(settings)) Notice = $"Loaded this {(settings.IsVideo ? "video" : "image")}'s settings. You can repeat it or change them for a variation." + _restoreNote;
     }
 
     private Task ExportImageAsync(ImageExportRequest? request) => RunAsync("Saving an image copy…", async token =>
@@ -672,6 +772,17 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex) { Notice = ex.Message; }
     }
 
+    private void OpenVideo(string? path)
+    {
+        try
+        {
+            if (path is null || !Path.IsPathFullyQualified(path) || !Path.GetExtension(path).Equals(".mp4", StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
+            { Notice = "That video is no longer available. Refresh Library."; return; }
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Notice = ex.Message; }
+    }
+
     private bool ApplySettings(GenerationSettings settings)
     {
         _restoreNote = "";
@@ -687,6 +798,8 @@ public partial class MainViewModel : ObservableObject
             SelectedPage = "tools";
             return true;
         }
+        CreateKindIndex = settings.IsVideo ? 1 : 0;
+        if (settings.IsVideo) VideoLengthIndex = Math.Max(0, Array.FindIndex(GenerationSettings.VideoLengths, length => length.Frames == settings.Frames));
         Prompt = settings.Prompt;
         NegativePrompt = settings.NegativePrompt ?? "";
         Seed = settings.Seed;

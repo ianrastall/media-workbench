@@ -1,4 +1,4 @@
 {
   "runtimeProfileId": "sd15-cu126-v1",
-  "modelIds": ["sd15-baseline", "realesrgan-x4plus"]
+  "modelIds": ["sd15-baseline", "realesrgan-x4plus", "animatediff-v1-5-3"]
 }

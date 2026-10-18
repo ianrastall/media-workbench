@@ -1,0 +1,27 @@
+{
+  "name": "AnimateDiff motion adapter v1-5-3",
+  "repoId": "guoyww/animatediff-motion-adapter-v1-5-3",
+  "revision": "2e8139b1d1269fd8a21deb96ad19455e187692eb",
+  "source": "https://github.com/guoyww/AnimateDiff",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "name": "README.md",
+      "url": "https://huggingface.co/guoyww/animatediff-motion-adapter-v1-5-3/resolve/2e8139b1d1269fd8a21deb96ad19455e187692eb/README.md",
+      "size": 2415,
+      "sha256": "0f48b1feda72406b0e60f28832ff1b753e6c83371de6018cce796e531aed04ff"
+    },
+    {
+      "name": "config.json",
+      "url": "https://huggingface.co/guoyww/animatediff-motion-adapter-v1-5-3/resolve/2e8139b1d1269fd8a21deb96ad19455e187692eb/config.json",
+      "size": 349,
+      "sha256": "700ec4723d2f669e81033d3841e4fb3b30eeb86b9ce10d5e18d8cf9e62e80627"
+    },
+    {
+      "name": "diffusion_pytorch_model.safetensors",
+      "url": "https://huggingface.co/guoyww/animatediff-motion-adapter-v1-5-3/resolve/2e8139b1d1269fd8a21deb96ad19455e187692eb/diffusion_pytorch_model.safetensors",
+      "size": 1670875648,
+      "sha256": "aafc03722c0c50000d83852bd308d23743bfa36abd408eda4d66b9d67fa94db2"
+    }
+  ]
+}

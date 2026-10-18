@@ -121,6 +121,20 @@ MW_API int32_t mw_drive_info(const uint8_t *input, size_t length,
 MW_API int32_t mw_tidy_data_folder(const uint8_t *input, size_t length,
     mw_should_cancel cancel, void *context,
     uint8_t *output, size_t capacity, size_t *required);
+/* Additive ABI 1 short-clip encoding. JSON: {framesPath, width, height, frames, fps, destination}.
+   framesPath (absolute) holds exactly width*height*3*frames bytes of top-down RGB24 frames;
+   width and height are even, 64-4096; frames 1-240; fps 1-60; destination is an absolute ".mp4"
+   path that must not exist, in an existing folder. Neither path may pass through a link. Encodes
+   H.264 in an MP4 container with Windows' own Media Foundation encoder into a hidden partial file
+   beside the destination, checks that it is an MP4, then renames it into place. Output is the
+   video's 64-byte SHA-256. Media Foundation is loaded at call time from System32, so a Windows
+   edition without it (for example an N edition without the Media Feature Pack) returns status 8
+   instead of preventing this library from loading. Failure or cancellation (5) leaves no partial.
+   output=NULL or capacity<64 returns 2, required=64, without filesystem work or callbacks.
+   The optional synchronous callback returns nonzero to cancel; it must not unwind. */
+MW_API int32_t mw_encode_video(const uint8_t *input, size_t length,
+    mw_should_cancel cancel, void *context,
+    uint8_t *output, size_t capacity, size_t *required);
 #ifdef __cplusplus
 }
 #endif

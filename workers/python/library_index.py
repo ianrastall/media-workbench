@@ -9,9 +9,10 @@ import sqlite3
 import threading
 
 import inference_setup as setup
+import video
 
 VERSION = 1
-KINDS = ("all", "generate", "upscale")
+KINDS = ("all", "generate", "upscale", "video")
 
 
 def options(payload):
@@ -22,7 +23,7 @@ def options(payload):
     if not isinstance(query, str) or len(query) > 2000:
         raise ValueError("Library search must contain at most 2000 characters")
     if kind not in KINDS:
-        raise ValueError("Choose all images, generated images, or upscaled images")
+        raise ValueError("Choose all images, generated images, upscaled images, or videos")
     if type(offset) is not int or not 0 <= offset <= 2_147_483_647:
         raise ValueError("Library offset must be a nonnegative integer")
     if type(limit) is not int or not 1 <= limit <= setup.LIBRARY_IMAGES:
@@ -45,22 +46,29 @@ def usable_record(record, name):
     for key in ("prompt", "negativePrompt", "sampler"):
         if key in settings and not isinstance(settings[key], str):
             return False
-    for key in ("seed", "steps", "width", "height", "scale"):
+    for key in ("seed", "steps", "width", "height", "scale", "frames", "fps"):
         if key in settings and (type(settings[key]) is not int or not 0 <= settings[key] <= (4294967295 if key == "seed" else 2147483647)):
             return False
     for key in ("guidanceScale", "strength"):
         if key in settings and (type(settings[key]) not in (int, float) or not 0 <= settings[key] <= 100):
             return False
-    for key in ("startedUtc", "completedUtc", "imageSha256", "gpu", "kind", "modelName", "loadNote"):
+    for key in ("startedUtc", "completedUtc", "imageSha256", "gpu", "kind", "modelName", "loadNote", "videoPath", "videoSha256"):
         if key in record and not isinstance(record[key], str):
             return False
-    for key in ("width", "height"):
+    for key in ("width", "height", "frames", "fps"):
         if key in record and (type(record[key]) is not int or not 0 <= record[key] <= 2147483647):
             return False
     for key in ("seconds", "loadSeconds", "startupSeconds"):
         if key in record and (type(record[key]) not in (int, float) or not 0 <= record[key] < float("inf")):
             return False
     return True
+
+
+def present(root, record):
+    """A succeeded job lists only while its picture (and a video's MP4) is still in its artifact folder."""
+    if setup.artifact_image(root, record) is None:
+        return False
+    return record.get("kind") != "video" or video.artifact_video(root, record) is not None
 
 
 def initialize(db):
@@ -80,7 +88,7 @@ def synchronize(db, root, cancel):
     db.execute("BEGIN IMMEDIATE")
     db.execute("CREATE TEMP TABLE IF NOT EXISTS seen (name TEXT PRIMARY KEY)")
     db.execute("DELETE FROM seen")
-    known = {row[0]: row[1:] for row in db.execute("SELECT name, mtime, size, status, image, available FROM jobs")}
+    known = {row[0]: row[1:] for row in db.execute("SELECT name, mtime, size, status, image, available, kind FROM jobs")}
     for path in setup.owned(root, "jobs").glob("*.json"):
         setup.check_cancel(cancel)
         if not setup.job_id_valid(path.stem):
@@ -94,7 +102,8 @@ def synchronize(db, root, cancel):
         prior = known.get(path.name)
         if prior is not None and prior[:2] == (stat.st_mtime_ns, stat.st_size):
             # Do not trust a cached absolute path, even after moving the entire folder.
-            available = int(prior[2] == "succeeded" and setup.artifact_image(root, {"id": path.stem, "imagePath": prior[3]}) is not None)
+            available = int(prior[2] == "succeeded" and present(root, {"id": path.stem, "imagePath": prior[3], "kind": prior[5],
+                                                                          "videoPath": f"{path.stem}/video.mp4"}))
             if available != prior[4]:
                 db.execute("UPDATE jobs SET available = ? WHERE name = ?", (available, path.name))
             continue
@@ -104,9 +113,9 @@ def synchronize(db, root, cancel):
             continue
         settings = record.get("settings", {})
         search = "\n".join(str(settings.get(key, "")) for key in ("prompt", "negativePrompt", "seed")) + "\n" + record["id"]
-        kind = "upscale" if record.get("kind") == "upscale" else "generate"
+        kind = record.get("kind") if record.get("kind") in ("upscale", "video") else "generate"
         image = record.get("imagePath") if isinstance(record.get("imagePath"), str) else None
-        available = int(record["status"] == "succeeded" and setup.artifact_image(root, record) is not None)
+        available = int(record["status"] == "succeeded" and present(root, record))
         db.execute("INSERT OR REPLACE INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                    (path.name, stat.st_mtime_ns, stat.st_size, record["status"], kind, search.casefold(), image, available, json.dumps(record)))
     db.execute("DELETE FROM jobs WHERE name NOT IN (SELECT name FROM seen)")
@@ -130,7 +139,9 @@ def select(db, root, query, kind, offset, limit, cancel):
         record = json.loads(row[0])
         image = setup.artifact_image(root, record)
         if image is not None:
-            results.append(dict(record, imagePath=str(image), settings=setup.resolve_settings(root, record)))
+            moving = video.artifact_video(root, record) if record.get("kind") == "video" else None
+            results.append(dict(record, imagePath=str(image), settings=setup.resolve_settings(root, record),
+                                **({"videoPath": str(moving)} if moving else {})))
     problems = []
     # Keep diagnostics independent of image filters, so a search cannot hide an interrupted job.
     for row in db.execute("SELECT record FROM jobs WHERE status IN ('failed', 'cancelled', 'interrupted') ORDER BY mtime DESC, name DESC LIMIT ?",

@@ -69,6 +69,41 @@ sealed class RecordingWorkbench : IWorkbenchService
         if (GenerationGate is { } gate) await gate.WaitAsync(cancellationToken);
         return await Record(dataRoot, Image(dataRoot));
     }
+    /// <summary>Video status reads are counted separately so data-folder counts above stay about pictures.</summary>
+    public List<string> VideoRoots { get; } = [];
+    public VideoState Video { get; set; } = new("not_installed", "Videos are not set up yet.");
+    public int VideoInstalls { get; private set; }
+    public GenerationSettings? LastVideo { get; private set; }
+    public Task<VideoState> GetVideoAsync(string dataRoot, CancellationToken cancellationToken)
+    {
+        VideoRoots.Add(dataRoot);
+        return Task.FromResult(Video);
+    }
+    public Task<VideoState> InstallVideoAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        VideoInstalls++;
+        VideoRoots.Add(dataRoot);
+        Video = new("ready", "Videos are ready on Test GPU with memory-saving settings.",
+            new("video-fp32-sequential", "Memory-saving", "full precision, the model streams to the graphics card layer by layer"));
+        return Task.FromResult(Video);
+    }
+    public Task<VideoState> RemoveVideoAsync(string dataRoot, CancellationToken cancellationToken)
+    {
+        VideoRoots.Add(dataRoot);
+        Video = new("not_installed", "Videos are not set up yet.");
+        return Task.FromResult(Video);
+    }
+    public Task<GeneratedImage> GenerateVideoAsync(string dataRoot, GenerationSettings settings, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    {
+        LastVideo = settings;
+        VideoRoots.Add(dataRoot);
+        return Task.FromResult(VideoClip(dataRoot) with { Settings = settings with { Fps = 8 } });
+    }
+    public static GeneratedImage VideoClip(string dataRoot) => Image(dataRoot) with
+    {
+        Kind = "video", VideoPath = Path.Combine(dataRoot, "artifacts", "video.mp4"), Frames = 16, Fps = 8, Seconds = 300,
+        Settings = new("waves at dusk", "", 1, 20, Frames: 16, Fps: 8, Sampler: "ddim"),
+    };
     public List<LibraryQuery> LibraryQueries { get; } = [];
     /// <summary>When set, Library lists this image instead of a fresh placeholder.</summary>
     public GeneratedImage? LibraryImage { get; set; }

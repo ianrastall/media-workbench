@@ -248,6 +248,34 @@ var timed = System.Text.Json.JsonSerializer.Deserialize<GeneratedImage>("""
 Check(timed.SavedNotice == "Image saved in 14.1 seconds of inference, after 48.4 seconds loading the model. Loading the model took 48 seconds. The data folder is on a hard disk."
     && RecordingWorkbench.Image(nextRoot).SavedNotice == "Image saved in 1.0 seconds of inference." && vm.Notice == RecordingWorkbench.Image(nextRoot).SavedNotice,
     "Create reports model loading apart from inference, with the plain reason when loading was slow, and older records keep their notice");
+// Short videos: chosen in Create, set up once, then made with the shared description and Advanced options.
+vm.CreateKindIndex = 1;
+Check(vm.IsVideoMode && vm.NeedsVideoSetup && !vm.GenerateVideoCommand.CanExecute(null) && vm.PromptHeader == "Describe the video" && vm.ShowsShape,
+    "Choosing A short video asks for the video setup first");
+await vm.InstallVideoCommand.ExecuteAsync(null);
+Check(vm.VideoReady && !vm.NeedsVideoSetup && vm.CanMakeVideo && vm.VideoSettingsText.Contains("memory-saving") && workbench.VideoInstalls == 1,
+    "Setting up videos tests them once and enables Make video");
+vm.VideoLengthIndex = 1;
+vm.SizeIndex = 2;
+await vm.GenerateVideoCommand.ExecuteAsync(null);
+Check(workbench.LastVideo is { Frames: 24, Width: 768, Height: 512, Sampler: "ddim", Prompt: var videoPrompt } && videoPrompt == vm.Prompt
+    && vm.HasLatestVideo && vm.VideoPreviewPath.EndsWith("video.mp4") && vm.Notice.StartsWith("Video saved in"),
+    "Make video sends the chosen length and shape and shows the new video");
+var clip = RecordingWorkbench.VideoClip(nextRoot);
+Check(clip.IsVideo && !clip.IsPicture && clip.Description.Contains("Short video, 2 seconds (16 frames)") && !RecordingWorkbench.Image(nextRoot).IsVideo,
+    "Library describes a video by its length and keeps pictures as pictures");
+vm.CreateKindIndex = 0;
+vm.SizeIndex = 0;
+vm.UseImageSettingsCommand.Execute(clip);
+Check(vm.IsVideoMode && vm.VideoLengthIndex == 0 && vm.Prompt == "waves at dusk" && vm.SelectedPage == "create" && vm.Notice.Contains("this video's settings"),
+    "Use settings on a video returns to video mode with its length");
+vm.LibraryKindIndex = 3;
+await vm.RefreshLibraryCommand.ExecuteAsync(null);
+Check(workbench.LibraryQueries[^1].Kind == "video", "Library can show only videos");
+vm.LibraryKindIndex = 0;
+await vm.RemoveVideoCommand.ExecuteAsync(null);
+Check(!vm.VideoReady && vm.NeedsVideoSetup && vm.Notice.Contains("Videos you made were kept"), "Removing the video setup keeps videos and asks for setup again");
+vm.CreateKindIndex = 0;
 vm.ModelIndex = 0;
 vm.UseImageSettingsCommand.Execute(madeWithAdded);
 Check(vm.SelectedModelId == addedId && vm.SelectedPage == "create", "Use settings restores the model that made the image");

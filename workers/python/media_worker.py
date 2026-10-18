@@ -22,6 +22,7 @@ import inference_setup
 import model_library
 import storage
 import artifact_export
+import video
 
 PROTOCOL = 1
 MAX_REQUEST_BYTES = 1_048_576
@@ -96,6 +97,14 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
         elif operation == "generate.image":
             result = inference_setup.generate(root, payload, cancellation,
                 lambda value: emit(request_id, "progress", value))
+        elif operation == "video.status":
+            result = video.status(root, payload)
+        elif operation == "video.install":
+            result = video.install(root, payload, cancellation, lambda value: emit(request_id, "progress", value))
+        elif operation == "video.remove":
+            result = video.remove(root, payload, cancellation)
+        elif operation == "generate.video":
+            result = video.generate(root, payload, cancellation, lambda value: emit(request_id, "progress", value))
         elif operation == "upscale.image":
             result = inference_setup.upscale(root, payload, cancellation,
                 lambda value: emit(request_id, "progress", value))
@@ -177,7 +186,7 @@ def main() -> int:
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
                          "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "catalog.plan", "models.download", "demo.run",
-                                        "system.profile", "installation.status", "installation.run", "generate.image", "upscale.image", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear"],
+                                        "system.profile", "installation.status", "installation.run", "generate.image", "upscale.image", "video.status", "video.install", "video.remove", "generate.video", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear"],
                          "generationAvailable": False, "installationAvailable": True})
     while True:
         raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)

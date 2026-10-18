@@ -2,7 +2,7 @@
 
 Media Workbench 0.2.0-alpha.6 includes a local Model Context Protocol stdio host. A compatible desktop LLM client launches it and can inspect the workspace, prepare the supported model when permitted, and request verified local image generation/upscaling. The client handles its own provider account. Media Workbench does not collect an LLM password or API key; an account alone does not guarantee that its client supports local MCP servers.
 
-This implementation does not run an Internet listener. Cloud-only clients need a trusted local connector or a future authenticated remote transport. An unauthenticated HTTP proxy is not a supported configuration. Video is not implemented.
+This implementation does not run an Internet listener. Cloud-only clients need a trusted local connector or a future authenticated remote transport. An unauthenticated HTTP proxy is not a supported configuration. Short videos are available once the user (or a client with `--allow-setup`) has set them up.
 
 ## Connect a client
 
@@ -35,18 +35,21 @@ For source development, `scripts/build.ps1` also copies the console host beside 
 
 | Tool | Availability | Behavior |
 |---|---|---|
-| `workbench_capabilities` | Default | Selected folder, launch permissions, supported operations, video unsupported |
+| `workbench_capabilities` | Default | Selected folder, launch permissions, supported operations; `videoNeedsSetup` says videos have their own verified setup |
 | `workbench_health` | Default | Native/worker/GPU diagnostics; detection is not inference readiness |
 | `workbench_installation_plan` | Default | Rust plan for the bundled model; no download |
 | `workbench_model_status` | Default | Actual ready/not-installed/needs-verification state; normal idle crash recovery |
+| `workbench_video_status` | Default | Whether short videos are set up and still verified here, with the tested settings |
 | `workbench_storage` | Default | Storage inventory, with no deletion |
 | `workbench_models` | Default | The bundled SD 1.5 (`sd15-baseline`) and SD 1.5-family models the user added in the app, each with its actual tested status; only `ready` models can generate |
-| `workbench_library` | Default | Literal prompt/seed/job-ID search, image-type filter, offset and 1–48-image pages, unfinished-job diagnostics |
+| `workbench_library` | Default | Literal prompt/seed/job-ID search, image-type filter, offset and 1–48-image pages, unfinished-job diagnostics; `kind` `video` lists videos, which return `videoPath` (MP4) and `imagePath` (first frame) |
 | `workbench_search_models` | Default, online | Public Hub metadata; results do not imply installation support |
 | `workbench_model_details` | Default, online | Public repository/revision/license/files |
 | `workbench_install_model` | `--allow-setup` | Bundled SD 1.5/Real-ESRGAN only, through native planning and file/runtime/GPU verification |
+| `workbench_install_video` | `--allow-setup` | Pinned AnimateDiff motion adapter (1.7 GB): native file verification and a real 16-frame GPU test encoded to MP4; needs a verified SD 1.5 installation |
 | `workbench_generate_image` | `--allow-inference` | Prompt/negative prompt/seed/steps/size/guidance/sampler; optional `sourceJobId` and strength for image-to-image; with `sourceJobId`, `changeLeft`/`changeTop`/`changeWidth`/`changeHeight` (fractions of the picture, all four together) change only that rectangle, strength 1 by default; optional `model` names a ready model from `workbench_models` |
 | `workbench_upscale_image` | `--allow-inference` | Completed `sourceJobId`, scale 2 or 4; saves a new Library result |
+| `workbench_generate_video` | `--allow-inference` | Prompt/negative prompt/seed/steps/guidance/size and `frames` 16 or 24 (2 or 3 seconds at 8 frames a second) with the bundled SD 1.5; returns the MP4 path and a poster frame. Can take several minutes on 6 GB cards |
 
 Image inputs come from completed jobs in the selected folder, with normal containment checks. Models are added and removed by the user in the app; a client can only list them and choose a ready one. Arbitrary source paths, adding or removing models, arbitrary model/runtime installation, shell commands, deletion, credentials, and app updates are not exposed as tools. Export remains available in the GUI. Results contain metadata/settings and local image paths, not image bytes. A client may use its own separately authorized file tools to display a result.
 
@@ -60,4 +63,4 @@ One tool operation runs at a time; ping/list tools remain available. Setup/infer
 
 Closing stdin cancels and joins active work. Killing the host closes its Windows Job Object handles, ending worker descendants. Bounded UTF-8 JSON lines (1 MiB input maximum) negotiate `2025-11-25` or `2025-06-18`. Supported methods are initialize, initialized notification, ping, tools/list, tools/call, cancellation, and optional progress. No provider SDK or AI runtime enters the host.
 
-See the official [stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), and [tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools). Authenticated remote transport, durable asynchronous job handles, client/hardware coverage, and video require further work.
+See the official [stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), and [tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools). Authenticated remote transport, durable asynchronous job handles, and client/hardware coverage require further work. Videos from models the user added are not offered yet.

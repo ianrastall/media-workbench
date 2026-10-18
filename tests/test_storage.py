@@ -14,6 +14,7 @@ tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
 sys.path.insert(0, str(ROOT / "workers/python"))
 import inference_setup as setup
 import storage
+import video
 
 FILES = {
     f"runtimes/{setup.PROFILE}/python/python.exe": 10,
@@ -45,7 +46,7 @@ def sizes(result):
 class StorageTests(unittest.TestCase):
     def test_inventory_layout_matches_the_supported_installation(self):
         self.assertEqual(json.loads((ROOT / "profiles/storage-layout.json").read_text()),
-                         {"runtimeProfileId": setup.PROFILE, "modelIds": [setup.RECIPE, setup.UPSCALER]})
+                         {"runtimeProfileId": setup.PROFILE, "modelIds": [setup.RECIPE, setup.UPSCALER, video.MOTION]})
 
     def test_summary_reports_each_area(self):
         with tempfile.TemporaryDirectory() as folder:

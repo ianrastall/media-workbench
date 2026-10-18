@@ -13,7 +13,8 @@ from inference_setup import (PROFILE, RECIPE, UPSCALER, check_cancel, data_root,
                              recover_interrupted, state_path, native_core_path, SetupError, Cancelled)
 
 REMOVABLE = {"caches": ["cache", "bootstrap"], "logs": ["logs"]}
-INSTALLATION = [f"runtimes/{PROFILE}", f"models/{RECIPE}", f"models/{UPSCALER}", "cache", "bootstrap"]
+# Videos run on this installation, so removing it removes the motion adapter too.
+INSTALLATION = [f"runtimes/{PROFILE}", f"models/{RECIPE}", f"models/{UPSCALER}", "models/animatediff-v1-5-3", "cache", "bootstrap"]
 
 
 CALLBACK = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p)
@@ -164,5 +165,6 @@ def clear(payload, cancel, progress, app=None):
         recover_interrupted(root)
         if area == "installation":
             state_path(root).unlink(missing_ok=True)  # First, so a partial removal can never read as ready.
+            owned(root, "jobs/install-video.json").unlink(missing_ok=True)
         remove(root, folders, cancel, progress)
     return summary(payload, cancel, app)
