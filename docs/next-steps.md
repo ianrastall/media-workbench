@@ -1,4 +1,4 @@
-# Development direction after 0.2.0-alpha.14
+# Development direction after 0.2.0-alpha.15
 
 This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, adding SD 1.5-family models the user already downloaded, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance with automatic clean-up and free-space checks, runtime settings chosen from the computer's hardware, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 
@@ -15,6 +15,8 @@ The next user-facing priorities are:
 Alongside these, every feature follows the product principles in `AGENTS.md`: easy to use, stable, aware of the computer it runs on, clean, and mindful of drive space. The section below says what that still requires.
 
 ## What to do next
+
+Alpha.15 centralizes tensor-layout compatibility in Rust for Discover and local imports, including copied Diffusers parts. Safetensors byte/offset parsing and folder configuration checks remain in Python; a later native-header service can replace those without sending weights through the ABI. Keep that work bounded and preserve refusal wording, header/resource limits and verification gates. Job/readiness/index persistence still needs deliberate Rust migration alongside the queue work below. Development preferences and checkpoint expectations are recorded in `AGENTS.md` and [handoff](../HANDOFF.md).
 
 The alpha.14 Discover download slice is implemented, and the alpha.13 handoff is completed: hardware-aware inference is checked, drive detection is shared through Rust, and NuGet versions/locks, x64 enforcement, and native loading have been tightened. See [stack alignment](stack-alignment.md) and [handoff](../HANDOFF.md). The reference is an acceptance target; the older architecture proposals remain historical.
 

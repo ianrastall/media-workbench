@@ -53,6 +53,11 @@ public partial class App : Application
                     [new("model.safetensors", 100, new string('b', 64))]);
                 if (hub.Blocker.Length != 0 || hub.Files.Length != 1)
                     throw new InvalidDataException("Published native Hub planning failed.");
+                var modelLayout = MediaWorkbench.Infrastructure.NativeCore.CheckModelCompatibility("textEncoder",
+                    new Dictionary<string, MediaWorkbench.Core.ModelTensor>
+                    { ["text_model.embeddings.token_embedding.weight"] = new("F16", [49408, 768]) });
+                if (!modelLayout.Compatible || modelLayout.OwnVae || modelLayout.Message.Length != 0)
+                    throw new InvalidDataException("Published native model compatibility failed.");
                 string hash = MediaWorkbench.Infrastructure.NativeCore.Sha256File(Path.Combine(root, "workers", "python", "media_worker.py"));
                 MediaWorkbench.Infrastructure.NativeCore.VerifyPinnedFile(root, "workers/python/media_worker.py",
                     new FileInfo(Path.Combine(root, "workers", "python", "media_worker.py")).Length, hash,
@@ -82,7 +87,7 @@ public partial class App : Application
                         throw new InvalidDataException("The bundled model listing check failed.");
                 }
                 finally { if (Directory.Exists(libraryCheck)) Directory.Delete(libraryCheck, recursive: true); }
-                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash, libraryIndex = true, nativeVerification = true, hardwareProfile = true, hubPlanning = true }));
+                await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new { success = true, health, plan, workerSha256 = hash, libraryIndex = true, nativeVerification = true, hardwareProfile = true, hubPlanning = true, modelCompatibility = true }));
                 Environment.ExitCode = 0;
             }
             catch (Exception ex)

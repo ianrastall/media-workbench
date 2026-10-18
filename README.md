@@ -7,15 +7,14 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.2.0-alpha.14](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.14)** · 2026-10-18 · Pre-release · Windows x64
+**[0.2.0-alpha.15](https://github.com/ianrastall/media-workbench/releases/tag/v0.2.0-alpha.15)** · 2026-10-18 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.14/MediaWorkbench-0.2.0-alpha.14-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.14/MediaWorkbench-0.2.0-alpha.14-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.14/MediaWorkbench-0.2.0-alpha.14-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.15/MediaWorkbench-0.2.0-alpha.15-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.15/MediaWorkbench-0.2.0-alpha.15-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.2.0-alpha.15/MediaWorkbench-0.2.0-alpha.15-README.md)
 
-- Discover can now download and test public single-file Stable Diffusion 1.5 models. **Check model** reads a small file header, checks this computer and the saved data folder's free space, and explains what prevents a download. Search results show license metadata and a hint about available model files; newer architectures, add-ons, and video still need their own adapters.
-- **Download and test** uses the exact repository revision, file size, and checksum shown by the check. It requires a model-card/license review, shares the already verified Stable Diffusion 1.5 runtime, verifies the downloaded file through Rust, and runs the real GPU test before selecting the model in Create. Another model file can be chosen under **Advanced options**.
-- Downloads keep one owned copy, check space again during the transfer, report progress as network bytes arrive, and remove unfinished or failed additions, including after a crash. Pinned model cards, licenses, and notices are retained; generation records keep the repository, revision, file checksum, and license metadata. No repository code or configuration is used.
-- Rust owns the bounded public-download metadata policy. Protected downloads, missing licenses or immutable revisions, unsafe paths, unverified hashes, individual model parts, and unsupported file headers cannot become a ready model. Choosing another repository, file, or data folder invalidates an earlier check.
-- Existing installations and local imports remain verified without a new setup test. Downloading Diffusers folders directly from Discover and protected Hub access remain planned; local Diffusers-folder import still works.
+- Model compatibility decisions now live in the Rust core. Discover downloads, local single-file imports, and Diffusers-folder imports share the same SD 1.5 tensor-layout checks and plain explanations for unsupported models, add-ons, and compressed weights.
+- Copied Diffusers parts now pass the same compatibility checks again before inference testing, including weight formats. Missing or incompatible native services stop the check; there is no separate Python compatibility policy to drift out of sync.
+- Existing verified models remain ready. Supported architectures, runtime settings, and the actual file/runtime/GPU verification gates are unchanged; this milestone moves compatibility policy without changing inference.
+- Expanded native, Python, managed-boundary and published-application checks, and recorded headless-first development and frequent handoff expectations for future sessions.
 <!-- release-summary:end -->
 
 ## Install
@@ -42,6 +41,8 @@ For image generation, this first profile requires an **NVIDIA GPU with at least 
 **Tools** makes any picture 2× or 4× bigger and sharper, offline. Choose or drag a picture there, or select **Make it bigger** on a Library image.
 
 During **Install / verify**, Rust checks every pinned model file's size and SHA-256 with byte progress and cancellation during large-file hashing. Cancelling keeps downloaded files for retry. File checks alone never mark a model ready; runtime and GPU inference checks must also pass.
+
+Rust also owns SD 1.5 tensor-layout compatibility: Discover and local imports share the same checks and plain explanations for unsupported models. Copied Diffusers parts repeat those checks before testing. Python reads bounded safetensors headers and coordinates the separate ML worker; no model code runs inside the GUI. Existing verified models keep their ready state after this policy migration.
 
 **Updates:** when you're online, Media Workbench checks for a new version at startup and shows what changed on **Home**. Select **Update now** to download it, verify it against its published checksum, and reopen the updated app; nothing installs until you click. After setup, generating images needs no internet.
 

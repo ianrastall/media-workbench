@@ -19,6 +19,10 @@ public sealed record HubDownloadFile(string Path, long Bytes, string Sha256)
     public string Label => $"{Path} · {StorageSnapshot.Format(Bytes)}";
 }
 public sealed record HubFilePolicy(HubDownloadFile[] Files, string Blocker);
+/// <summary>Descriptor from a structurally validated safetensors header; contains no weights.</summary>
+public sealed record ModelTensor(string Dtype, ulong[] Shape);
+/// <summary>Layout support only; never an installation or inference-readiness claim.</summary>
+public sealed record ModelCompatibility(bool Compatible, bool OwnVae, string Message);
 /// <summary>A pinned candidate, never an installation/readiness claim.</summary>
 public sealed record HubDownloadPlan(ModelDetails Details, HubDownloadFile[] Files, HubDownloadFile? SelectedFile,
     bool CanInstall, string Message, string[] Warnings, bool OwnVae = false, bool HeaderChecked = false)

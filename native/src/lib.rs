@@ -5,6 +5,7 @@ use std::{fs::File, io::Read, panic::catch_unwind, slice, str};
 mod artifact;
 mod drive;
 mod hub_plan;
+mod model_compatibility;
 mod model_import;
 mod path_policy;
 mod storage;
@@ -17,6 +18,41 @@ const BUFFER_SMALL: i32 = 2;
 const IO_ERROR: i32 = 3;
 const INTERNAL: i32 = 4;
 const MAX_INPUT: usize = 1_048_576;
+
+/// Pure tensor-layout compatibility policy; this never grants model readiness.
+/// # Safety
+/// Caller owns valid input/output/required memory as specified in the header.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mw_check_model_compatibility(
+    input: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(|| {
+        if required.is_null() {
+            return INVALID;
+        }
+        // SAFETY: caller supplies writable size_t storage.
+        unsafe { *required = model_compatibility::OUTPUT_CAPACITY };
+        if output.is_null() || capacity < model_compatibility::OUTPUT_CAPACITY {
+            return BUFFER_SMALL;
+        }
+        if input.is_null() || length == 0 || length > model_compatibility::MAX_INPUT {
+            return INVALID;
+        }
+        // SAFETY: caller supplies length readable input bytes; length is bounded above.
+        let input = unsafe { slice::from_raw_parts(input, length) };
+        let result = match model_compatibility::inspect(input) {
+            Ok(result) => result,
+            Err(code) => return code,
+        };
+        // SAFETY: caller supplies writable output/required storage, result lives through copy.
+        unsafe { copy_output(&result, output, capacity, required) }
+    })
+    .unwrap_or(INTERNAL)
+}
 
 /// Plans supported public Hub file downloads without network or filesystem work.
 /// # Safety

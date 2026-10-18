@@ -9,6 +9,12 @@
 - Update README and docs/current-status.md to describe actual implemented behavior.
 - The application is MIT-licensed (`LICENSE`); preserve upstream notices for third-party components and models.
 
+## Development sessions and handoffs
+
+- Prefer headless checks. Do not launch, focus, move, or control desktop windows unless an interactive check actually requires it. Before necessary desktop control, explain what will happen and why any apparently idle window must stay open; respect the user's availability. Stop immediately when the user interrupts automation. Do not interpret a user-stopped process as a product failure.
+- Keep work in bounded, complete milestones. Update `HANDOFF.md`, `docs/current-status.md`, and `docs/next-steps.md` as work lands, recording implemented behavior, validation evidence, limitations, and the next concrete step. Clearly distinguish planned work from verified behavior so another developer or assistant can resume without reconstructing the chat.
+- Do not assume access to session-usage counters. Before ending a session, finish or safely checkpoint the current slice and record any unfinished work and exact reproduction commands. Prefer a documented, tested milestone over starting several incomplete changes.
+
 ## Product principles
 
 Apply these to every feature, in this order when they conflict:

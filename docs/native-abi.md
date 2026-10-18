@@ -77,7 +77,13 @@ Links and junctions are never followed: managed-area ancestors containing one ar
 
 The GUI's worker uses a thin ctypes adapter; `NativeCore.PlanHubFiles` also exercises the same service from C# and the published app self-test. Header identification, installed runtime/file checks and actual GPU inference remain mandatory after a successful metadata plan. See [Discover downloads](inference.md#discover-downloads).
 
-## Further native work
+## Model compatibility
 
+`mw_check_model_compatibility` is an additive ABI 1 pure tensor-layout service. Input is `{kind,tensors:{name:{dtype,shape}}}`, with `kind` one of `checkpoint`, `unet`, `textEncoder`, or `vae`. Descriptors come from a structurally validated safetensors header; weights and offsets are not passed to this service. It accepts at most 100 MiB of JSON, 32000 tensors, rank eight, and unsigned dimensions up to 2^31. Invalid input returns status 1. Output `{compatible,ownVae,message}` gives a plain refusal for an unsupported architecture, partial checkpoint, add-on, shape or relevant weight format; these refusals are successful service responses, not transport errors. `ownVae` describes an accepted checkpoint's own picture decoder (or an accepted VAE component), never readiness.
+
+A null output or capacity below 1024 returns status 2 with `required=1024` without reading input. Errors leave output untouched; no pointers, callbacks or state are retained, and no filesystem/network work occurs. Rust contains panics at the boundary. Python's `model_library.check_compatibility` is a ctypes adapter with no duplicate tensor policy; C# uses source-generated `LibraryImport` through `NativeCore.CheckModelCompatibility`. Both local and pinned remote checks use it, and copied Diffusers parts repeat the same shape/type checks before GPU testing. Header length/offset/payload validation and folder configuration checks still run in Python. Native file verification, installed-runtime checks and real GPU inference remain mandatory and existing readiness-stamp versions are unchanged.
+
+
+## Further native work
 
 Move bootstrap/package verification and owned-storage operations into this core as they are needed. Keep new exports narrow and append-only within ABI 1, or bump the ABI when compatibility breaks. Native exports should have matching header documentation and meaningful Rust plus C# boundary checks.

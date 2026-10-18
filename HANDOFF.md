@@ -1,16 +1,20 @@
 # Media Workbench handoff
 
-Updated 18 October 2026 for **0.2.0-alpha.14**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 18 October 2026 for **0.2.0-alpha.15**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
 
 ## Where development stopped and resumed
 
-The last committed baseline before this handoff was `b0b0a2b` (alpha.12). The working tree already contained alpha.13 hardware-aware inference, UI/contracts, tests, a version bump, and draft documentation, plus untracked hardware modules. Its generated README release summary was still alpha.12 and alpha.13 had no validation entry.
+The historical starting point was `b0b0a2b` (alpha.12). The working tree already contained alpha.13 hardware-aware inference, UI/contracts, tests, a version bump, and draft documentation, plus untracked hardware modules. Its generated README release summary was still alpha.12 and alpha.13 had no validation entry.
 
 The resumed work completes that slice, removes duplicate Python drive detection in favor of Rust, fixes Diagnostics readiness for missing/changed runtime/model files and incompatible cards, and tightens stack/build requirements. Central NuGet versions and committed locks retain the existing package versions. CI requires locked restore; native executable hosts are explicitly x64, conflicting settings are rejected, native loading is app-local, and published checks inspect executable architectures. See [stack alignment](docs/stack-alignment.md) for exceptions and outstanding acceptance work.
 
 Alpha.14 adds Discover's public single-file SD 1.5 download path: native metadata planning, bounded remote header identification, computer/space/runtime checks, pinned download with retained notices, and the existing real GPU readiness gate. Snapshot changes invalidate review; generation retains the pinned Hub provenance. The baseline before this slice was `6201fa4`. No adapter/runtime profile change is needed, and existing alpha.13 installations stay verified. See [inference](docs/inference.md#discover-downloads) for implementation and limits.
 
+Alpha.15 resumes from `ec1e5f5` and moves SD 1.5 tensor-layout compatibility to Rust for local checkpoints, Diffusers parts, pinned Discover headers and copied-model checks. Python retains bounded header/offset parsing and folder configuration handling. Copied Diffusers files repeat weight-format checks before GPU testing. Inference settings, adapter versions and readiness stamps do not change. This milestone uses headless checks and no GPU work; interactive validation remains pending as already recorded for alpha.14.
+
 ## Build, check, run
+
+The user relies on this computer during development. Prefer headless work; announce necessary desktop control and explain any apparently idle window before using it. A user interruption stops automation and is not failure evidence. Keep each milestone tested, documented, committed and released through Actions; keep this handoff current when switching assistants or approaching the end of a session. Session-usage counters are not available to the development agent.
 
 From the repository root in PowerShell:
 
@@ -18,7 +22,7 @@ From the repository root in PowerShell:
 ./scripts/build.ps1
 ./scripts/check.ps1
 ./scripts/build.ps1 -Configuration Release -Publish
-./scripts/test-publish.ps1
+./scripts/test-publish.ps1 -SkipUI
 ./scripts/run.ps1 -NoBuild
 ```
 
@@ -32,13 +36,15 @@ Routine restore updates locks only when inputs change. To deliberately change a 
 
 ## Ownership, locations, and shutdown
 
-- ABI/header: `native/include/media_workbench.h`; contract: [native ABI](docs/native-abi.md). Rust owns planning, path policy, verified export, storage inventory, pinned-file verification, import copying, drive information and automatic data-folder clean-up.
+- ABI/header: `native/include/media_workbench.h`; contract: [native ABI](docs/native-abi.md). Rust owns planning, tensor-layout compatibility, path policy, verified export, storage inventory, pinned-file verification, import copying, drive information and automatic data-folder clean-up.
 - C# Core/Presentation/Infrastructure own typed projections, UI state, OS services, native bindings, and worker/process lifetime. WinUI code handles views, navigation, pickers, activation, and painting input. Native buffers are copied and callbacks are retained only until a call returns.
 - Standard-library Python coordinates Hub/setup, job records, model readiness and the Library index. ML packages run only in a separate isolated Python child. Windows Job Objects terminate the entire owned tree on cancellation/crash. New queue/warm-worker work must preserve this protocol.
 - The saved absolute data folder is selected in Settings. Its models, runtimes, artifacts, private input copies, jobs, caches, index and logs are outside the app installation. Settings changes do not migrate data. `%LOCALAPPDATA%/MediaWorkbench/settings.json` holds local preferences; `%TEMP%` holds disposable hand-overs/update staging.
 - `runtime/`, `artifacts/`, `.cache/`, `.tools/`, `.local/` and `dist/` are ignored. Never commit models, machine settings, binaries, generated images, private paths or credentials. Preserve MIT and third-party/model notices.
 
 ## Immediate next work
+
+Headless validation can build into a separate managed-output folder with `./scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts (Join-Path (Get-Location) 'artifacts/dotnet-validation')` when the user's existing app holds its normal output files open. Do not close or replace a running app to make a build succeed. `test-publish.ps1` without `-SkipUI` opens a window; use it only for an announced interactive check when the user is available.
 
 1. Obtain real RTX/Pascal execution evidence for faster settings with `tests/gpu_hardware_profile_check.py <absolute-data-folder> --expect <runtime>` using the bundled discovery Python after building. It runs Install / verify, generation and 4x upscaling; use a folder with sufficient disk space and allow GPU work. Record actual evidence, not a simulated profile result.
 2. Run the clean-machine Windows 10/11 installer and alpha.12 upgrade/offline/update/uninstall matrix. Complete accessibility, external startup/idle measurements, useful release-symbol archival, and mixed debugging. Signing remains a distribution decision.

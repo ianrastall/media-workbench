@@ -41,6 +41,29 @@ public static unsafe partial class NativeCore
     private static partial int Drive(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
     [LibraryImport(Library, EntryPoint = "mw_plan_hub_model")]
     private static partial int HubPlan(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
+    [LibraryImport(Library, EntryPoint = "mw_check_model_compatibility")]
+    private static partial int ModelCheck(byte* input, nuint length, byte* output, nuint capacity, out nuint required);
+
+    /// <summary>Pure tensor-layout policy, shared with the discovery/import worker.</summary>
+    public static ModelCompatibility CheckModelCompatibility(string kind, IReadOnlyDictionary<string, ModelTensor> tensors)
+    {
+        VerifyAbi();
+        var input = JsonSerializer.SerializeToUtf8Bytes(new { kind, tensors }, Wire.Json);
+        if (input.Length > 100 * 1024 * 1024) throw new InvalidDataException("The model header is too large to check safely.");
+        fixed (byte* pointer = input)
+        {
+            int code = ModelCheck(pointer, (nuint)input.Length, null, 0, out nuint capacity);
+            if (code != 2 || capacity != 1024) throw new InvalidDataException($"Native model checking failed ({code}).");
+            var output = new byte[(int)capacity];
+            fixed (byte* result = output)
+            {
+                code = ModelCheck(pointer, (nuint)input.Length, result, capacity, out nuint written);
+                if (code != 0 || written > capacity) throw new InvalidDataException($"The model header cannot be checked safely ({code}).");
+                return JsonSerializer.Deserialize<ModelCompatibility>(output.AsSpan(0, (int)written), Wire.Json)
+                    ?? throw new InvalidDataException("The native model compatibility report was empty.");
+            }
+        }
+    }
 
     /// <summary>Pure metadata policy; this never grants model readiness or performs I/O.</summary>
     public static HubFilePolicy PlanHubFiles(string repoId, string revision, string license, bool gated, HubDownloadFile[] files)

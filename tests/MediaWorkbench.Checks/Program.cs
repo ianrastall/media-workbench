@@ -434,6 +434,22 @@ Check(SystemProfile.Size(6143.7) == "6 GB" && SystemProfile.Size(5939) == "5.8 G
     "Sizes and drive kinds use plain units and words");
 
 var hubStore = new SettingsStore(Path.Combine(output, "hub-settings"));
+var tensorLayout = new Dictionary<string, ModelTensor>
+{
+    ["model.diffusion_model.input_blocks.0.0.weight"] = new("F16", [320, 4, 3, 3]),
+    ["model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn2.to_k.weight"] = new("F16", [320, 768]),
+    ["model.diffusion_model.out.2.weight"] = new("F16", [4, 320, 3, 3]),
+    ["cond_stage_model.transformer.text_model.embeddings.token_embedding.weight"] = new("F16", [49408, 768]),
+};
+Check(NativeCore.CheckModelCompatibility("checkpoint", tensorLayout) is { Compatible: true, OwnVae: false, Message: "" },
+    "C# calls the real native SD 1.5 policy and identifies the bundled VAE fallback");
+tensorLayout["model.diffusion_model.out.2.weight"] = new("F8_E4M3", [4, 320, 3, 3]);
+Check(NativeCore.CheckModelCompatibility("checkpoint", tensorLayout) is { Compatible: false, Message: var refusal }
+    && refusal.Contains("compressed number format"), "Native compatibility gives a plain reason for unsupported weight types");
+bool invalidTensorRefused = false;
+try { NativeCore.CheckModelCompatibility("checkpoint", new Dictionary<string, ModelTensor> { ["bad"] = new("F16", [ulong.MaxValue]) }); }
+catch (InvalidDataException) { invalidTensorRefused = true; }
+Check(invalidTensorRefused, "The native model boundary refuses out-of-range tensor dimensions");
 var nativeHub = NativeCore.PlanHubFiles("owner/model", new string('a', 40), "openrail", false,
     [new("model.safetensors", 100, new string('b', 64)), new("../escape.safetensors", 100, new string('b', 64)), new("unet/model.safetensors", 100, new string('b', 64))]);
 Check(nativeHub.Blocker == "" && nativeHub.Files is [{ Path: "model.safetensors" }], "C# calls the real Rust Hub planner and excludes unsafe paths and individual model parts");

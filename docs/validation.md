@@ -252,3 +252,18 @@ Routine fixtures cover unsupported headers, bounded tensor counts/ranks/arithmet
 The real check used an official baseline single-file checkpoint, not a community fine-tune; it adds no RTX/Pascal or newer-architecture certification. Timings are single observations under development load, excluding import/model loading. A preliminary download was deliberately stopped while improving streaming progress, and ordinary orphan-import recovery removed its unfinished copy before retrying.
 
 Interactive computer use was stopped by the user with Escape before the Discover walkthrough. No further desktop input was made; interactive layout, keyboard/screen-reader and narrow/high-DPI validation of this flow remain pending. Subsequent publishing used isolated managed outputs and `-SkipUI` smoke checks, leaving the open development app alone. Clean-machine Windows install/upgrade/update validation remains pending.
+
+## 0.2.0-alpha.15 — native model compatibility (18 October 2026)
+
+Validated headlessly on the Windows 11 development machine. No desktop input, window takeover, full model download or GPU execution was used for this milestone.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1` with `ContinuousIntegrationBuild=true` | Passed: 30 Rust tests plus formatting/Clippy, 177 Python tests, 196 C# checks, locked restores |
+| Release solution build | Passed, zero warnings/errors |
+| `scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts <isolated-output>` | Passed: x64 inventory and headless published native/application/worker/MCP checks; the app self-test calls the new native compatibility service |
+| Published private Python adapter probe | Passed: importing the shipped `model_library` with the shipped interpreter accepts an SD 1.5 descriptor set without a VAE and refuses a LoRA with the native plain-language reason |
+
+Rust cases cover complete checkpoints with their own/bundled VAE and alternate CLIP names, separate Diffusers parts, unsupported model families/add-ons/inpainting layouts, compressed weights, malformed/oversized tensor descriptors, and buffer sizing without reading invalid pointers. Python's existing local/Discover/import/readiness suite now exercises the native policy; new cases require a missing native checker to stop inspection and copied Diffusers parts to reject unsupported weight types. Managed checks call the shipped ABI for accepted/refused layouts and invalid dimensions. No inference or adapter-version change is involved, so the alpha.14 GPU evidence still describes the inference path; these headless fixtures do not certify another GPU or model architecture.
+
+The desktop-control preference and bounded milestone/handoff expectations are recorded in `AGENTS.md` and `HANDOFF.md`. The earlier interactive/accessibility and clean-machine validation gaps remain open. Safetensors structural/offset parsing, folder configuration checks and substantial job/readiness/index state still remain in Python.

@@ -18,6 +18,16 @@ extern "C" {
    Query output size using output=NULL, capacity=0 and a valid required pointer.
    Pointer/length pairs must refer to readable/writable memory as appropriate. */
 MW_API uint32_t mw_abi_version(void);
+/* Additive ABI 1 pure SD 1.5 tensor-layout policy. JSON: {kind,tensors:{name:{dtype,shape}}}.
+   kind is checkpoint, unet, textEncoder or vae; shapes are unsigned integer arrays.
+   Returns {compatible,ownVae,message}; an unsupported layout is status 0 with compatible=false
+   and a plain-language reason. Bounds: 100 MiB input, 32000 tensors, rank 8, dimensions <=2^31.
+   Invalid input returns 1 without changing output. Input must come from a structurally checked
+   safetensors header; this does not validate offsets, read weights or grant readiness.
+   No filesystem/network work. output=NULL or capacity<1024 returns 2, required=1024,
+   without reading input. No pointers are retained. */
+MW_API int32_t mw_check_model_compatibility(const uint8_t *input, size_t length,
+    uint8_t *output, size_t capacity, size_t *required);
 /* Additive ABI 1 public Hub download plan. JSON: {repoId,revision,license,gated,
    files:[{path,bytes,sha256}]}. Returns {files,blocker}; only complete root-level
    safetensors candidates with bounded sizes and SHA-256 are returned, smallest first.

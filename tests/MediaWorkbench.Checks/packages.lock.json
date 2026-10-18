@@ -8,14 +8,14 @@
       "mediaworkbench.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "MediaWorkbench.Core": "[0.2.0-alpha.14, )"
+          "MediaWorkbench.Core": "[0.2.0-alpha.15, )"
         }
       },
       "mediaworkbench.presentation": {
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "MediaWorkbench.Infrastructure": "[0.2.0-alpha.14, )"
+          "MediaWorkbench.Infrastructure": "[0.2.0-alpha.15, )"
         }
       },
       "CommunityToolkit.Mvvm": {

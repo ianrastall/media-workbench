@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0-alpha.15 — 2026-10-18
+
+- Model compatibility decisions now live in the Rust core. Discover downloads, local single-file imports, and Diffusers-folder imports share the same SD 1.5 tensor-layout checks and plain explanations for unsupported models, add-ons, and compressed weights.
+- Copied Diffusers parts now pass the same compatibility checks again before inference testing, including weight formats. Missing or incompatible native services stop the check; there is no separate Python compatibility policy to drift out of sync.
+- Existing verified models remain ready. Supported architectures, runtime settings, and the actual file/runtime/GPU verification gates are unchanged; this milestone moves compatibility policy without changing inference.
+- Expanded native, Python, managed-boundary and published-application checks, and recorded headless-first development and frequent handoff expectations for future sessions.
+
 ## 0.2.0-alpha.14 — 2026-10-18
 
 - Discover can now download and test public single-file Stable Diffusion 1.5 models. **Check model** reads a small file header, checks this computer and the saved data folder's free space, and explains what prevents a download. Search results show license metadata and a hint about available model files; newer architectures, add-ons, and video still need their own adapters.

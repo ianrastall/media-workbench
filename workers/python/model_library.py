@@ -36,8 +36,6 @@ FIRST_TEST = ("copying", "testing")  # An interrupted first import leaves nothin
 PICKLE_SUFFIXES = {".ckpt", ".pt", ".pth", ".bin", ".pkl", ".pickle"}
 ITEM_BYTES = {"F64": 8, "F32": 4, "F16": 2, "BF16": 2, "I64": 8, "I32": 4, "I16": 2, "I8": 1, "U64": 8,
               "U32": 4, "U16": 2, "U8": 1, "BOOL": 1, "F8_E4M3": 1, "F8_E5M2": 1}
-WEIGHT_TYPES = {"F32", "F16", "BF16"}
-INDEX_TYPES = {"I64", "I32"}  # Integer buffers such as CLIP's position_ids; quantized weights use other types.
 NOT_SD15 = ("Media Workbench can add Stable Diffusion 1.5-family models for now, "
             "such as fine-tuned SD 1.5 checkpoints.")
 # Weight files copied for each Diffusers part, preferring the half-size copy when both exist.
@@ -116,92 +114,38 @@ def parse_header(raw, size):
     return tensors
 
 
-def any_key(tensors, *fragments):
-    return any(fragment in name for name in tensors for fragment in fragments)
-
-
-def shape(tensors, name):
-    entry = tensors.get(name)
-    return entry[1] if entry else None
-
-
-def refuse_other_kinds(tensors):
-    """Recognizable files that are not complete SD 1.5 checkpoints, with what they are."""
-    if any_key(tensors, "lora_up", "lora_down", "lora_A", "lora_B", "lora_unet_", "lora_te", ".lora."):
-        raise Refused("This is a LoRA add-on that adjusts another model's style, not a complete model. "
-                      "Adding LoRAs is not supported yet.")
-    if any(name in tensors for name in ("emb_params", "clip_l", "clip_g")) or any_key(tensors, "string_to_param"):
-        raise Refused("This is a textual-inversion embedding (a small style add-on), not a complete model.")
-    if any_key(tensors, "conditioner.embedders.", "label_emb.0.0.weight", "add_embedding.linear_1"):
-        raise Refused("This is a Stable Diffusion XL model. " + NOT_SD15)
-    if any_key(tensors, "double_blocks.", "single_transformer_blocks."):
-        raise Refused("This is a FLUX model. " + NOT_SD15)
-    if any_key(tensors, "joint_blocks.", "transformer_blocks.0.attn.add_k_proj"):
-        raise Refused("This is a Stable Diffusion 3 model. " + NOT_SD15)
-    if any_key(tensors, "control_model.", "input_hint_block", "controlnet_cond_embedding"):
-        raise Refused("This is a ControlNet add-on that guides another model, not a complete model.")
-    if any_key(tensors, "cond_stage_model.model.token_embedding", "cond_stage_model.model.transformer."):
-        raise Refused("This is a Stable Diffusion 2 model. " + NOT_SD15)
-
-
-def check_unet(conv_in, cross, conv_out):
-    if conv_in is None or conv_out is None or cross is None:
-        raise Refused("This file is not a Stable Diffusion model that Media Workbench recognizes. " + NOT_SD15)
-    if conv_in[:1] == (320,) and conv_in[2:] == (3, 3):
-        if conv_in[1] == 9:
-            raise Refused("This is a dedicated inpainting model. Painted changes already work with ordinary "
-                          "Stable Diffusion 1.5 models; dedicated inpainting models are not supported yet.")
-        if conv_in[1] == 8:
-            raise Refused("This is an instruction-editing (InstructPix2Pix) model, which is not supported yet.")
-    if cross == (320, 1024):
-        raise Refused("This is a Stable Diffusion 2 model. " + NOT_SD15)
-    if conv_in != (320, 4, 3, 3) or conv_out != (4, 320, 3, 3) or cross != (320, 768):
-        raise Refused("This model's layout does not match Stable Diffusion 1.5. " + NOT_SD15)
-
-
-def check_text_encoder(embedding):
-    if embedding is None:
-        raise Refused("This model has no text encoder, so it cannot read a description. Choose a complete model.")
-    if embedding == (49408, 1024):
-        raise Refused("This is a Stable Diffusion 2 model. " + NOT_SD15)
-    if embedding != (49408, 768):
-        raise Refused("This model's text encoder does not match Stable Diffusion 1.5. " + NOT_SD15)
-
-
-def check_vae(decoder_in, encoder_out):
-    if (decoder_in, encoder_out) != ((512, 4, 3, 3), (8, 512, 3, 3)):
-        raise Refused("This model's picture decoder (VAE) does not match Stable Diffusion 1.5.")
-
-
-def check_types(tensors, prefixes):
-    if any(dtype not in WEIGHT_TYPES | INDEX_TYPES for name, (dtype, _) in tensors.items() if name.startswith(prefixes)):
-        raise Refused("This model stores its weights in a compressed number format that is not supported. "
-                      "Choose a 16- or 32-bit version of it.")
+def check_compatibility(tensors, kind="checkpoint"):
+    """Thin adapter to Rust's tensor-layout policy; structural header checks run first."""
+    import storage
+    app = Path(__file__).resolve().parents[2]
+    function = storage.library(app, "mw_check_model_compatibility").mw_check_model_compatibility
+    function.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t,
+                         ctypes.POINTER(ctypes.c_size_t)]
+    function.restype = ctypes.c_int32
+    request = json.dumps(dict(kind=kind, tensors={name: dict(dtype=dtype, shape=shape)
+                                                for name, (dtype, shape) in tensors.items()}),
+                         separators=(",", ":")).encode("utf-8")
+    if len(request) > HEADER_MAX_BYTES:
+        raise Refused("This model header is too complicated to read safely. Choose another file.")
+    required = ctypes.c_size_t()
+    code = function(request, len(request), None, 0, ctypes.byref(required))
+    if code != 2 or required.value != 1024:
+        raise setup.SetupError(f"The native model checker could not size its response ({code}).")
+    output = ctypes.create_string_buffer(required.value)
+    code = function(request, len(request), output, len(output), ctypes.byref(required))
+    if code == 1:
+        raise Refused("This model header cannot be checked safely. Choose another file.")
+    if code != 0 or required.value > len(output):
+        raise setup.SetupError(f"The native model checker could not check this file ({code}).")
+    result = json.loads(output.raw[:required.value])
+    if not result["compatible"]:
+        raise Refused(result["message"])
+    return result["ownVae"]
 
 
 def identify_checkpoint(tensors):
-    """A single-file (original layout) SD 1.5 checkpoint: returns whether it has its own VAE."""
-    refuse_other_kinds(tensors)
-    unet = "model.diffusion_model."
-    if not any(name.startswith(unet) for name in tensors):
-        if "conv_in.weight" in tensors and any(name.startswith("down_blocks.") for name in tensors):
-            raise Refused("This file is only one part of a model (its UNet). Choose the model's whole folder, "
-                          "or a single-file checkpoint.")
-        if "encoder.conv_in.weight" in tensors and "decoder.conv_in.weight" in tensors:
-            raise Refused("This is only a picture decoder (VAE), not a complete model.")
-        if any(name.startswith("text_model.") for name in tensors):
-            raise Refused("This is only a text encoder, not a complete model.")
-        raise Refused("This file is not a Stable Diffusion model that Media Workbench recognizes. " + NOT_SD15)
-    check_unet(shape(tensors, unet + "input_blocks.0.0.weight"),
-               shape(tensors, unet + "input_blocks.1.1.transformer_blocks.0.attn2.to_k.weight"),
-               shape(tensors, unet + "out.2.weight"))
-    check_text_encoder(shape(tensors, "cond_stage_model.transformer.text_model.embeddings.token_embedding.weight")
-                       or shape(tensors, "cond_stage_model.transformer.embeddings.token_embedding.weight"))
-    own_vae = any(name.startswith("first_stage_model.") for name in tensors)
-    if own_vae:
-        check_vae(shape(tensors, "first_stage_model.decoder.conv_in.weight"), shape(tensors, "first_stage_model.encoder.conv_out.weight"))
-    check_types(tensors, (unet, "cond_stage_model.", "first_stage_model."))
-    return own_vae
+    """A single-file SD 1.5 checkpoint; returns whether it has its own VAE."""
+    return check_compatibility(tensors)
 
 
 def read_json(path, what):
@@ -246,18 +190,9 @@ def identify_folder(folder):
     if kind not in {"StableDiffusionPipeline", "StableDiffusionImg2ImgPipeline", "StableDiffusionInpaintPipeline"}:
         raise Refused(f"This folder holds a {kind[:60] or 'different kind of'} model. " + NOT_SD15)
     parts = {part: folder_part(folder, part, part != "vae") for part in FOLDER_PARTS}
-    unet = read_header(parts["unet"])
-    refuse_other_kinds(unet)
-    check_unet(shape(unet, "conv_in.weight"), shape(unet, "down_blocks.0.attentions.0.transformer_blocks.0.attn2.to_k.weight"),
-               shape(unet, "conv_out.weight"))
-    check_types(unet, ("",))
-    text = read_header(parts["text_encoder"])
-    check_text_encoder(shape(text, "text_model.embeddings.token_embedding.weight"))
-    check_types(text, ("text_model.",))
-    if parts["vae"] is not None:
-        vae = read_header(parts["vae"])
-        check_vae(shape(vae, "decoder.conv_in.weight"), shape(vae, "encoder.conv_out.weight"))
-        check_types(vae, ("",))
+    for part, path in parts.items():
+        if path is not None:
+            check_compatibility(read_header(path), "textEncoder" if part == "text_encoder" else part)
     return {part: path for part, path in parts.items() if path is not None}
 
 
@@ -506,14 +441,10 @@ def test_model(app, root, record, cancel, progress):
 
 def identify_folder_copy(folder):
     """Copied Diffusers parts carry only weights and bundled configs; check their headers again."""
-    unet = read_header(folder / FOLDER_PARTS["unet"][1])
-    check_unet(shape(unet, "conv_in.weight"), shape(unet, "down_blocks.0.attentions.0.transformer_blocks.0.attn2.to_k.weight"),
-               shape(unet, "conv_out.weight"))
-    check_text_encoder(shape(read_header(folder / FOLDER_PARTS["text_encoder"][1]), "text_model.embeddings.token_embedding.weight"))
-    vae = folder / FOLDER_PARTS["vae"][1]
-    if vae.is_file():
-        header = read_header(vae)
-        check_vae(shape(header, "decoder.conv_in.weight"), shape(header, "encoder.conv_out.weight"))
+    for part, (_, relative) in FOLDER_PARTS.items():
+        path = folder / relative
+        if part != "vae" or path.is_file():
+            check_compatibility(read_header(path), "textEncoder" if part == "text_encoder" else part)
 
 
 def child_payload(record):

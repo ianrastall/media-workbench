@@ -15,6 +15,8 @@ Media Workbench is a single-user Windows desktop application for local media cre
 
 ## Implementation and remaining evidence
 
+Alpha.15 moves tensor-layout compatibility from Python into the stateless Rust core. Local checkpoints, Diffusers parts and pinned Discover headers share one policy through ABI 1, with native/managed boundary coverage and a published-app check. Header structural parsing, folder configuration handling and substantial job/readiness/index persistence remain Python responsibilities; the stack migration is incremental and not complete.
+
 | Reference area | Current evidence | Remaining work |
 |---|---|---|
 | UI and MVVM | WinUI 3, dark theme, native controls, observable partial properties, UI-free presentation checks | Screen-reader, high-contrast, text-scaling, keyboard and mixed-DPI acceptance matrix |

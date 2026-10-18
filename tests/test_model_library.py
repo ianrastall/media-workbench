@@ -170,6 +170,22 @@ class IdentificationTests(unittest.TestCase):
         plain.mkdir()
         self.refused(plain, "no model_index.json")
 
+    def test_missing_native_checker_cannot_fall_back_to_a_second_policy(self):
+        path = checkpoint(self.folder / "valid.safetensors")
+        with patch.object(storage, "library", side_effect=setup.SetupError("Reinstall Media Workbench")):
+            with self.assertRaisesRegex(setup.SetupError, "Reinstall"):
+                models.inspect({"path": str(path)})
+
+    def test_copied_diffusers_parts_use_the_same_weight_type_gate(self):
+        folder = self.folder / "copied"
+        for part, (_, relative) in models.FOLDER_PARTS.items():
+            tensors = dict(FOLDER[next(name for name in FOLDER if name.startswith(part + "/"))])
+            if part == "unet":
+                tensors["conv_out.weight"] = ("F8_E4M3", [4, 320, 3, 3])
+            write_safetensors(folder / relative, tensors)
+        with self.assertRaisesRegex(models.Refused, "compressed number format"):
+            models.identify_folder_copy(folder)
+
 
 class ImportTests(unittest.TestCase):
     def setUp(self):

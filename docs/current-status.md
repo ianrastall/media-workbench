@@ -1,8 +1,10 @@
 # Current implementation status
 
-Version: **0.2.0-alpha.14**. Development started 17 October 2026.
+Version: **0.2.0-alpha.15**. Development started 17 October 2026.
 
 ## Technology decisions
+
+Alpha.15 moves SD 1.5 tensor-layout compatibility into Rust through additive ABI 1 `mw_check_model_compatibility`. Local checkpoints, local Diffusers parts, pinned Discover headers and copied-model rechecks share the policy and its plain refusals. Python still performs bounded safetensors structural/offset checks, folder configuration checks and orchestration; ML stays out of process. File/runtime/real GPU gates and existing readiness stamps are unchanged. Copied Diffusers parts now repeat weight-format checks as well as shapes. See [validation](validation.md) and [handoff](../HANDOFF.md); routine work is headless, with desktop control announced only when an interactive check requires it.
 
 | Layer | Selected implementation |
 |---|---|

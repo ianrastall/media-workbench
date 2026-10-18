@@ -48,6 +48,7 @@ foreach ($taskMode in $taskModes) {
         if ($taskMode -eq '--self-test' -and -not $taskResult.nativeVerification) { throw 'Published native verification was not exercised.' }
         if ($taskMode -eq '--self-test' -and -not $taskResult.hardwareProfile) { throw 'Published hardware profile was not exercised.' }
         if ($taskMode -eq '--self-test' -and -not $taskResult.hubPlanning) { throw 'Published native Hub planning was not exercised.' }
+        if ($taskMode -eq '--self-test' -and -not $taskResult.modelCompatibility) { throw 'Published native model compatibility was not exercised.' }
         Write-Output "PASS: published application $taskMode"
     } finally { $taskProcess.Dispose() }
 }
