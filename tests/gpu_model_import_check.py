@@ -85,7 +85,7 @@ def main():
             raise SystemExit("FAIL: the added model is not listed ready")
         prompt = dict(dataRoot=data, prompt="A lighthouse on a rocky coast at sunset, oil painting", seed=20261017, steps=20, model=added["id"])
         text = call("generate.image", prompt)
-        print(f"PASS: text to image {text['width']}x{text['height']} in {text['seconds']}s, peak {text['peakVramMiB']} MiB on {text['gpu']}")
+        print(f"PASS: text to image {text['width']}x{text['height']} in {text['seconds']}s (load {text.get('loadSeconds')}s), peak {text['peakVramMiB']} MiB on {text['gpu']}")
         if text["settings"]["model"] != added["id"] or text["modelName"] != added["name"]:
             raise SystemExit("FAIL: the job record does not name the model that made it")
         if source.startswith("hf:") and text["source"] != record["source"]:

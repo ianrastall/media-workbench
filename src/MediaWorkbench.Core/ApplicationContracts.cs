@@ -59,10 +59,17 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
         "dpmpp-2m" => " · crisp detail sampling", "euler-a" => " · softer sampling", _ => ""
     };
 }
-/// <summary>ModelName records which model made the image; null in records made before models could be added.</summary>
+/// <summary>ModelName records which model made the image; null in records made before models could be added.
+/// Seconds is the work itself; LoadSeconds is loading the model before it (null in records made before 0.2.0-alpha.16),
+/// and LoadNote says in plain words when that load was slow and why it probably was.</summary>
 public sealed record GeneratedImage(string Id, string ImagePath, string ImageSha256, GenerationSettings Settings,
-    string CompletedUtc, double Seconds, string Gpu, string Kind = "generate", int Width = 0, int Height = 0, string? ModelName = null)
+    string CompletedUtc, double Seconds, string Gpu, string Kind = "generate", int Width = 0, int Height = 0, string? ModelName = null,
+    double? LoadSeconds = null, string? LoadNote = null)
 {
+    /// <summary>What Create says once the picture is saved.</summary>
+    public string SavedNotice => $"Image saved in {Seconds:N1} seconds of inference"
+        + (LoadSeconds is { } load ? $", after {load:N1} seconds loading the model." : ".")
+        + (string.IsNullOrEmpty(LoadNote) ? "" : " " + LoadNote);
     public bool CanReuseSettings => Settings.IsUpscale ? !string.IsNullOrEmpty(Settings.SourceImage) : !string.IsNullOrWhiteSpace(Settings.Prompt);
     /// <summary>Names an added model; images from the bundled model keep their familiar description.</summary>
     public string ModelLabel => Settings.Model is { } model && model != ModelChoice.BuiltInId && !string.IsNullOrEmpty(ModelName) ? $"Made with {ModelName} · " : "";

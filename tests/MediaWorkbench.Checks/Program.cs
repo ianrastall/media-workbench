@@ -241,6 +241,13 @@ Check(workbench.LastGeneration?.Model == addedId, "Generation sends the chosen m
 var madeWithAdded = RecordingWorkbench.Image(nextRoot) with { Settings = new("lighthouse", "", 5, 20, Model: addedId), ModelName = "Dreamy" };
 Check(madeWithAdded.Description.Contains("Made with Dreamy") && !RecordingWorkbench.Image(nextRoot).Description.Contains("Made with"),
     "Library descriptions name an added model and leave bundled images unchanged");
+var timed = System.Text.Json.JsonSerializer.Deserialize<GeneratedImage>("""
+{"id":"a","imagePath":"x.png","imageSha256":"","settings":{"prompt":"house","negativePrompt":"","seed":1,"steps":20},"completedUtc":"","seconds":14.12,"gpu":"Test GPU",
+ "loadSeconds":48.4,"startupSeconds":6.2,"loadNote":"Loading the model took 48 seconds. The data folder is on a hard disk."}
+""", Wire.Json)!;
+Check(timed.SavedNotice == "Image saved in 14.1 seconds of inference, after 48.4 seconds loading the model. Loading the model took 48 seconds. The data folder is on a hard disk."
+    && RecordingWorkbench.Image(nextRoot).SavedNotice == "Image saved in 1.0 seconds of inference." && vm.Notice == RecordingWorkbench.Image(nextRoot).SavedNotice,
+    "Create reports model loading apart from inference, with the plain reason when loading was slow, and older records keep their notice");
 vm.ModelIndex = 0;
 vm.UseImageSettingsCommand.Execute(madeWithAdded);
 Check(vm.SelectedModelId == addedId && vm.SelectedPage == "create", "Use settings restores the model that made the image");

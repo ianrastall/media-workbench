@@ -129,6 +129,16 @@ class LibraryIndexTests(unittest.TestCase):
         write_job(self.root, 9, "Repaired record")
         self.assertEqual(self.list()["total"], 2)
 
+    def test_load_timings_are_listed_and_damaged_ones_are_ignored(self):
+        write_job(self.root, 1, loadSeconds=48.2, startupSeconds=5.5, loadNote="Loading the model took 48 seconds.")
+        write_job(self.root, 2, "Older record without timings")
+        for number, changes in enumerate((dict(loadSeconds="slow"), dict(startupSeconds=-1), dict(loadNote=12)), 3):
+            write_job(self.root, number, **changes)
+        listed = {image["id"]: image for image in self.list()["artifacts"]}
+        self.assertEqual(len(listed), 2)
+        self.assertEqual((listed[f"{1:032x}"]["loadSeconds"], listed[f"{1:032x}"]["loadNote"]), (48.2, "Loading the model took 48 seconds."))
+        self.assertNotIn("loadSeconds", listed[f"{2:032x}"])
+
     def test_records_name_their_model_or_leave_it_unset(self):
         write_job(self.root, 1, settings=dict(prompt="older", seed=1, steps=10, model=None))
         write_job(self.root, 2, settings=dict(prompt="added", seed=2, steps=10, model="e" * 32), modelName="Dreamy")

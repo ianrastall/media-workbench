@@ -116,6 +116,35 @@ def choose(hardware, minimum_vram_mib):
     return dict(runtime=runtime, blocked=None, reasons=reasons, warnings=warnings)
 
 
+# Model loading: below this it is not a noticeable wait, so nothing is said. A solid-state drive reads the
+# 2.5 GB model several hundred MB a second (about 5-10 s with the runtime's own work); much below the
+# threshold rate means something other than the model's size held it up.
+SLOW_LOAD_SECONDS = 20
+SLOW_LOAD_MIB_PER_SECOND = 100
+SLOW_DRIVES = {"hdd": "a hard disk", "usb": "a USB drive", "network": "a network drive"}
+
+
+def load_note(load_seconds, model_bytes, drive_kind):
+    """Plain words when loading the model was slow, naming the likely reason, or "" when it was not.
+
+    `drive_kind` is mw_drive_info's kind for the data folder. A slow kind of drive is named as the
+    reason; on another drive a slow load means the drive or the computer was busy at the time.
+    """
+    if type(load_seconds) not in (int, float) or not SLOW_LOAD_SECONDS <= load_seconds < float("inf"):
+        return ""
+    taken = f"Loading the model took {load_seconds:.0f} seconds"
+    if drive_kind in SLOW_DRIVES:
+        return (f"{taken}. The data folder is on {SLOW_DRIVES[drive_kind]}, and models load faster from a "
+                "solid-state drive; you can move the data folder in Settings.")
+    if type(model_bytes) not in (int, float) or model_bytes <= 0 or model_bytes / MIB / load_seconds >= SLOW_LOAD_MIB_PER_SECOND:
+        return ""
+    if drive_kind == "ssd":
+        return (f"{taken}, longer than a solid-state drive needs. Another program may have been using the drive, or memory "
+                "was short; closing other programs can help.")
+    return (f"{taken}, longer than a solid-state drive needs. Another program may have been using the drive, or memory was "
+            "short. If the data folder is on a hard disk or USB drive, moving it to a solid-state drive in Settings would help.")
+
+
 def upscale_tile(free_vram_mib):
     """Largest Real-ESRGAN tile that fits the graphics memory free right now; smaller tiles are slower, not worse."""
     return next((tile for needed, tile in UPSCALE_TILES if free_vram_mib >= needed), UPSCALE_MIN_TILE)

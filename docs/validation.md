@@ -267,3 +267,17 @@ Validated headlessly on the Windows 11 development machine. No desktop input, wi
 Rust cases cover complete checkpoints with their own/bundled VAE and alternate CLIP names, separate Diffusers parts, unsupported model families/add-ons/inpainting layouts, compressed weights, malformed/oversized tensor descriptors, and buffer sizing without reading invalid pointers. Python's existing local/Discover/import/readiness suite now exercises the native policy; new cases require a missing native checker to stop inspection and copied Diffusers parts to reject unsupported weight types. Managed checks call the shipped ABI for accepted/refused layouts and invalid dimensions. No inference or adapter-version change is involved, so the alpha.14 GPU evidence still describes the inference path; these headless fixtures do not certify another GPU or model architecture.
 
 The desktop-control preference and bounded milestone/handoff expectations are recorded in `AGENTS.md` and `HANDOFF.md`. The earlier interactive/accessibility and clean-machine validation gaps remain open. Safetensors structural/offset parsing, folder configuration checks and substantial job/readiness/index state still remain in Python.
+
+## 0.2.0-alpha.16 — model-load timing and slow-drive notes (18 October 2026)
+
+Validated headlessly on the Windows 11 development machine. No desktop input, model download or GPU execution was used for this milestone.
+
+| Check | Result |
+|---|---|
+| `scripts/check.ps1` with `ContinuousIntegrationBuild=true` | Passed: 30 Rust tests plus formatting/Clippy, 181 Python tests, 197 C# checks, locked restores |
+| `scripts/build.ps1 -Configuration Release -Publish` | Passed, zero warnings/errors; x64 inventory and headless published application, MCP host and worker checks |
+| Lockfiles after the version bump | Regenerated with `--force-evaluate`; only the project-reference versions changed; `--locked-mode` restore passed |
+
+Python tests cover `hardware.load_note` (quick loads, invalid values, each slow drive kind, a busy solid-state drive below the rate threshold, an unknown drive, unknown model size), the coordinator recording `startupSeconds`/`loadSeconds`/`seconds` and `loadNote` in the job record, an unreadable drive leaving a finished job without a note, the weight bytes counted for bundled and added models, and Library listing timed records while ignoring damaged timing fields. A C# check deserializes a worker-shaped record and checks Create's saved notice with and without load timings.
+
+The ML child's timing code was compiled but not executed on a GPU in this milestone; the first real generation on this build will produce the first recorded load times. The 20-second and 100 MiB/s thresholds are estimates from earlier end-to-end timings on the GTX 1660 Ti (about 8 s between start and inference for a 10-step job); they have not been measured on a hard-disk or USB data folder.

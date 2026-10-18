@@ -104,6 +104,23 @@ class ChoiceTests(unittest.TestCase):
     def test_upscaler_tile_follows_free_graphics_memory(self):
         self.assertEqual([hardware.upscale_tile(free) for free in (20000, 5120, 4000, 2000, 1000, 0)], [512, 512, 384, 256, 128, 128])
 
+    def test_slow_model_loading_names_the_likely_reason(self):
+        model = 2_740_623_950  # The bundled weights the generation reads.
+        for quick in [(5.2, "hdd"), (19.9, "network"), (None, "hdd"), (float("nan"), "hdd"), (True, "usb")]:
+            self.assertEqual(hardware.load_note(quick[0], model, quick[1]), "", quick)
+        for kind, words in (("hdd", "a hard disk"), ("usb", "a USB drive"), ("network", "a network drive")):
+            note = hardware.load_note(48.4, model, kind)
+            self.assertIn("took 48 seconds", note)
+            self.assertIn(words, note)
+            self.assertIn("move the data folder in Settings", note)
+        # A solid-state drive is named as busy only when the rate is far below what it reads.
+        self.assertEqual(hardware.load_note(21, model, "ssd"), "")
+        busy = hardware.load_note(60, model, "ssd")
+        self.assertIn("Another program may have been using the drive", busy)
+        self.assertNotIn("move", busy)
+        self.assertIn("moving it to a solid-state drive", hardware.load_note(60, model, "unknown"))
+        self.assertEqual(hardware.load_note(60, 0, "ssd"), "", "Unknown model size says nothing about the drive")
+
     def test_sizes_are_said_plainly(self):
         self.assertEqual([hardware.gib(value) for value in (6144, 6143.7, 7987, 12288, 65198, 4000)],
                          ["6 GB", "6 GB", "7.8 GB", "12 GB", "64 GB", "3.9 GB"])

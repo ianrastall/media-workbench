@@ -62,7 +62,8 @@ def main():
         if installed["status"] != "ready" or record["runtime"] != evidence["runtime"]:
             raise SystemExit(f"FAIL: install / verify ended {installed['status']}: {installed.get('message')}")
         print(f"PASS: verified {record['runtime']} ({evidence['precision']}, offload {evidence['offload']}): 4-step test "
-              f"{evidence['seconds']} s, peak {evidence['peakVramMiB']} MiB. {installed['message']}")
+              f"{evidence['seconds']} s after loading {evidence.get('loadSeconds')} s (runtime start {evidence.get('startupSeconds')} s), "
+              f"peak {evidence['peakVramMiB']} MiB. {installed['message']}")
         for item in record.get("declinedRuntimes") or []:
             print(f"   declined {item['runtime']} on {item['gpu']} (driver {item['driver']}): {item['message'][:200]}")
         if record["runtime"] != chosen and not any(item["runtime"] == chosen for item in record.get("declinedRuntimes") or []):
@@ -75,7 +76,8 @@ def main():
         if picture["runtime"] != record["runtime"] or picture["precision"] != evidence["precision"]:
             raise SystemExit("FAIL: generation did not use the verified runtime")
         print(f"PASS: text to image with {picture['runtime']}: {picture['width']}x{picture['height']}, 20 steps, "
-              f"{picture['seconds']} s, peak {picture['peakVramMiB']} MiB")
+              f"{picture['seconds']} s after loading {picture.get('loadSeconds')} s (runtime start {picture.get('startupSeconds')} s), "
+              f"peak {picture['peakVramMiB']} MiB{chr(10) + '   ' + picture['loadNote'] if picture.get('loadNote') else ''}")
         bigger = call("upscale.image", {"dataRoot": data, "sourceImage": picture["imagePath"], "scale": 4})
         print(f"PASS: 4x upscale to {bigger['width']}x{bigger['height']} with {bigger['tile']}-pixel tiles in {bigger['seconds']} s, "
               f"peak {bigger['peakVramMiB']} MiB")

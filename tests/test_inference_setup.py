@@ -281,6 +281,34 @@ class ReadinessTests(unittest.TestCase):
             self.assertEqual(stored["log"], f"generate-{record['id']}.log")
             self.assertEqual(setup.status(app, {"dataRoot": str(root)})["status"], "ready")
 
+    def test_slow_model_load_is_recorded_with_its_likely_reason(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app, root = fake_app(folder), Path(folder) / "data"
+            ready_install(app, root)
+            def slow(*args, **kwargs):
+                return dict(fake_generation(*args, **kwargs), loadSeconds=52.5, startupSeconds=6.1)
+            drive = dict(path=str(root), freeBytes=10**12, totalBytes=2 * 10**12, kind="hdd")
+            with patch.object(setup, "inference", side_effect=slow), patch.object(setup.hardware, "drive_info", return_value=drive):
+                record = setup.generate(app, {"dataRoot": str(root), "prompt": "house"}, threading.Event(), lambda _: None)
+            stored = json.loads((root / "jobs" / f"{record['id']}.json").read_text())
+            self.assertEqual((stored["loadSeconds"], stored["startupSeconds"], stored["seconds"]), (52.5, 6.1, 1.0))
+            self.assertIn("hard disk", stored["loadNote"])
+            self.assertEqual(record["loadNote"], stored["loadNote"])
+            # A quick load, or a drive that cannot be read, adds nothing and never fails the saved picture.
+            with patch.object(setup, "inference", side_effect=fake_generation), \
+                 patch.object(setup.hardware, "drive_info", side_effect=OSError("unreadable")):
+                quick = setup.generate(app, {"dataRoot": str(root), "prompt": "house"}, threading.Event(), lambda _: None)
+            self.assertEqual(quick["status"], "succeeded")
+            self.assertNotIn("loadNote", quick)
+
+    def test_loaded_bytes_count_the_bundled_parts_an_added_model_borrows(self):
+        weights = {entry["path"].split("/")[0]: entry["size"]
+                   for entry in json.loads((ROOT / "profiles/sd15-files.json").read_text())["files"] if entry["path"].endswith(".safetensors")}
+        self.assertEqual(setup.loaded_bytes(ROOT), sum(weights.values()))
+        added = {"files": [{"size": 2_000_000_000}, {"size": "bad"}], "ownVae": True}
+        self.assertEqual(setup.loaded_bytes(ROOT, added), 2_000_000_000 + weights["safety_checker"])
+        self.assertEqual(setup.loaded_bytes(ROOT, dict(added, ownVae=False)), 2_000_000_000 + weights["safety_checker"] + weights["vae"])
+
     def test_image_to_image_works_from_a_private_copy(self):
         with tempfile.TemporaryDirectory() as folder:
             app, root = fake_app(folder), Path(folder) / "data"

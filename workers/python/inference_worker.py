@@ -71,6 +71,7 @@ def enlarge(payload, data_root, weights, gpu, torch, upscaler):
         raise ValueError(f"Pictures up to {inference_setup.UPSCALE_MAX_SIDE} pixels on the longest side can be upscaled; "
                          f"this one is {picture.width} × {picture.height}.")
     progress("Loading the upscaler")
+    loading = time.monotonic()
     model = upscaler.load(weights, "cuda")
     started = time.monotonic()
     # Larger tiles are faster; the size follows the graphics memory free now, and shrinks if it still runs short.
@@ -89,7 +90,8 @@ def enlarge(payload, data_root, weights, gpu, torch, upscaler):
     if payload["scale"] == 2:
         image = image.resize((picture.width * 2, picture.height * 2), Image.Resampling.LANCZOS)
     result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda, precision="float32", tile=tile,
-        seconds=round(time.monotonic() - started, 2), width=image.width, height=image.height, scale=payload["scale"],
+        seconds=round(time.monotonic() - started, 2), loadSeconds=round(started - loading, 2),
+        width=image.width, height=image.height, scale=payload["scale"],
         peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2), python=sys.version.split()[0])
     save_artifact(data_root, payload["jobId"], image, result)
     return result
@@ -185,6 +187,7 @@ def main():
             emit("result", {"downloaded": True})
             return
         progress("Loading inference runtime")
+        launched = time.monotonic()
         import torch
         import upscaler
         from diffusers import (DPMSolverMultistepScheduler, EulerAncestralDiscreteScheduler,
@@ -199,8 +202,11 @@ def main():
         if not inference_setup.meets_vram(total, minimum):
             raise RuntimeError(f"{gpu} reports {total:.0f} MiB of GPU memory; this recipe requires {minimum} MiB.")
         upscaler_weights = args.data_root / "models" / inference_setup.UPSCALER / "RealESRGAN_x4plus.pth"
+        # Starting the runtime, loading the model, and the work itself are timed apart, so a slow drive or a busy
+        # computer can be told from slow inference.
+        startup = round(time.monotonic() - launched, 2)
         if args.operation == "upscale":
-            emit("result", enlarge(payload, args.data_root, upscaler_weights, gpu, torch, upscaler))
+            emit("result", dict(enlarge(payload, args.data_root, upscaler_weights, gpu, torch, upscaler), startupSeconds=startup))
             return
         # The coordinator sends the runtime choice that passed this installation's (or this model's) GPU test, or the
         # one under test. Check it again against the card CUDA sees, so a swapped GPU cannot run untested settings.
@@ -217,6 +223,7 @@ def main():
         painted = painted_change(payload) if source and payload.get("maskImage") else None  # Checked before the slow load.
         added = payload.get("model", inference_setup.RECIPE) != inference_setup.RECIPE
         progress("Loading your model" if added else "Loading Stable Diffusion 1.5")
+        loading = time.monotonic()
         # The same weights serve every mode: image-to-image starts from the user's picture, and a painted
         # change redraws only the painted region (Diffusers blends the standard 4-channel UNet's latents).
         pipeline_class = (StableDiffusionInpaintPipeline if painted else StableDiffusionImg2ImgPipeline) if source else StableDiffusionPipeline
@@ -233,6 +240,7 @@ def main():
             pipe.to("cuda")
         pipe.enable_vae_slicing()
         pipe.set_progress_bar_config(disable=True)
+        loaded = round(time.monotonic() - loading, 2)
         request = payload if args.operation == "generate" else dict(
             prompt="A small red ceramic house beside a green tree, watercolor illustration, daylight",
             negativePrompt="", seed=20261017, steps=4, width=512, height=512)
@@ -287,7 +295,8 @@ def main():
             del model
         result = dict(gpu=gpu, torch=torch.__version__, cuda=torch.version.cuda,
             precision=settings["precision"], offload=settings["offload"], runtime=runtime,
-            seconds=round(time.monotonic() - started, 2), width=width, height=height, sampler=sampler,
+            seconds=round(time.monotonic() - started, 2), loadSeconds=loaded, startupSeconds=startup,
+            width=width, height=height, sampler=sampler,
             peakVramMiB=round(torch.cuda.max_memory_allocated() / 1024**2),
             python=sys.version.split()[0], isolated=bool(sys.flags.isolated), userSiteDisabled=bool(sys.flags.no_user_site))
         if args.operation == "generate":

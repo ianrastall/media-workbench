@@ -51,14 +51,15 @@ def usable_record(record, name):
     for key in ("guidanceScale", "strength"):
         if key in settings and (type(settings[key]) not in (int, float) or not 0 <= settings[key] <= 100):
             return False
-    for key in ("startedUtc", "completedUtc", "imageSha256", "gpu", "kind", "modelName"):
+    for key in ("startedUtc", "completedUtc", "imageSha256", "gpu", "kind", "modelName", "loadNote"):
         if key in record and not isinstance(record[key], str):
             return False
     for key in ("width", "height"):
         if key in record and (type(record[key]) is not int or not 0 <= record[key] <= 2147483647):
             return False
-    if "seconds" in record and (type(record["seconds"]) not in (int, float) or not 0 <= record["seconds"] < float("inf")):
-        return False
+    for key in ("seconds", "loadSeconds", "startupSeconds"):
+        if key in record and (type(record[key]) not in (int, float) or not 0 <= record[key] < float("inf")):
+            return False
     return True
 
 

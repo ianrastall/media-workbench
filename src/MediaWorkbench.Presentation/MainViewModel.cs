@@ -510,7 +510,7 @@ public partial class MainViewModel : ObservableObject
         LatestImage = image;
         ImageDescription = image.Description;
         await ShowNewImageAsync(image, token);
-        Notice = $"Image saved in {image.Seconds:N1} seconds of inference.";
+        Notice = image.SavedNotice;
         Record("Saved " + image.ImagePath);
         _ = RefreshDriveAsync();
     }, longRunning: true);

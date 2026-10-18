@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0-alpha.16 — 2026-10-18
+
+- Create now says how long loading the model took, separately from the seconds spent making the picture. Job records keep the runtime start, model-load and inference times apart, so repeated-generation work can be measured before a warm worker is built.
+- When loading takes 20 seconds or more, Create says why it was probably slow: a data folder on a hard disk, USB drive or network drive is named, with the advice to move it to a solid-state drive; on a solid-state drive, a load far slower than the drive allows is described as the drive or the computer being busy at the time.
+- The Library and the local MCP tools return the model-load time and any slow-load note with each image; older records without them still list normally, and damaged timing fields cannot hide other images. Upscaling records its load time too.
+- Inference settings, adapter versions and readiness stamps do not change; existing installations and added models stay verified. The thresholds come from single-GPU observations and have not yet been compared against a real hard-disk data folder.
+
 ## 0.2.0-alpha.15 — 2026-10-18
 
 - Model compatibility decisions now live in the Rust core. Discover downloads, local single-file imports, and Diffusers-folder imports share the same SD 1.5 tensor-layout checks and plain explanations for unsupported models, add-ons, and compressed weights.

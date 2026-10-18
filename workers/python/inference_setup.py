@@ -718,6 +718,25 @@ def space_needed(kind, settings):
     return inputs + side * side * 3 + WRITE_HEADROOM_BYTES  # An uncompressed RGB PNG is the worst case.
 
 
+def loaded_bytes(app, added=None):
+    """Weight bytes a generation reads: the bundled model, or an added one with the bundled parts it borrows."""
+    manifest = json.loads((app / "profiles/sd15-files.json").read_text())
+    weights = {entry["path"].split("/")[0]: entry["size"] for entry in manifest["files"] if entry["path"].endswith(".safetensors")}
+    if added is None:
+        return sum(weights.values())
+    own = sum(item.get("size", 0) for item in added.get("files", []) if isinstance(item, dict) and type(item.get("size")) is int)
+    return own + weights.get("safety_checker", 0) + (0 if added.get("ownVae", True) else weights.get("vae", 0))
+
+
+def timing_note(app, root, result, model_bytes):
+    """Plain words when loading was slow for this data folder's drive; never fails a finished job."""
+    try:
+        kind = hardware.drive_info(root, app)["kind"]
+    except Exception:  # A drive that cannot be read is no reason to lose a saved picture.
+        kind = "unknown"
+    return hardware.load_note(result.get("loadSeconds"), model_bytes, kind)
+
+
 def check_space(root, needed):
     free = shutil.disk_usage(root).free
     if free < needed:
@@ -740,10 +759,12 @@ def run_job(app, root, kind, settings, cancel, progress):
         manifest = json.loads((app / "profiles/sd15-files.json").read_text())
         source = dict(provider="huggingface", repoId=manifest["repoId"], revision=manifest["revision"])
         model, model_name, extra = RECIPE, "Stable Diffusion 1.5", dict(runtime=ready["runtime"])
+        model_bytes = loaded_bytes(app)
         if settings.get("model", RECIPE) != RECIPE:
             import model_library
             added = model_library.ready_model(app, root, settings["model"])
             model, model_name, extra = added["id"], added["name"], model_library.child_payload(added)
+            model_bytes = loaded_bytes(app, added)
             source = added.get("source") or dict(provider="local", name=added.get("sourceName", ""), sha256=added["files"][0]["sha256"])
         if kind == "upscale":
             extra = {}  # The upscaler always runs in full precision; its tile size follows free graphics memory.
@@ -769,6 +790,9 @@ def run_job(app, root, kind, settings, cancel, progress):
             result = inference(app, root, kind, child, cancel, progress, log_id=job_id)
             check_cancel(cancel)
             record.update(status="succeeded", completedUtc=datetime.now(timezone.utc).isoformat(), **result)
+            note = timing_note(app, root, result, model_bytes) if kind == "generate" else ""  # The 64 MB upscaler loads in moments.
+            if note:
+                record["loadNote"] = note
             settings.update(width=result.get("width", settings.get("width")), height=result.get("height", settings.get("height")))
             image = artifact_image(root, record)
             if image is None:
