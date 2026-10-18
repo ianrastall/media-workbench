@@ -575,7 +575,8 @@ class KeptModel:
             stack.callback(_release, _acquire(root, kept=True))
             folder = stack.enter_context(scratch(root))
             environment = {k: v for k, v in environment.items() if k != KEEP_VARIABLE}
-            child = subprocess.Popen([str(a) for a in [python, "-I", "-u", app / "workers/python/inference_worker.py",
+            # -B keeps bytecode caches out of the app folder (the drive-containment trace found them there).
+            child = subprocess.Popen([str(a) for a in [python, "-I", "-B", "-u", app / "workers/python/inference_worker.py",
                 "--root", app, "--data-root", root, "--operation", "serve"]],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                 errors="replace", env=contained(environment, root, folder),
@@ -648,7 +649,7 @@ def inference(app, root, operation, payload, cancel, progress, log_id=None):
         return KEPT.run(app, root, python, environment, payload, cancel, progress, log_path)
     KEPT.release()  # Setup tests, downloads, upscaling and videos run alone on the graphics card.
     with scratch(root) as folder:
-        return run_child([python, "-I", "-u", app / "workers/python/inference_worker.py", "--root", app,
+        return run_child([python, "-I", "-B", "-u", app / "workers/python/inference_worker.py", "--root", app,
             "--data-root", root, "--operation", operation, "--payload", json.dumps(payload)],
             cancel, progress, contained(environment, root, folder), protocol=True, log_path=log_path)
 

@@ -41,7 +41,9 @@ def classify(operation, result, detail):
         return None
     if operation == "WriteFile":
         match = re.search(r"Length: ([\d,]+)", detail)
-        return "write", int(match.group(1).replace(",", "")) if match else 0
+        # Paging writes are Windows' memory manager flushing cached pages, often other programs' folders, in
+        # whichever thread triggered it. A file the app itself creates still shows as its own CreateFile.
+        return "paging" if "Paging I/O" in detail else "write", int(match.group(1).replace(",", "")) if match else 0
     if operation == "CreateFile":
         opened = field(detail, "OpenResult")
         if opened in CREATED:
@@ -75,6 +77,8 @@ def area_of(path, data_root, app_root, environment):
     lowered = clean.lower()
     if not re.match(r"^[a-z]:\\", lowered):
         return "device"
+    if re.match(r"^[a-z]:\\\$", lowered):
+        return f"ntfs-metadata/{clean[:2].upper()}"  # $Mft, $LogFile, $BitMap, $Extend\...: the file system's own records
     for label, root in (("data", data_root), ("app", app_root)):
         if lowered == root or lowered.startswith(root + "\\"):
             rest = clean[len(root) + 1:].split("\\")
@@ -141,8 +145,13 @@ def environment_folders(data_root, app_root):
     return sorted(found, key=lambda item: -len(item[1]))
 
 
+def bookkeeping(key, value):
+    """Windows' own work rather than an app write: file-system records, or areas only reached by paging I/O."""
+    return key.startswith("ntfs-metadata/") or set(value["kinds"]) == {"paging"}
+
+
 def outside(areas):
-    return {key: value for key, value in areas.items() if not key.startswith(("data/", "device"))}
+    return {key: value for key, value in areas.items() if not key.startswith(("data/", "device")) and not bookkeeping(key, value)}
 
 
 def mib(value):
@@ -169,12 +178,18 @@ def markdown(run, phases):
             examples = "<br>".join(value["examples"][:3]).replace("|", "\\|")
             lines.append(f"| {key} | {mib(value['bytes'])} | {kinds} | {value['created']} | {', '.join(value['processes'])} | {examples} |")
         lines.append("")
-    total = defaultdict(int)
+    total, windows = defaultdict(int), defaultdict(int)
     for phase in phases:
         for key, value in outside(phase["areas"]).items():
             total[key] += value["bytes"]
+        for key, value in phase["areas"].items():
+            if key != "device" and bookkeeping(key, value):
+                windows[key] += value["bytes"]
     lines += ["## Outside the data folder, all phases", ""]
     lines += [f"- {key}: {mib(value)}" for key, value in sorted(total.items())] or ["- Nothing."]
+    lines += ["", "## Windows bookkeeping in the app's processes (not app writes)", "",
+              "File-system records and paging writes of cached pages; listed for completeness.", ""]
+    lines += [f"- {key}: {mib(value)}" for key, value in sorted(windows.items())] or ["- Nothing."]
     return "\n".join(lines) + "\n"
 
 

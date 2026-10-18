@@ -82,12 +82,15 @@ class SummaryTests(unittest.TestCase):
             self.row("python.exe", 200, "CreateFile", "C:\\Profiles\\Someone\\AppData\\Local\\Programs\\Media Workbench\\workers\\python\\__pycache__\\a.pyc",
                      "Desired Access: Generic Write, Disposition: OverwriteIf, OpenResult: Created"),
             self.row("python.exe", 200, "WriteFile", "\\\\.\\pipe\\x", "Length: 5"),
+            self.row("uv.exe", 200, "WriteFile", "D:\\Other Program", "Offset: 4,096, Length: 4,096, I/O Flags: Non-cached, Paging I/O, Synchronous Paging I/O"),
+            self.row("uv.exe", 200, "WriteFile", "D:\\$Mft", "Offset: 0, Length: 4,096, I/O Flags: Non-cached, Paging I/O"),
             self.row("Explorer.EXE", 300, "WriteFile", "C:\\Profiles\\Someone\\elsewhere.txt", "Length: 99"),
             self.row("python.exe", 200, "Process Exit", "", ""),
             self.row("other.exe", 200, "WriteFile", "C:\\reused-pid.txt", "Length: 7"),
         ]
         areas = summarize_writes.summarize_phase(rows, data, app, self.environment)
-        self.assertEqual(set(areas), {"data/temp", "%TEMP%\\leak.tmp", "app/workers", "device"})
+        self.assertEqual(set(areas), {"data/temp", "%TEMP%\\leak.tmp", "app/workers", "device", "D:\\Other Program", "ntfs-metadata/D:"})
+        self.assertEqual(areas["D:\\Other Program"]["kinds"], {"paging": 1})
         self.assertEqual(areas["data/temp"]["bytes"], 1024)
         self.assertEqual(areas["app/workers"]["created"], 1)
         self.assertEqual(set(summarize_writes.outside(areas)), {"%TEMP%\\leak.tmp", "app/workers"})

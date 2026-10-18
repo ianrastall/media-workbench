@@ -1,5 +1,34 @@
 # Initial alpha validation
 
+## Drive-containment write trace (installed 0.3.0-alpha.9, 18 October 2026)
+
+Windows 11, GTX 1660 Ti (6 GB, driver 610.60), 64 GB memory. C: is the 256 GB system SSD (about 23 GB free); D: is an internal hard disk. The app was installed in its default per-user folder on C:, and the data folder was new, at `artifacts/containment-trace/<time>/data` on D:. Command: `./scripts/containment/trace.ps1`, with the user accepting one UAC prompt. Process Monitor 4.12 used the generated filter, which passed calibration first time, with one capture per phase and each phase run through a fresh `MediaWorkbench.Cli.exe mcp`.
+
+| Phase | Result | Time |
+|---|---|---|
+| SD 1.5 setup (runtime with uv, model, upscaler, GPU test) | ready, `fp32-offload` | 862 s |
+| Text 512 × 512 (20 steps), image-to-image, painted change, 4× upscale | 201 s, 70 s, 84 s, 2.7 s inference | 416 s |
+| SDXL setup (6.9 GB) | ready, `xl-fp32-sequential` | 662 s |
+| SDXL 1216 × 832 (12 steps) and painted change | 95 s, 93 s | 232 s |
+| Video setup (1.7 GB) and 16-frame 12-step clip | ready; clip 175 s | 471 s |
+| Discover search and details | 30 results | 15 s |
+| Cancel mid-picture | cancelled, no image; Library lists the job as *interrupted* (see below) | 43 s |
+| Kill only the MCP host mid-picture | no owned process outlived it (Job Object); the job is listed as interrupted | 46 s |
+| Install / verify again | ready | 59 s |
+| Update download (`update-check 0.3.0-alpha.8 --download`) | verified installer in the data folder's `temp/updates` | 27 s |
+
+The data folder ended at 14.9 GiB, and the largest `temp/` seen was 72 MiB (the update installer). Pictures were slower than in earlier runs (201 s against about 25 s for a similar first picture), probably because of the trace's file-system overhead and the new folder's empty compiled-kernel cache; this run's timings are not performance evidence.
+
+**Changes by the app's process tree outside the data folder** (from `report.md`):
+
+- `<app>\workers\python\__pycache__`: about 100 KB of `.pyc` files and atomic renames by the ML child (Python 3.12), on C:. Earlier runs had also left Python 3.14 caches there. **Fixed after this run:** every worker now runs with `-B`, and the installer removes that folder on upgrade and uninstall. This is not yet re-traced on a release that includes the fix.
+- `%ProgramData%\NVIDIA Corporation\Drs\nvdrssel.bin`: opened for writing (0 bytes written) by the NVIDIA driver each time CUDA starts. This is driver behaviour, outside the app's control.
+- Nothing in `%TEMP%`, `%LOCALAPPDATA%`, `%APPDATA%` or elsewhere on C: or other drives, in any phase. The uv cache, Hugging Face downloads, PyTorch and CUDA kernel caches, worker temporary files, painted-area hand-overs and update downloads all stayed in the data folder.
+
+Windows' own bookkeeping, also recorded in the app's processes but not app writes: NTFS records on D: (`$Mft`, `$LogFile`, `$BitMap`, 48 MiB in all) and on C: (`$LogFile`, 40 KB, from the `.pyc` writes above), and paging writes that flushed other programs' cached folder pages on D:. Free space on C: varied by up to about 0.6 GB during the run, from activity outside the app (the trace shows no app writes there).
+
+**Open finding, not about containment:** cancelling a picture through MCP leaves its job recorded as *interrupted* (recovered on the next Library read) rather than *cancelled*. Not yet investigated.
+
 ## Installer reopen behaviour on a real release installer
 
 18 October 2026: the published 0.3.0-alpha.8 installer (SHA-256 `e3eb0752…`, verified against its `.sha256`) run with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS` over an installed 0.3.0-alpha.7 left no Media Workbench process running afterwards, and the installed app's `--self-test` passed. Earlier the same day an in-app update from 0.3.0-alpha.3 (which uses `/SILENT`) closed and reopened the app as 0.3.0-alpha.7, as intended.

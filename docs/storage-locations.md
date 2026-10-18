@@ -79,7 +79,9 @@ The user decided the scope of 0.4.0-alpha.1's acceptance:
 
 **Short traced run, 18 October 2026 (installed 0.3.0-alpha.9):** `trace.ps1 -Quick` with the user accepting the UAC prompt. Process Monitor obeyed the filter file with UTF-16-terminated values on the first try: the calibration write was kept, with no read or registry events. The `inspect`, `discover` and `storage` phases changed files only inside the data folder (its `.operation.lock`, `temp/` and `temp/work/<id>` with its owner file, all removed again), and nothing elsewhere. Each phase's capture held the host's Process Create event, so the tree was attributed. That run also caught a missed read-only operation name (`QueryStatInformation`, now excluded).
 
-Still to do for the milestone, in order: the full traced run (`trace.ps1`, about 15 GB of downloads and an hour or more of GPU work); fixes for anything it finds outside the data folder; low-space and disconnected-drive checks on a small attached virtual disk (a second UAC prompt); the interactive session with the user (GUI painted change, Cancel, crash recovery, alpha.8 → alpha.9 Update now and relaunch, never-use drive); then validation notes and the release.
+**Full traced run, 18 October 2026 (installed 0.3.0-alpha.9):** all 12 phases passed. The only app writes outside the data folder were Python bytecode caches in the app folder on C:, now prevented with `-B` and removed by the installer on upgrade and uninstall, plus the NVIDIA driver's 0-byte open of its profile file. Details are in [validation](validation.md#drive-containment-write-trace-installed-030-alpha9-18-october-2026). The summarizer now lists NTFS records and paging writes separately as Windows bookkeeping.
+
+Still to do for the milestone, in order: release the `-B` fix and repeat the trace on that installed release to confirm `app/workers` is gone; low-space and disconnected-drive checks on a small attached virtual disk (a second UAC prompt); the interactive session with the user (GUI painted change, Cancel, crash recovery, alpha.8 → alpha.9 Update now and relaunch, never-use drive); then validation notes and the release.
 
 ## Resume here
 

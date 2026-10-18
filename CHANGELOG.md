@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0-alpha.10 — 2026-10-18
+
+- **Nothing written into the app's own folder.** A full trace of every file Media Workbench changes found one thing outside your data folder: Python's cache files (about 100 KB) in the installation folder. They are no longer written, and this update removes the old ones. Uninstalling now also leaves no folder behind. Everything else (downloads, caches, temporary work and update downloads) already stays in your data folder.
+
 ## 0.3.0-alpha.9 — 2026-10-18
 
 - **A new picture every time you select Generate.** Before, the seed stayed the same, so selecting **Generate** again with the same description made exactly the same picture. Now each **Generate** and **Add to queue** picks a new seed and shows it under **Advanced options**, where **A new variation each time** can be turned off. **Use settings** and **Retry** turn it off for you, so they repeat a picture exactly.

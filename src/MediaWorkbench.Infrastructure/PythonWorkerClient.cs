@@ -54,6 +54,8 @@ public sealed class PythonWorkerClient : IWorkerClient
             StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };
+        // -B: never write bytecode caches beside the worker sources, which would put files in the app folder.
+        start.ArgumentList.Add("-B");
         start.ArgumentList.Add("-u");
         start.ArgumentList.Add(worker);
         start.ArgumentList.Add("--root");

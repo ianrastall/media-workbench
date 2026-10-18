@@ -44,6 +44,11 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 [InstallDelete]
 ; Retired application-owned recipe from 0.1; user data is outside {app}.
 Type: files; Name: "{app}\recipes\sd15-draft.json"
+; Bytecode caches written by workers before 0.4.0-alpha.1 (workers now run with -B).
+Type: filesandordirs; Name: "{app}\workers\python\__pycache__"
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\workers\python\__pycache__"
 
 [Icons]
 Name: "{userprograms}\Media Workbench"; Filename: "{app}\MediaWorkbench.exe"; WorkingDir: "{app}"; AppUserModelID: "ianrastall.MediaWorkbench"
