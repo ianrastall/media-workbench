@@ -117,6 +117,26 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
         Task.Run(() => NativeCore.ExportArtifact(dataRoot, request, progress, cancellationToken), cancellationToken);
     public async Task<StorageSnapshot> ClearStorageAsync(string dataRoot, string area, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<StorageSnapshot>(await Execute(dataRoot, "storage.clear", new { dataRoot, area }, cancellationToken, progress), Wire.Json)!;
+    public Task<IReadOnlyList<DriveChoice>> GetDrivesAsync(CancellationToken cancellationToken) =>
+        Task.Run<IReadOnlyList<DriveChoice>>(() =>
+        {
+            string system = Path.GetPathRoot(Environment.SystemDirectory) ?? "";
+            List<DriveChoice> drives = [];
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    if (!drive.IsReady || drive.DriveType is not (DriveType.Fixed or DriveType.Removable or DriveType.Network)) continue;
+                    // Rust reports quota-aware free space and the drive's real type; nothing is created.
+                    var status = NativeCore.GetDriveStatus(Path.Combine(drive.RootDirectory.FullName, "Media Workbench"));
+                    drives.Add(new(drive.RootDirectory.FullName, drive.VolumeLabel, status.FreeBytes, status.TotalBytes, status.DriveKind,
+                        string.Equals(drive.RootDirectory.FullName, system, StringComparison.OrdinalIgnoreCase)));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { } // Not ready or not readable now.
+            }
+            return drives;
+        }, cancellationToken);
     public Task<DataMovePlan> PlanDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken) =>
         Task.Run(() => NativeCore.PlanDataMove(dataRoot, destination), cancellationToken);
     public Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken) =>

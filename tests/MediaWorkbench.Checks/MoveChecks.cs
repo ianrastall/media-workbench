@@ -44,6 +44,35 @@ static class MoveChecks
         check(workbench.Abandoned.Contains((oldRoot, newRoot + "-crashed")) && store.Load() is { PendingMove: null, DataRoot: var stayed } && stayed == oldRoot
             && restarted.Notice.Contains("did not finish"), "An interrupted move's partial copy is removed at the next start and the data folder is unchanged");
 
+        // Before setup's first download, the default folder on a fuller drive is a question, never a silent choice.
+        string here = Path.GetPathRoot(output)!;
+        var fresh = new SettingsStore(Path.Combine(output, "drive-question"));
+        var asking = new RecordingWorkbench { InstallationStatus = "not_installed" };
+        asking.DriveChoices.Clear();
+        asking.DriveChoices.Add(new(here, "Windows", 30L << 30, 250L << 30, "ssd", true));
+        asking.DriveChoices.Add(new(@"Z:\", "Big", 900L << 30, 2000L << 30, "hdd", false));
+        var first = new MainViewModel(asking, fresh, new FakeUpdates(null));
+        await first.RefreshInstallationCommand.ExecuteAsync(null);
+        check(first.NeedsDriveChoice && first.DriveChoiceText.Contains(@"Z:\ has 900.00 GiB free") && !first.InstallCommand.CanExecute(null),
+            "Setup asks where to work first when the default folder is on a drive with less room than another");
+        first.UseDriveCommand.Execute(asking.DriveChoices[1]);
+        check(first.DataRootDraft == @"Z:\Media Workbench" && first.DataRoot == AppSettings.Default(fresh.Folder).DataRoot,
+            "Use this drive fills in a folder on that drive without saving or moving anything");
+        first.DataRootDraft = first.DataRoot;
+        first.KeepDataDriveCommand.Execute(null);
+        check(!first.NeedsDriveChoice && first.InstallCommand.CanExecute(null) && fresh.Load().DataRootChosen, "Keeping the drive is remembered and lets setup start");
+        var again = new MainViewModel(asking, fresh, new FakeUpdates(null));
+        await again.RefreshInstallationCommand.ExecuteAsync(null);
+        check(!again.NeedsDriveChoice, "A kept choice is not asked again");
+        var older = new SettingsStore(Path.Combine(output, "drive-older"));
+        older.Save(new AppSettings(1, Path.Combine(output, "picked-earlier"), "query"));
+        var olderVm = new MainViewModel(asking, older, new FakeUpdates(null));
+        await olderVm.RefreshInstallationCommand.ExecuteAsync(null);
+        check(!olderVm.NeedsDriveChoice, "A folder chosen in an earlier version counts as chosen");
+        var drives = await new WorkbenchService(root, python).GetDrivesAsync(token);
+        check(drives.Any(drive => string.Equals(drive.Root, here, StringComparison.OrdinalIgnoreCase) && drive.FreeBytes > 0 && drive.TotalBytes >= drive.FreeBytes)
+            && drives.Count(drive => drive.IsSystem) <= 1, "The real drive list includes the checks' drive with its free space");
+
         // The real Rust move, then the real Python Library and Rust export from the moved folder.
         string source = Path.Combine(output, "move-real café"), jobId = new string('c', 32);
         byte[] picture = [9, 8, 7];

@@ -35,8 +35,9 @@ sealed class RecordingWorkbench : IWorkbenchService
         return "";
     }
     public InstallationPlan GetBaselinePlan() => throw new NotSupportedException();
+    public string InstallationStatus { get; set; } = "ready";
     public Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken) =>
-        Record(dataRoot, new InstallationState("ready", "Ready"));
+        Record(dataRoot, new InstallationState(InstallationStatus, InstallationStatus == "ready" ? "Ready" : "Not installed"));
     /// <summary>A GTX 1660 Ti like the development machine's; reads are counted, not recorded as data-folder operations.</summary>
     public SystemProfile Profile { get; set; } = GtxProfile;
     public List<string> ProfileRoots { get; } = [];
@@ -191,6 +192,8 @@ sealed class RecordingWorkbench : IWorkbenchService
     /// <summary>Optional per-folder answer, for checks of which drive each location is on.</summary>
     public Func<string, DriveStatus>? DriveFor { get; set; }
     public Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken) => Task.FromResult(DriveFor?.Invoke(dataRoot) ?? Drive);
+    public List<DriveChoice> DriveChoices { get; } = [new(@"C:\", "Windows", 40L << 30, 250L << 30, "ssd", true), new(@"D:\", "Data", 800L << 30, 2000L << 30, "hdd", false)];
+    public Task<IReadOnlyList<DriveChoice>> GetDrivesAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<DriveChoice>>(DriveChoices);
     public DataMovePlan MovePlan { get; set; } = new(3, 3L << 30, 100L << 30, 4L << 30, false, false, "");
     public Exception? MoveFailure { get; set; }
     public List<(string Source, string Destination)> Moves { get; } = [];

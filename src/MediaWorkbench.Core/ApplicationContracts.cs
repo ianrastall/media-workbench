@@ -3,8 +3,9 @@ namespace MediaWorkbench.Core;
 /// <summary>CheckForUpdates defaults to on for settings saved before it existed. Setup's download caches are
 /// removed once it passes its test unless KeepDownloadCaches is set.</summary>
 /// <summary>PendingMove names the destination of a data-folder move in progress, so a crash's half-made copy is removed at the next start.</summary>
+/// <summary>DataRootChosen records that the user picked (or kept) the data folder's location, so setup does not ask again.</summary>
 public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true, bool KeepDownloadCaches = false,
-    string? PendingMove = null)
+    string? PendingMove = null, bool DataRootChosen = false)
 {
     public static AppSettings Default(string stateRoot) => new(1, Path.Combine(stateRoot, "Data"), "stable-diffusion");
 }
@@ -152,6 +153,16 @@ public sealed record DriveStatus(long FreeBytes, long TotalBytes, string DriveKi
           "and Media Workbench stops before writing when there is not enough. Free up space on that drive, or move the data folder in Settings."
         : "";
     public string SpeedNote => IsSlow ? $"The data folder is on {KindText}. Models load faster from a solid-state drive; you can move the data folder in Settings." : "";
+}
+
+/// <summary>A drive the data folder could go on, as Settings offers it. Kind as for <see cref="DriveStatus"/>.</summary>
+public sealed record DriveChoice(string Root, string Label, long FreeBytes, long TotalBytes, string DriveKind, bool IsSystem)
+{
+    /// <summary>The folder offered on this drive.</summary>
+    public string Folder => System.IO.Path.Combine(Root, "Media Workbench");
+    public string Title => Label.Length > 0 ? $"{Root} {Label}" : Root;
+    public string Detail => $"{StorageSnapshot.Format(FreeBytes)} free of {StorageSnapshot.Format(TotalBytes)} · " +
+        new DriveStatus(FreeBytes, TotalBytes, DriveKind).KindText + (IsSystem ? " · Windows is on this drive" : "");
 }
 
 /// <summary>What moving the data folder would copy, and the plain reason it cannot start (empty when it can).</summary>
@@ -315,6 +326,8 @@ public interface IWorkbenchService
     Task MoveDataAsync(string dataRoot, string destination, IProgress<OperationProgress> progress, CancellationToken cancellationToken);
     /// <summary>Removes the half-made copy an interrupted move left beside <paramref name="destination"/>; never touches anything else.</summary>
     Task AbandonDataMoveAsync(string dataRoot, string destination, CancellationToken cancellationToken);
+    /// <summary>The drives a data folder could go on (fixed, removable and network drives that are ready), with free space and type.</summary>
+    Task<IReadOnlyList<DriveChoice>> GetDrivesAsync(CancellationToken cancellationToken);
     /// <summary>Free space and drive type for the data folder; quick, and creates nothing.</summary>
     Task<DriveStatus> GetDriveAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Removes old logs, old unfinished-job records beyond the ones Library lists, stale downloads, and,

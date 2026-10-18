@@ -36,7 +36,9 @@ public partial class MainViewModel : ObservableObject
         OpenDataFolderCommand = new RelayCommand(OpenDataFolder);
         CancelCommand = new RelayCommand(() => _operation?.Cancel(), () => IsBusy);
         OpenModelCommand = new RelayCommand(OpenModel, () => SelectedModel is not null);
-        InstallCommand = new AsyncRelayCommand(InstallAsync, () => !IsBusy);
+        InstallCommand = new AsyncRelayCommand(InstallAsync, () => !IsBusy && !NeedsDriveChoice);
+        UseDriveCommand = new RelayCommand<DriveChoice?>(UseDrive, drive => drive is not null && !IsBusy);
+        KeepDataDriveCommand = new RelayCommand(KeepDataDrive, () => !IsBusy);
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
         GenerateCommand = new AsyncRelayCommand(GenerateAsync, () => !IsBusy && ModelReady);
         RefreshLibraryCommand = new AsyncRelayCommand(RefreshLibraryAsync, () => !IsBusy);
@@ -76,6 +78,8 @@ public partial class MainViewModel : ObservableObject
             CheckForUpdates = saved.CheckForUpdates;
             KeepDownloadCaches = saved.KeepDownloadCaches;
             _pendingMove = saved.PendingMove;
+            // Earlier versions did not record the choice; a folder other than the default was chosen on purpose.
+            _dataRootChosen = saved.DataRootChosen || !string.Equals(saved.DataRoot, DefaultDataRoot, StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex) { Notice = $"Could not load settings: {ex.Message}"; }
         _loading = false;
@@ -285,6 +289,19 @@ public partial class MainViewModel : ObservableObject
     public IRelayCommand PlanCommand { get; }
     public IRelayCommand SaveSettingsCommand { get; }
     public IAsyncRelayCommand CheckMoveCommand { get; }
+    public IRelayCommand<DriveChoice?> UseDriveCommand { get; }
+    public IRelayCommand KeepDataDriveCommand { get; }
+    /// <summary>Drives the data folder could go on, for Settings.</summary>
+    public ObservableCollection<DriveChoice> Drives { get; } = [];
+    public bool HasDrives => Drives.Count > 0;
+    private bool _dataRootChosen;
+    private string DefaultDataRoot => AppSettings.Default(_settings.Folder).DataRoot;
+    /// <summary>
+    /// Before setup's first large download: the data folder is still the default on Windows' drive and the user never chose
+    /// it. Setup waits until they keep it or choose another drive; nothing is decided for them.
+    /// </summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(NeedsDriveChoice))] public partial string DriveChoiceText { get; private set; } = "";
+    public bool NeedsDriveChoice => DriveChoiceText.Length > 0;
     public IAsyncRelayCommand MoveDataCommand { get; }
     private DataMovePlan? _movePlan;
     private string? _moveTarget, _moveSource, _pendingMove;
@@ -423,6 +440,8 @@ public partial class MainViewModel : ObservableObject
         var state = await _service.GetInstallationAsync(DataRoot, token);
         InstallationText = state.Message;
         ModelReady = state.Status == "ready";
+        try { await UpdateDriveChoice(token); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { DriveChoiceText = ""; } // Drives unreadable: never block setup on the question.
         await UpdateModels(token);
         await UpdateSystemProfile(token);
         await UpdateVideo(token);
@@ -789,6 +808,9 @@ public partial class MainViewModel : ObservableObject
         await UpdateModels(token);
         ShowStorage(await _service.GetStorageAsync(DataRoot, token));
         await UpdateLocations(token);
+        Drives.Clear();
+        foreach (var drive in await _service.GetDrivesAsync(token)) Drives.Add(drive);
+        OnPropertyChanged(nameof(HasDrives));
     });
 
     /// <summary>Preferences and the startup log together stay below this (settings.json plus two rotated 1 MiB logs).</summary>
@@ -1072,20 +1094,54 @@ public partial class MainViewModel : ObservableObject
 
     private void SaveSettings()
     {
+        bool chosen = _dataRootChosen;
         try
         {
             if (!Path.IsPathFullyQualified(DataRootDraft)) throw new InvalidDataException("Choose an absolute data folder.");
+            _dataRootChosen = true; // Saving a folder is choosing where Media Workbench works.
             var value = CurrentSettings(Path.GetFullPath(DataRootDraft));
             _settings.Save(value);
             DataRoot = DataRootDraft = value.DataRoot;
+            DriveChoiceText = "";
             Notice = "Settings saved. Models, generation, and Library now use this data folder.";
             Record("Storage settings saved");
         }
-        catch (Exception ex) { Notice = $"Settings were not saved; still using {DataRoot}. {ex.Message}"; }
+        catch (Exception ex) { _dataRootChosen = chosen; Notice = $"Settings were not saved; still using {DataRoot}. {ex.Message}"; }
     }
 
     private AppSettings CurrentSettings(string? dataRoot = null) =>
-        new(1, dataRoot ?? DataRoot, SearchQuery, CheckForUpdates, KeepDownloadCaches, _pendingMove);
+        new(1, dataRoot ?? DataRoot, SearchQuery, CheckForUpdates, KeepDownloadCaches, _pendingMove, _dataRootChosen);
+
+    /// <summary>Puts a drive's suggested folder in the data folder box; saving or moving is still the user's choice.</summary>
+    private void UseDrive(DriveChoice? drive)
+    {
+        if (drive is null) return;
+        DataRootDraft = drive.Folder;
+        Notice = $"Select Save settings to start using {drive.Folder}, or Move my data there… to bring what you already have.";
+    }
+
+    /// <summary>Keeps the current data folder for setup, after the question in Create.</summary>
+    private void KeepDataDrive()
+    {
+        _dataRootChosen = true;
+        try { _settings.Save(CurrentSettings()); } catch (Exception ex) { Notice = "Could not save the choice: " + ex.Message; }
+        DriveChoiceText = "";
+        InstallCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Asks before setup only when the default folder on Windows' drive was never chosen and another drive has more room.</summary>
+    private async Task UpdateDriveChoice(CancellationToken token)
+    {
+        if (_dataRootChosen || ModelReady || !string.Equals(DataRoot, DefaultDataRoot, StringComparison.OrdinalIgnoreCase)) { DriveChoiceText = ""; return; }
+        var drives = await _service.GetDrivesAsync(token);
+        var current = drives.FirstOrDefault(drive => DataRoot.StartsWith(drive.Root, StringComparison.OrdinalIgnoreCase));
+        var roomier = drives.Where(drive => drive != current && drive.DriveKind != "network" && drive.FreeBytes > (current?.FreeBytes ?? 0))
+            .OrderByDescending(drive => drive.FreeBytes).FirstOrDefault();
+        DriveChoiceText = current is null || roomier is null ? ""
+            : $"Setup will download about 5 GB and needs about 20 GB in the data folder, which is on {current.Root} ({current.Detail}). " +
+              $"{roomier.Root} has {StorageSnapshot.Format(roomier.FreeBytes)} free. Choose where Media Workbench works in Settings, or keep {current.Root}.";
+        InstallCommand.NotifyCanExecuteChanged();
+    }
 
     partial void OnDataRootDraftChanged(string value) => ClearMovePlan();
 
@@ -1125,6 +1181,7 @@ public partial class MainViewModel : ObservableObject
             throw;
         }
         _pendingMove = null;
+        _dataRootChosen = true;
         _settings.Save(CurrentSettings(target));
         DataRoot = DataRootDraft = target;
         ClearMovePlan();

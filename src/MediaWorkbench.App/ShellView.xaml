@@ -198,6 +198,12 @@
                                     Visibility="{x:Bind ViewModel.HasSystemProfile, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                                 <TextBlock Text="Setup downloads about 5 GiB plus dependency files. Allow 20 GiB free for the runtime, model, and cache. NVIDIA GPU with 6 GB VRAM required. Downloads stay in the data folder shown in Settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <HyperlinkButton Content="Model card and CreativeML Open RAIL-M license" NavigateUri="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5" Padding="0" />
+                                <InfoBar Title="Where should Media Workbench work?" Severity="Informational" IsClosable="False"
+                                    IsOpen="{x:Bind ViewModel.NeedsDriveChoice, Mode=OneWay}" Message="{x:Bind ViewModel.DriveChoiceText, Mode=OneWay}">
+                                    <InfoBar.ActionButton>
+                                        <Button Content="Keep this drive" Command="{x:Bind ViewModel.KeepDataDriveCommand}" />
+                                    </InfoBar.ActionButton>
+                                </InfoBar>
                                 <StackPanel Orientation="Horizontal" Spacing="12">
                                     <Button Content="Install / verify" Command="{x:Bind ViewModel.InstallCommand}" Style="{ThemeResource AccentButtonStyle}" />
                                     <Button Content="Check model status" Command="{x:Bind ViewModel.RefreshInstallationCommand}" />
@@ -380,6 +386,21 @@
                                 <Button Content="Move now" Command="{x:Bind ViewModel.MoveDataCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             </InfoBar.ActionButton>
                         </InfoBar>
+                        <TextBlock Text="Drives on this computer" FontWeight="SemiBold" Visibility="{x:Bind ViewModel.HasDrives, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.Drives}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="core:DriveChoice">
+                                    <Grid Padding="16,10" Margin="0,0,0,6" CornerRadius="10" ColumnSpacing="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="Use this drive" Tag="{x:Bind}" Click="UseDrive" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <TextBlock Text="Where Media Workbench keeps things" Style="{ThemeResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
                         <TextBlock Text="{x:Bind ViewModel.LocationsText, Mode=OneWay}" TextWrapping="Wrap" />
                         <ItemsControl ItemsSource="{x:Bind ViewModel.Locations}">
