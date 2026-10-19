@@ -60,6 +60,7 @@ public partial class MainViewModel : ObservableObject
         UpscaleCommand = new AsyncRelayCommand(UpscaleAsync, () => !IsBusy && ModelReady && HasUpscaleSource);
         GoToCreateCommand = new RelayCommand(() => SelectedPage = "create");
         GoToModelsCommand = new RelayCommand(() => SelectedPage = "models");
+        UseSuggestedPictureSettingsCommand = new RelayCommand(UseSuggestedPictureSettings, () => !IsBusy && IsPictureMode);
         RefreshModelsCommand = new AsyncRelayCommand(RefreshModelsAsync, () => !IsBusy && !NeedsWorkingFolder);
         GetModelCommand = new AsyncRelayCommand<string?>(GetModelAsync, model => !IsBusy && !NeedsWorkingFolder &&
             (model == ModelChoice.BuiltInId ? !ModelReady && !BaselineSetupBlocked : model == ModelChoice.XlId && !(ModelReady && XlReady) && !XlSetupBlocked));
@@ -151,7 +152,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<ModelChoice> ModelChoices { get; } = [];
     /// <summary>Every added model with its tested state, for Settings.</summary>
     public ObservableCollection<ModelChoice> AddedModels { get; } = [];
-    /// <summary>Index into <see cref="ModelChoices"/>; the chooser is hidden while only the bundled model exists.</summary>
+    /// <summary>Index into the ready picture models shown in Create.</summary>
     [ObservableProperty] public partial int ModelIndex { get; set; }
     [ObservableProperty] public partial bool HasModelChoice { get; private set; }
     [ObservableProperty] public partial bool HasAddedModels { get; private set; }
@@ -175,8 +176,8 @@ public partial class MainViewModel : ObservableObject
     {
         if (NewSeedEachTime) Seed = Random.Shared.NextInt64(0, 1L + uint.MaxValue);
     }
-    [ObservableProperty] public partial double Steps { get; set; } = 20;
-    [ObservableProperty] public partial double GuidanceScale { get; set; } = 7.5;
+    [ObservableProperty] public partial double Steps { get; set; } = PictureDefaults.Small.Steps;
+    [ObservableProperty] public partial double GuidanceScale { get; set; } = PictureDefaults.Small.GuidanceScale;
     /// <summary>Index into <see cref="GenerationSettings.Sizes"/>.</summary>
     [ObservableProperty] public partial int SizeIndex { get; set; }
     /// <summary>How many pictures one Generate makes, with consecutive seeds; after the first, each reuses the loaded model.</summary>
@@ -205,8 +206,12 @@ public partial class MainViewModel : ObservableObject
         foreach (string label in labels) SizeLabels.Add(label);
         SizeIndex = Math.Clamp(index, 0, labels.Length - 1);
     }
-    partial void OnModelIndexChanged(int value) => ShowSizes();
-    partial void OnCreateKindIndexChanged(int value) => ShowSizes();
+    partial void OnModelIndexChanged(int value) => UpdatePictureSelection();
+    partial void OnCreateKindIndexChanged(int value)
+    {
+        UpdatePictureSelection();
+        UseSuggestedPictureSettingsCommand.NotifyCanExecuteChanged();
+    }
     /// <summary>Stable Diffusion XL's row from the model list; null until the list is read.</summary>
     [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GetModelCommand)), NotifyPropertyChangedFor(nameof(XlActionLabel), nameof(XlReady), nameof(NeedsXlSetup), nameof(XlText), nameof(XlSettingsText))]
     public partial ModelChoice? XlChoice { get; private set; }
@@ -271,7 +276,7 @@ public partial class MainViewModel : ObservableObject
     public partial bool VideoReady { get; set; }
     [ObservableProperty] public partial string VideoText { get; set; } = "Videos are not set up yet.";
     /// <summary>Settings' one-line summary of the video setup.</summary>
-    [ObservableProperty] public partial string VideoSettingsText { get; set; } = "Videos are not set up. Create sets them up when you choose A short video.";
+    [ObservableProperty] public partial string VideoSettingsText { get; set; } = "Videos are not set up. Models offers short clips under Advanced options.";
     public bool NeedsVideoSetup => IsVideoMode && ModelReady && !VideoReady;
     public bool CanMakeVideo => IsVideoMode && ModelReady && VideoReady;
     public bool CanMakePicture => IsPictureMode;
@@ -295,7 +300,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
     [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CheckMoveCommand), nameof(MoveDataCommand), nameof(RemoveOldCopyCommand), nameof(AddToQueueCommand), nameof(RunQueueCommand), nameof(RemoveQueuedCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
-    [NotifyCanExecuteChangedFor(nameof(GetModelCommand), nameof(RefreshModelsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GetModelCommand), nameof(RefreshModelsCommand), nameof(UseSuggestedPictureSettingsCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -587,18 +592,23 @@ public partial class MainViewModel : ObservableObject
     private void ShowModels(IReadOnlyList<ModelChoice> models, string? select = null)
     {
         string chosen = select ?? SelectedModelId;
-        AddedModels.Clear();
-        foreach (var model in models.Where(model => !model.BuiltIn && !model.IsXl)) AddedModels.Add(model);
-        HasAddedModels = AddedModels.Count > 0;
-        XlChoice = models.FirstOrDefault(model => model.IsXl);
-        RemoveXlCommand.NotifyCanExecuteChanged();
-        ModelChoices.Clear();
-        ModelChoices.Add(BuiltInChoice);
-        if (XlChoice is { IsReady: true } xl) ModelChoices.Add(xl);
-        foreach (var model in AddedModels.Where(model => model.IsReady)) ModelChoices.Add(model);
-        ModelIndex = Math.Max(0, ModelChoices.ToList().FindIndex(model => model.Id == chosen));
-        HasModelChoice = ModelChoices.Count > 1;
-        ShowSizes();  // The same index can now name a different model.
+        _updatingModels = true;
+        try
+        {
+            AddedModels.Clear();
+            foreach (var model in models.Where(model => !model.BuiltIn && !model.IsXl)) AddedModels.Add(model);
+            HasAddedModels = AddedModels.Count > 0;
+            XlChoice = models.FirstOrDefault(model => model.IsXl);
+            RemoveXlCommand.NotifyCanExecuteChanged();
+            ModelChoices.Clear();
+            ModelChoices.Add(BuiltInChoice);
+            if (XlChoice is { IsReady: true } xl) ModelChoices.Add(xl);
+            foreach (var model in AddedModels.Where(model => model.IsReady)) ModelChoices.Add(model);
+            ModelIndex = Math.Max(0, ModelChoices.ToList().FindIndex(model => model.Id == chosen));
+            HasModelChoice = ModelChoices.Count > 1;
+        }
+        finally { _updatingModels = false; }
+        UpdatePictureSelection(); // The same index can now name a different model or family.
     }
 
     /// <summary>Identifies a model file or folder the user chose, without copying it.</summary>
@@ -1004,6 +1014,7 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnDataRootChanged(string value)
     {
+        ResetPictureTuning();
         BaselineSetupText = XlSetupText = "Open Models to check this computer and the download size.";
         BaselineSetupBlocked = XlSetupBlocked = false;
         ClearHubPlan();
@@ -1164,13 +1175,13 @@ public partial class MainViewModel : ObservableObject
         }
         CreateKindIndex = settings.IsVideo ? 1 : 0;
         if (settings.IsVideo) VideoLengthIndex = Math.Max(0, Array.FindIndex(GenerationSettings.VideoLengths, length => length.Frames == settings.Frames));
+        _restoreNote = SelectModel(settings.Model); // Choose the family before restoring its exact tuning and shape.
         Prompt = settings.Prompt;
         NegativePrompt = settings.NegativePrompt ?? "";
         Seed = settings.Seed;
         Steps = Math.Clamp(settings.Steps, 1, 50);
         GuidanceScale = Math.Clamp(settings.GuidanceScale, 1, 20);
         SamplerIndex = Math.Max(0, Array.FindIndex(GenerationSettings.Samplers, sampler => sampler.Id == settings.Sampler));
-        _restoreNote = SelectModel(settings.Model);  // Before the shape: Stable Diffusion XL has its own sizes.
         SizeIndex = Math.Max(0, Array.FindIndex(ActiveSizes, size => size.Width == settings.Width && size.Height == settings.Height));
         if (IsPainting) StopPainting();
         SourceImagePath = settings.SourceImage is { } source && File.Exists(source) ? source : "";

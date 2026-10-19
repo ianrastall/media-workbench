@@ -1,5 +1,11 @@
 # Development direction after 0.3.0-alpha.11
 
+## Picture defaults and descriptions (0.3.0-alpha.16)
+
+Implemented: a plain description alongside the selected ready model, family-specific suggested picture tuning, session drafts that survive model/mode switches and status refreshes, exact Use settings/retry restoration, and a suggested-settings reset that preserves the user's creative inputs. Checks/build passed, and the resumed real-GPU test passed for both curated models using the published defaults. The earlier interrupted XL job remains recorded as interrupted. The harness prints progress/waiting, saves partial reports and stops its process tree if killed; lightweight process tests exercise that protection. The user resumed release work after the recovery-only session. CI release and checksum-verified installation are the remaining release steps. See [validation](validation.md#picture-defaults-and-descriptions-030-alpha16).
+
+Next bounded slice: model recommendations and honest timing information from saved evidence. A recommendation must consider the actual GPU/system memory and drive, prefer an already verified usable model, and explain a slow memory-saving choice plainly. Never invent a speed estimate or certify an untested inference profile. Styles remain a separate UI decision; do not silently alter a saved/retried prompt. Interactive acceptance still waits for the user's availability. Optional `<working folder>/App`, installer fixtures and the full containment write trace remain open; preserve the existing installed/taskbar paths.
+
 ## Simpler model setup (0.3.0-alpha.15)
 
 The user's renewed 19 October request prioritizes a simpler UI and background setup. The curated Models/Get coordinator is now implemented ahead of the optional installer layout: one Get for XL preflights all missing prerequisites, prepares the shared setup as needed and retains the existing verification gates. Create is clear of setup/import cards. Advanced options in Models contains imports, Hub search, repairs and short-clip setup; model removal still lives in Settings.

@@ -1,6 +1,14 @@
 # Current implementation status
 
-Version: **0.3.0-alpha.15**. Development started 17 October 2026.
+Version: **0.3.0-alpha.16**. Development started 17 October 2026.
+
+## Picture defaults and descriptions (0.3.0-alpha.16)
+
+Create always names the ready picture model and shows a plain description of its family, picture size and memory/speed tradeoff. New picture drafts use 20 steps and the model's own sampler, with prompt strength 7.5 for SD 1.5-family models and 5 for SDXL-family models. Existing family-specific shape choices remain. The protocol's `pndm` identifier still means the model's original scheduler; the UI now calls it Model default, avoiding an incorrect scheduler name for XL.
+
+Advanced tuning is remembered per picture family and separately for video during the session, including when models are added/removed or list indexes change. Switching mode/family caches the prior controls and restores the destination draft, or initializes it from suggestions. Rebuilding the model list defers selection handling until the list is complete. Use settings/retry choose the model family before restoring exact saved tuning. Use suggested picture settings resets only steps/guidance/sampler, keeping prompt, negative prompt, shape, seed/variation choice, picture count, input and painting. These drafts are not saved across app restarts, and changing the working folder clears them. Video's initial controls remain unchanged. No runtime/precision, safety or readiness gate changes.
+
+Headless checks passed: 39 Rust, 237 Python and 369 C# including MCP; the Release publish and headless payload checks passed with zero warnings/errors. After the user resumed release work, both curated models passed the published-defaults real-GPU check on a GTX 1660 Ti: SD 1.5 at 512 × 512 with guidance 7.5 (`fp32-offload`), and XL at 1024 × 1024 with guidance 5 (`xl-fp32-sequential`), both at 20 steps with model-default sampling. The earlier user-interrupted XL attempt remains recorded as interrupted; its recovery preserved generated media and installation records. The opt-in GPU check reports progress/waiting, checkpoints partial results, and owns inference descendants in a Windows kill-on-close job; lightweight tests cover normal shutdown and a killed test driver. CI release and installed checks are pending. See [evidence](validation.md#picture-defaults-and-descriptions-030-alpha16). Hardware recommendations, measured timing estimates, styles and interactive layout/keyboard/scaling acceptance remain follow-ups. The optional colocated installer and complete containment acceptance are still unfinished.
 
 ## Simpler model setup (0.3.0-alpha.15)
 

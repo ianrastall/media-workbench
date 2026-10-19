@@ -192,15 +192,16 @@
                             <TextBlock Text="Short clips need an extra setup. Find it in Models under Advanced options." TextWrapping="Wrap" />
                             <Button Content="Open Models" Command="{x:Bind ViewModel.GoToModelsCommand}" />
                         </StackPanel>
-                        <StackPanel Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                         <ComboBox Header="Model" ItemsSource="{x:Bind ViewModel.ModelChoices}" SelectedIndex="{x:Bind ViewModel.ModelIndex, Mode=TwoWay}" HorizontalAlignment="Stretch" MaxWidth="520"
-                            Visibility="{x:Bind ViewModel.HasModelChoice, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                            IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="core:ModelChoice">
                                     <TextBlock Text="{x:Bind Name}" />
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
+                        <TextBlock Text="{x:Bind ViewModel.SelectedPictureModelDescription, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                         <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                             <TextBlock Text="Start from a picture (optional)" />
@@ -257,6 +258,7 @@
                         <Expander Header="Advanced options" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                             <StackPanel Spacing="16">
                                 <TextBlock Text="The defaults work well. Change these only if you want to fine-tune a result." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <Button Content="Use suggested picture settings" Command="{x:Bind ViewModel.UseSuggestedPictureSettingsCommand}" Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                                 <StackPanel Orientation="Horizontal" Spacing="16">
                                     <StackPanel Spacing="4">
                                         <NumberBox Header="Seed" Value="{x:Bind ViewModel.Seed, Mode=TwoWay}" Minimum="0" Maximum="4294967295" Width="200" SpinButtonPlacementMode="Compact" />

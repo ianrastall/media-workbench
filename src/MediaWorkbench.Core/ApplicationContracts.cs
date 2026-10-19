@@ -75,7 +75,7 @@ public sealed record GenerationSettings(string Prompt, string NegativePrompt, lo
     public static readonly (int Width, int Height, string Label)[] Sizes = [(512, 512, "Square · 512 × 512 (fastest)"), (512, 768, "Portrait · 512 × 768 (slower)"), (768, 512, "Landscape · 768 × 512 (slower)")];
     /// <summary>Stable Diffusion XL's trained sizes for square, portrait, and landscape pictures.</summary>
     public static readonly (int Width, int Height, string Label)[] XlSizes = [(1024, 1024, "Square · 1024 × 1024"), (832, 1216, "Portrait · 832 × 1216"), (1216, 832, "Landscape · 1216 × 832")];
-    public static readonly (string Id, string Label)[] Samplers = [("pndm", "Balanced (model default, PNDM)"), ("dpmpp-2m", "Crisp detail (DPM++ 2M Karras)"), ("euler-a", "Softer and more varied (Euler ancestral)")];
+    public static readonly (string Id, string Label)[] Samplers = [("pndm", "Model default"), ("dpmpp-2m", "Crisp detail (DPM++ 2M Karras)"), ("euler-a", "Softer and more varied (Euler ancestral)")];
     public string Summary => (IsVideo ? $"Short video, {Frames / (double)Math.Max(1, Fps == 0 ? 8 : Fps):0.#} seconds ({Frames} frames) · "
             : SourceImage is null ? "" : IsPaintedChange
             ? $"Painted part of your picture changed {PaintChangeLevels.MinBy(level => Math.Abs(level.Strength - Strength)).Label.ToLowerInvariant()} · "
@@ -124,6 +124,9 @@ public sealed record ModelChoice(string Id, string Name, string Status, string M
     public bool IsXl => Id == XlId;
     /// <summary>Stable Diffusion XL or a model built on it: larger pictures with SDXL's shapes.</summary>
     public bool UsesXlSizes => IsXl || Architecture == "sdxl";
+    public string CreateDescription => UsesXlSizes
+        ? "Larger pictures at about 1024 pixels. Uses more memory and can take longer."
+        : "Smaller pictures at about 512 pixels. A lighter starting point for everyday ideas.";
     private string Family => UsesXlSizes ? "Stable Diffusion XL" : "Stable Diffusion 1.5";
     public bool IsReady => Status == "ready";
     public bool NeedsTest => !BuiltIn && !IsReady;

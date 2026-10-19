@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.16 — 2026-10-19
+
+- **Picture settings follow the model.** Create now explains the selected model in plain words, even when only one model is ready. New XL pictures start with a prompt strength of 5; the smaller model keeps 7.5. Both start with 20 steps and the model's own sampling method. Shapes still use each model family's supported sizes.
+- **Keep your adjustments.** Steps, prompt strength and sampling edits are remembered separately for smaller pictures, XL pictures and videos during the session. Switching families, switching modes or checking model status keeps those drafts. **Use settings** and retry restore saved controls exactly. **Use suggested picture settings** resets only that tuning, keeping your description, shape, seed, starting picture and painting.
+- The sampling option now says **Model default**, since the model itself chooses its default scheduler. Runtime/precision selection and file/runtime/GPU readiness checks are unchanged. No automatic model recommendation is added yet.
+
 ## 0.3.0-alpha.15 — 2026-10-19
 
 - **Choose a model, then make a picture.** The new Models page offers Stable Diffusion 1.5 for smaller pictures and Stable Diffusion XL for larger, more detailed ones, with plain descriptions, download/space costs, model licenses and one **Get** action. Create focuses on picture controls; model imports, Hugging Face search, setup repairs and optional short-clip setup are under Models → Advanced options.

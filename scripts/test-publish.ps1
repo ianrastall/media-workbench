@@ -16,6 +16,16 @@ foreach ($taskFile in $taskRequired) {
 foreach ($taskFile in @('MediaWorkbench.Cli.exe','MediaWorkbench.Cli.dll','MediaWorkbench.Cli.runtimeconfig.json','MediaWorkbench.Cli.deps.json')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published MCP host is incomplete: $taskFile" }
 }
+$taskPictureDefaults = & (Join-Path $ApplicationDirectory 'MediaWorkbench.Cli.exe') picture-defaults
+if ($LASTEXITCODE -ne 0) { throw 'Published picture defaults export failed.' }
+$taskPictureDefaults = $taskPictureDefaults | ConvertFrom-Json
+if ($taskPictureDefaults.Count -ne 2 -or $taskPictureDefaults[0].model -ne 'sd15-baseline' -or $taskPictureDefaults[1].model -ne 'sdxl-base' -or
+    $taskPictureDefaults[0].settings.guidanceScale -ne 7.5 -or $taskPictureDefaults[1].settings.guidanceScale -ne 5 -or
+    $taskPictureDefaults[0].settings.width -ne 512 -or $taskPictureDefaults[1].settings.width -ne 1024 -or
+    @($taskPictureDefaults | Where-Object { $_.settings.steps -ne 20 -or $_.settings.sampler -ne 'pndm' }).Count -ne 0) {
+    throw 'Published picture defaults do not match the supported picture families.'
+}
+Write-Output 'PASS: published CLI exports picture defaults without a data folder or worker'
 # Check actual PE headers: a filename or build configuration does not prove x64 payloads.
 foreach ($taskFile in @('MediaWorkbench.exe', 'MediaWorkbench.Cli.exe', 'media_workbench_core.dll', 'coreclr.dll', 'runtime/python/python.exe')) {
     $taskReader = [IO.BinaryReader]::new([IO.File]::OpenRead((Join-Path $ApplicationDirectory $taskFile)))

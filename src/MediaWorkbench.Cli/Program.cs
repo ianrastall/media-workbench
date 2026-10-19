@@ -2,6 +2,16 @@ using System.Text.Json;
 using MediaWorkbench.Core;
 using MediaWorkbench.Infrastructure;
 
+// Read-only export used by the opt-in GPU check, so it exercises the same defaults as Create.
+if (args is ["picture-defaults"])
+{
+    Console.WriteLine(JsonSerializer.Serialize(new[] {
+        new { model = ModelChoice.BuiltInId, settings = PictureDefaults.Small },
+        new { model = ModelChoice.XlId, settings = PictureDefaults.Large }
+    }, Wire.Json));
+    return 0;
+}
+
 if (args.FirstOrDefault() == "migrate-preferences")
 {
     try

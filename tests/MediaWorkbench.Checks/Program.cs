@@ -452,6 +452,7 @@ await WorkFolderChecks.RunAsync(Check, python, output, deadline.Token);
 await MoveChecks.RunAsync(Check, root, python, output, deadline.Token);
 await WorkingFolderChecks.RunAsync(Check, output);
 await ModelSetupChecks.RunAsync(Check, output);
+await PictureDefaultsChecks.RunAsync(Check, output);
 PreferencesChecks.Run(Check, output);
 await BatchChecks.RunAsync(Check, output, root, python);
 using (var keptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(90))) await KeptModelChecks.RunAsync(Check, python, output, keptDeadline.Token);
