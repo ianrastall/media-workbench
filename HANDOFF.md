@@ -10,6 +10,8 @@ The user authorized implementation, pull/commit/push directly to main and GitHub
 
 **Validation and reproduction:** see [alpha.12 validation](docs/validation.md#working-folder-startup-gate-030-alpha12). Use `./scripts/check.ps1`, `./scripts/build.ps1 -Configuration Release -Publish`, then the published UI smoke check when the user is available. The UI test uses isolated preferences and skips personal-folder maintenance and startup network checks. Generated reports and logs stay under ignored artifacts.
 
+**Release installed locally:** GitHub Actions published alpha.12 from `66a32f6`; its checksum-verified installer upgraded the existing local installation successfully. Installed-payload checks passed, saved preferences were unchanged, and the install/shortcut target stayed in place for the taskbar. See validation for the exact asset checksum and commands. The downloaded installer was removed after use. Repeat this release-installer step for every future software update, as the user requested.
+
 **Next complete slice:** [preferences and startup-log migration](docs/next-steps.md#working-folder-startup-gate-030-alpha12), then optional installation under the working folder and full containment acceptance. Preferences/logs and the app still retain their earlier locations. Do not call the whole single-folder milestone complete or release it as 0.4.0-alpha.1 yet. Afterwards implement the curated Models view and one Get action, chaining all setup in the background while preserving file/runtime/real-GPU readiness gates. No new video work or rename is part of the present scope.
 
 Historical notes below record earlier milestones and validation; the latest instructions above take precedence over their resume directions.
