@@ -111,7 +111,9 @@ public partial class App : Application
         {
             if (uiCheckIndex >= 0 && (uiCheckIndex + 1 >= arguments.Length || !Path.IsPathFullyQualified(arguments[uiCheckIndex + 1])))
                 throw new ArgumentException("--ui-self-test requires an absolute report path.");
-            _window = new MainWindow();
+            string? testStateRoot = uiCheckIndex >= 0 ? Path.Combine(Path.GetDirectoryName(arguments[uiCheckIndex + 1])!, "ui-settings-" + Guid.NewGuid().ToString("N")) : null;
+            var main = new MainWindow(testStateRoot);
+            _window = main;
             if (uiCheckIndex >= 0 && _window.Content is FrameworkElement root)
             {
                 root.Loaded += async (_, _) =>
@@ -119,7 +121,11 @@ public partial class App : Application
                     await Task.Delay(300);
                     string report = arguments[uiCheckIndex + 1];
                     Directory.CreateDirectory(Path.GetDirectoryName(report)!);
-                    await File.WriteAllTextAsync(report, "{\"success\":true,\"mainWindowLoaded\":true}");
+                    bool folderRequired = main.ViewModel.NeedsWorkingFolder && main.ViewModel.DataRoot.Length == 0
+                        && main.ViewModel.SelectedPage == "settings" && !main.ViewModel.InstallCommand.CanExecute(null)
+                        && !Directory.Exists(testStateRoot);
+                    await File.WriteAllTextAsync(report, System.Text.Json.JsonSerializer.Serialize(new
+                    { success = folderRequired, mainWindowLoaded = true, workingFolderRequired = folderRequired }));
                     Exit();
                 };
             }

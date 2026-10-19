@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.12 — 2026-10-18
+
+- **Choose a working folder before anything downloads.** First start opens Settings, suggests a folder on a non-Windows drive with the most free space when available, and offers **Browse…**. Nothing starts using it until you save. An unreadable settings file, an unchosen old default, or a missing saved folder stops work instead of silently using Local AppData. Your existing chosen folder is kept on upgrade.
+- **Check the folder before using it.** Saving checks that it can be written and does not pass through a link or junction. If the folder disappears after startup, setup, pictures, the queue, Library and update downloads stop before starting a worker. Preferences and the installation itself still use their existing locations; bringing them into the working folder is the next storage slice.
+- When a full or disconnected working drive interrupts a picture, the error now explains how to reconnect it or free space.
+
 ## 0.3.0-alpha.11 — 2026-10-18
 
 - **Cancelled pictures are listed as cancelled.** Stopping a picture partway could list it in Library as interrupted, as though the app had crashed, because Media Workbench stopped waiting before the graphics card was released. It now waits until the picture is properly stopped, and Library shows it as cancelled.

@@ -445,6 +445,7 @@ Check(await TryDownload($"{goodHash}  {installerName}", UpdateService.DownloadRe
 await HousekeepingChecks.RunAsync(Check, root, output, deadline.Token);
 await WorkFolderChecks.RunAsync(Check, python, output, deadline.Token);
 await MoveChecks.RunAsync(Check, root, python, output, deadline.Token);
+await WorkingFolderChecks.RunAsync(Check, output);
 await BatchChecks.RunAsync(Check, output, root, python);
 using (var keptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(90))) await KeptModelChecks.RunAsync(Check, python, output, keptDeadline.Token);
 

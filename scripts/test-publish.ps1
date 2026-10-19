@@ -50,6 +50,7 @@ foreach ($taskMode in $taskModes) {
         if ($taskMode -eq '--self-test' -and -not $taskResult.hardwareProfile) { throw 'Published hardware profile was not exercised.' }
         if ($taskMode -eq '--self-test' -and -not $taskResult.hubPlanning) { throw 'Published native Hub planning was not exercised.' }
         if ($taskMode -eq '--self-test' -and -not $taskResult.modelCompatibility) { throw 'Published native model compatibility was not exercised.' }
+        if ($taskMode -eq '--ui-self-test' -and -not $taskResult.workingFolderRequired) { throw 'First-start UI did not require a working folder.' }
         Write-Output "PASS: published application $taskMode"
     } finally { $taskProcess.Dispose() }
 }

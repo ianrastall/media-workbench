@@ -20,7 +20,13 @@ public sealed partial class ShellView : UserControl
         ViewModel.PropertyChanged += SyncNavigation;
         ViewModel.PropertyChanged += RedrawMask;
         ViewModel.PropertyChanged += ShowVideo;
-        _ready = true;
+        // NavigationView applies its initial selection while loading. Ignore those events until the saved
+        // page (Settings on first start) is selected, otherwise Home can overwrite the folder-choice page.
+        Loaded += (_, _) =>
+        {
+            SyncNavigation(this, new(nameof(MainViewModel.SelectedPage)));
+            _ready = true;
+        };
     }
     // Create plays the latest video on a loop; a new video replaces the one playing.
     private void ShowVideo(object? sender, PropertyChangedEventArgs args)
@@ -265,5 +271,16 @@ public sealed partial class ShellView : UserControl
             if (await picker.PickSingleFolderAsync() is { } folder) await ViewModel.ChooseModelToImportAsync(folder.Path);
         }
         catch (Exception ex) { ViewModel.Notice = "That model folder could not be chosen: " + ex.Message; }
+    }
+    private async void ChooseWorkingFolder(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker { SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.ComputerFolder };
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowHandle);
+            if (await picker.PickSingleFolderAsync() is { } folder) ViewModel.DataRootDraft = folder.Path;
+        }
+        catch (Exception ex) { ViewModel.Notice = "That working folder could not be chosen: " + ex.Message; }
     }
 }

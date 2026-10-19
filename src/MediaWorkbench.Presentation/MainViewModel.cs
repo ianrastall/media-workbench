@@ -36,9 +36,8 @@ public partial class MainViewModel : ObservableObject
         OpenDataFolderCommand = new RelayCommand(OpenDataFolder);
         CancelCommand = new RelayCommand(() => _operation?.Cancel(), () => IsBusy);
         OpenModelCommand = new RelayCommand(OpenModel, () => SelectedModel is not null);
-        InstallCommand = new AsyncRelayCommand(InstallAsync, () => !IsBusy && !NeedsDriveChoice);
+        InstallCommand = new AsyncRelayCommand(InstallAsync, () => !IsBusy && !NeedsWorkingFolder);
         UseDriveCommand = new RelayCommand<DriveChoice?>(UseDrive, drive => drive is not null && !IsBusy);
-        KeepDataDriveCommand = new RelayCommand(KeepDataDrive, () => !IsBusy);
         RemoveOldCopyCommand = new AsyncRelayCommand(RemoveOldCopyAsync, () => !IsBusy && HasOldCopy);
         ToggleDriveCommand = new RelayCommand<DriveChoice?>(ToggleDrive, drive => drive is not null && !IsBusy);
         RefreshInstallationCommand = new AsyncRelayCommand(RefreshInstallationAsync, () => !IsBusy);
@@ -79,7 +78,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var saved = settings.Load();
-            DataRoot = DataRootDraft = saved.DataRoot;
+            DataRootDraft = saved.DataRoot;
             SearchQuery = saved.LastSearch;
             CheckForUpdates = saved.CheckForUpdates;
             KeepDownloadCaches = saved.KeepDownloadCaches;
@@ -88,14 +87,23 @@ public partial class MainViewModel : ObservableObject
             _excludedDrives = [.. saved.ExcludedDrives ?? []];
             ShowOldCopy();
             // Earlier versions did not record the choice; a folder other than the default was chosen on purpose.
-            _dataRootChosen = saved.DataRootChosen || !string.Equals(saved.DataRoot, DefaultDataRoot, StringComparison.OrdinalIgnoreCase);
+            _dataRootChosen = saved.DataRootChosen || (saved.DataRoot.Length > 0 && !string.Equals(saved.DataRoot,
+                Path.Combine(settings.Folder, "Data"), StringComparison.OrdinalIgnoreCase));
+            if (!_dataRootChosen) DataRootDraft = "";
+            if (_dataRootChosen)
+            {
+                DataRoot = saved.DataRoot;
+                NeedsWorkingFolder = !Directory.Exists(DataRoot);
+                if (NeedsWorkingFolder) Notice = $"Your working folder is unavailable: {DataRoot}. Reconnect its drive or choose a folder in Settings. Nothing will be saved elsewhere.";
+            }
         }
-        catch (Exception ex) { Notice = $"Could not load settings: {ex.Message}"; }
+        catch (Exception ex) { Notice = $"Could not load settings: {ex.Message}. Choose your working folder in Settings before continuing. Nothing will be saved elsewhere."; }
         _loading = false;
         try { NativeStatus = $"Rust core · ABI {NativeCore.VerifyAbi()}"; }
         catch (Exception ex) { NativeStatus = "Native core unavailable"; Notice = ex.Message; }
         WorkerStatus = File.Exists(Path.Combine(AppContext.BaseDirectory, "runtime", "python", "python.exe"))
             ? "Python runtime bundled" : "Python runtime missing; run the build script";
+        if (NeedsWorkingFolder) SelectedPage = "settings";
     }
 
     [ObservableProperty]
@@ -105,7 +113,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial int TaskIndex { get; set; } = 1;
     public string TaskFilter => TaskIndex switch { 1 => "text-to-image", 2 => "image-to-image", 3 => "text-to-video", 4 => "image-to-video", _ => "" };
     /// <summary>The saved data folder every install, generation, and library operation uses. Changes only on load or save.</summary>
-    [ObservableProperty] public partial string DataRoot { get; private set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench", "Data");
+    [ObservableProperty] public partial string DataRoot { get; private set; } = "";
+    /// <summary>No worker or maintenance may run until a folder has been explicitly chosen and is available.</summary>
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(InstallCommand))]
+    public partial bool NeedsWorkingFolder { get; private set; } = true;
     /// <summary>The Settings text box; it has no effect until Save settings applies it.</summary>
     [ObservableProperty] public partial string DataRootDraft { get; set; } = "";
     [ObservableProperty] public partial string NativeStatus { get; set; } = "Checking native core…";
@@ -320,7 +331,6 @@ public partial class MainViewModel : ObservableObject
     public IRelayCommand SaveSettingsCommand { get; }
     public IAsyncRelayCommand CheckMoveCommand { get; }
     public IRelayCommand<DriveChoice?> UseDriveCommand { get; }
-    public IRelayCommand KeepDataDriveCommand { get; }
     public IAsyncRelayCommand RemoveOldCopyCommand { get; }
     public IRelayCommand<DriveChoice?> ToggleDriveCommand { get; }
     private List<string> _excludedDrives = [];
@@ -331,6 +341,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>The excluded drive holding <paramref name="folder"/>, or null. Drives are identified by their root, such as D:\.</summary>
     private string? ExcludedRoot(string folder)
     {
+        if (!Path.IsPathFullyQualified(folder)) return null;
         string? root = Path.GetPathRoot(Path.GetFullPath(folder));
         return root is not null && _excludedDrives.Contains(root, StringComparer.OrdinalIgnoreCase) ? root : null;
     }
@@ -350,7 +361,7 @@ public partial class MainViewModel : ObservableObject
         var previous = _excludedDrives.ToList();
         if (drive.Excluded) _excludedDrives.RemoveAll(root => string.Equals(root, drive.Root, StringComparison.OrdinalIgnoreCase));
         else _excludedDrives.Add(drive.Root);
-        try { _settings.Save(CurrentSettings()); }
+        try { if (!NeedsWorkingFolder && RequireWorkingFolder()) _settings.Save(CurrentSettings()); }
         catch (Exception ex) { _excludedDrives = previous; Notice = "Could not save the drive choice: " + ex.Message; return; }
         int index = Drives.IndexOf(drive);
         if (index >= 0) Drives[index] = drive with { Excluded = !drive.Excluded };
@@ -365,20 +376,13 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<DriveChoice> Drives { get; } = [];
     public bool HasDrives => Drives.Count > 0;
     private bool _dataRootChosen;
-    private string DefaultDataRoot => AppSettings.Default(_settings.Folder).DataRoot;
-    /// <summary>
-    /// Before setup's first large download: the data folder is still the default on Windows' drive and the user never chose
-    /// it. Setup waits until they keep it or choose another drive; nothing is decided for them.
-    /// </summary>
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(NeedsDriveChoice))] public partial string DriveChoiceText { get; private set; } = "";
-    public bool NeedsDriveChoice => DriveChoiceText.Length > 0;
     public IAsyncRelayCommand MoveDataCommand { get; }
     private DataMovePlan? _movePlan;
     private string? _moveTarget, _moveSource, _pendingMove;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasMovePlan))] public partial string MovePlanText { get; private set; } = "";
     public bool HasMovePlan => MovePlanText.Length > 0;
     /// <summary>A different folder is typed in Settings, so the current data can be moved there.</summary>
-    public bool IsDraftDifferent => DraftFolder() is { } draft && !string.Equals(draft, DataRoot, StringComparison.OrdinalIgnoreCase);
+    public bool IsDraftDifferent => !NeedsWorkingFolder && DraftFolder() is { } draft && !string.Equals(draft, DataRoot, StringComparison.OrdinalIgnoreCase);
     private string? DraftFolder() => Path.IsPathFullyQualified(DataRootDraft) ? Path.GetFullPath(DataRootDraft) : null;
     public IRelayCommand OpenDataFolderCommand { get; }
     public IRelayCommand CancelCommand { get; }
@@ -488,6 +492,7 @@ public partial class MainViewModel : ObservableObject
     private async Task RunAsync(string description, Func<CancellationToken, Task> action, bool longRunning = false, bool makingPictures = false)
     {
         if (IsBusy) return;
+        if (!RequireWorkingFolder()) return;
         using var cancellation = new CancellationTokenSource(longRunning ? TimeSpan.FromHours(4) : TimeSpan.FromSeconds(45));
         _operation = cancellation;
         _makingPictures = makingPictures;
@@ -520,8 +525,6 @@ public partial class MainViewModel : ObservableObject
         ModelReady = state.Status == "ready";
         try { ShowQueue(await _service.GetQueueAsync(DataRoot, token)); }
         catch (Exception ex) when (ex is not OperationCanceledException) { Record("The queue could not be read: " + ex.Message); }
-        try { await UpdateDriveChoice(token); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { DriveChoiceText = ""; } // Drives unreadable: never block setup on the question.
         await UpdateModels(token);
         await UpdateSystemProfile(token);
         await UpdateVideo(token);
@@ -820,6 +823,7 @@ public partial class MainViewModel : ObservableObject
     private async Task AddToQueueAsync()
     {
         if (_queueing) return;
+        if (!RequireWorkingFolder()) return;
         _queueing = true;
         AddToQueueCommand.NotifyCanExecuteChanged();
         try { await AddToQueueCore(CancellationToken.None); }
@@ -1013,7 +1017,7 @@ public partial class MainViewModel : ObservableObject
             $"The Stable Diffusion 1.5 installation and its caches use {StorageSnapshot.Format(storage.InstallationBytes)}." +
             (AddedModels.Count == 0 ? "" : $" You added {AddedModels.Count} {(AddedModels.Count == 1 ? "model" : "models")} of your own.");
     }
-    private Task RefreshStorageAsync() => RunAsync("Measuring the data folder…", async token =>
+    private Task RefreshStorageAsync() => NeedsWorkingFolder ? LoadDrivesAsync() : RunAsync("Measuring the data folder…", async token =>
     {
         await UpdateModels(token);
         ShowStorage(await _service.GetStorageAsync(DataRoot, token));
@@ -1226,6 +1230,8 @@ public partial class MainViewModel : ObservableObject
     }
     partial void OnSelectedPageChanged(string value)
     {
+        if (_loading) return;
+        if (NeedsWorkingFolder) { if (value == "settings") _ = LoadDrivesAsync(); return; }
         if ((value == "create" || value == "tools") && !IsBusy) RefreshInstallationCommand.Execute(null);
         if (value == "library" && !IsBusy) RefreshLibraryCommand.Execute(null);
         if (value == "settings" && !IsBusy) RefreshStorageCommand.Execute(null);
@@ -1315,14 +1321,14 @@ public partial class MainViewModel : ObservableObject
             _movedFrom = null; // An old copy relates only to the folder it was moved to.
             var value = CurrentSettings(Path.GetFullPath(DataRootDraft));
             _settings.Save(value);
+            NeedsWorkingFolder = false;
             DataRoot = DataRootDraft = value.DataRoot;
-            DriveChoiceText = "";
             ShowOldCopy();
             ShowExcludedDrive();
             Notice = "Settings saved. Models, generation, and Library now use this data folder.";
             Record("Storage settings saved");
         }
-        catch (Exception ex) { _dataRootChosen = chosen; Notice = $"Settings were not saved; still using {DataRoot}. {ex.Message}"; }
+        catch (Exception ex) { _dataRootChosen = chosen; Notice = $"Settings were not saved. {ex.Message}"; }
     }
 
     private AppSettings CurrentSettings(string? dataRoot = null) =>
@@ -1361,29 +1367,32 @@ public partial class MainViewModel : ObservableObject
         Notice = $"Select Save settings to start using {drive.Folder}, or Move my data there… to bring what you already have.";
     }
 
-    /// <summary>Keeps the current data folder for setup, after the question in Create.</summary>
-    private void KeepDataDrive()
+    /// <summary>Suggests a drive without creating a folder, starting Python or saving a preference.</summary>
+    private async Task LoadDrivesAsync()
     {
-        _dataRootChosen = true;
-        if (ExcludedRoot(DataRoot) is { } root) _excludedDrives.RemoveAll(item => string.Equals(item, root, StringComparison.OrdinalIgnoreCase));
-        ShowExcludedDrive();
-        try { _settings.Save(CurrentSettings()); } catch (Exception ex) { Notice = "Could not save the choice: " + ex.Message; }
-        DriveChoiceText = "";
-        InstallCommand.NotifyCanExecuteChanged();
+        try
+        {
+            var drives = await _service.GetDrivesAsync(CancellationToken.None);
+            Drives.Clear();
+            foreach (var drive in drives) Drives.Add(drive with { Excluded = ExcludedRoot(drive.Root) is not null });
+            OnPropertyChanged(nameof(HasDrives));
+            if (!NeedsWorkingFolder || DataRootDraft.Length > 0) return;
+            var suggested = Drives.Where(drive => !drive.Excluded && drive.DriveKind != "network")
+                .OrderBy(drive => drive.IsSystem).ThenByDescending(drive => drive.FreeBytes).FirstOrDefault();
+            if (suggested is not null) DataRootDraft = suggested.Folder;
+        }
+        catch (Exception ex) { Record("Could not list drives: " + ex.Message); }
     }
 
-    /// <summary>Asks before setup only when the default folder on Windows' drive was never chosen and another drive has more room.</summary>
-    private async Task UpdateDriveChoice(CancellationToken token)
+    private bool RequireWorkingFolder()
     {
-        if (_dataRootChosen || ModelReady || !string.Equals(DataRoot, DefaultDataRoot, StringComparison.OrdinalIgnoreCase)) { DriveChoiceText = ""; return; }
-        var drives = await _service.GetDrivesAsync(token);
-        var current = drives.FirstOrDefault(drive => DataRoot.StartsWith(drive.Root, StringComparison.OrdinalIgnoreCase));
-        var roomier = drives.Where(drive => drive != current && drive.DriveKind != "network" && ExcludedRoot(drive.Root) is null && drive.FreeBytes > (current?.FreeBytes ?? 0))
-            .OrderByDescending(drive => drive.FreeBytes).FirstOrDefault();
-        DriveChoiceText = current is null || roomier is null ? ""
-            : $"Setup will download about 5 GB and needs about 20 GB in the data folder, which is on {current.Root} ({current.Detail}). " +
-              $"{roomier.Root} has {StorageSnapshot.Format(roomier.FreeBytes)} free. Choose where Media Workbench works in Settings, or keep {current.Root}.";
-        InstallCommand.NotifyCanExecuteChanged();
+        if (!NeedsWorkingFolder && Directory.Exists(DataRoot)) return true;
+        NeedsWorkingFolder = true;
+        ModelReady = false;
+        Notice = DataRoot.Length == 0 ? "Choose your working folder in Settings before continuing. Nothing will be saved elsewhere."
+            : $"Your working folder is unavailable: {DataRoot}. Reconnect its drive or choose a folder in Settings. Nothing will be saved elsewhere.";
+        SelectedPage = "settings";
+        return false;
     }
 
     partial void OnDataRootDraftChanged(string value) => ClearMovePlan();
@@ -1441,14 +1450,16 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnCheckForUpdatesChanged(bool value)
     {
-        if (_loading) return;
+        if (_loading || NeedsWorkingFolder) return;
+        if (!RequireWorkingFolder()) return;
         try { _settings.Save(CurrentSettings() with { CheckForUpdates = value }); }
         catch (Exception ex) { Notice = $"Could not save the update preference: {ex.Message}"; }
     }
 
     partial void OnKeepDownloadCachesChanged(bool value)
     {
-        if (_loading) return;
+        if (_loading || NeedsWorkingFolder) return;
+        if (!RequireWorkingFolder()) return;
         try { _settings.Save(CurrentSettings() with { KeepDownloadCaches = value }); }
         catch (Exception ex) { Notice = $"Could not save the download cache preference: {ex.Message}"; }
     }
@@ -1456,6 +1467,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Free space and drive type of the saved data folder, for the warnings in Create and Settings. Never throws.</summary>
     public async Task RefreshDriveAsync()
     {
+        if (NeedsWorkingFolder) return;
         string root = DataRoot;
         try
         {
@@ -1475,6 +1487,8 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public async Task StartupMaintenanceAsync()
     {
+        if (NeedsWorkingFolder) { await LoadDrivesAsync(); return; }
+        if (!RequireWorkingFolder()) { await LoadDrivesAsync(); return; }
         if (_pendingMove is { } interrupted)
         {
             // A move stopped by a crash or power loss: the data folder was never switched; remove the half-made copy.

@@ -1,6 +1,12 @@
 # Current implementation status
 
-Version: **0.3.0-alpha.11**. Development started 17 October 2026.
+Version: **0.3.0-alpha.12**. Development started 17 October 2026.
+
+## Working-folder startup gate (0.3.0-alpha.12)
+
+First start now opens Settings with no active data folder. It suggests the non-system, non-network, non-excluded drive with most free space (or a system drive if that is all that is available), and offers Browse. Only Save settings activates the folder, after a write probe and a check for links/junctions in its existing parents. Missing/corrupt/unsupported/oversized preferences, an unchosen legacy default, and a missing saved folder cannot authorize setup, maintenance, model operations, generation, queue writes, Library or update downloads. Existing chosen folders remain selected on upgrade. A folder lost after startup is refused before starting another worker. Preference toggles before folder choice remain in memory until Save settings.
+
+Limits: this closes the silent-default failure path; the original alpha.11 incident's precise trigger was not reproduced. Preferences/startup logs remain in Local AppData, and the installer still uses its existing destination. All-files-in-one-folder acceptance and simplified model choice are still planned. See [validation](validation.md#working-folder-startup-gate-030-alpha12) and [next steps](next-steps.md#working-folder-startup-gate-030-alpha12). Historical sections below describe earlier releases.
 
 **Since 0.3.0-alpha.5:** pictures reuse a model kept loaded for two idle minutes (byte-identical, about 37% faster on a GTX 1660 Ti); since 0.3.0-alpha.6 image-to-image and painted changes are about four times faster on 6 GB cards; since 0.3.0-alpha.7: Create's **How many** makes 2 or 4 versions with consecutive seeds, and single-file SDXL fine-tunes can be added from files or Discover (see [inference](inference.md#models-you-added)); since 0.3.0-alpha.8 pictures can wait in a durable queue (see [inference](inference.md#waiting-pictures)); since 0.3.0-alpha.9 pictures can be added to the queue while others are made, and each Generate picks a new seed unless **A new variation each time** is off (see [inference](inference.md#seeds-and-variations)). See [inference](inference.md#keeping-the-picture-model-loaded).
 

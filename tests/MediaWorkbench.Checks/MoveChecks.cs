@@ -51,7 +51,7 @@ static class MoveChecks
         check(workbench.Abandoned.Contains((oldRoot, newRoot + "-crashed")) && store.Load() is { PendingMove: null, DataRoot: var stayed } && stayed == oldRoot
             && restarted.Notice.Contains("did not finish"), "An interrupted move's partial copy is removed at the next start and the data folder is unchanged");
 
-        // Before setup's first download, the default folder on a fuller drive is a question, never a silent choice.
+        // First start has no active folder, regardless of drive count, free space or runtime readiness.
         string here = Path.GetPathRoot(output)!;
         var fresh = new SettingsStore(Path.Combine(output, "drive-question"));
         var asking = new RecordingWorkbench { InstallationStatus = "not_installed" };
@@ -59,42 +59,47 @@ static class MoveChecks
         asking.DriveChoices.Add(new(here, "Windows", 30L << 30, 250L << 30, "ssd", true));
         asking.DriveChoices.Add(new(@"Z:\", "Big", 900L << 30, 2000L << 30, "hdd", false));
         var first = new MainViewModel(asking, fresh, new FakeUpdates(null));
+        await first.StartupMaintenanceAsync();
         await first.RefreshInstallationCommand.ExecuteAsync(null);
-        check(first.NeedsDriveChoice && first.DriveChoiceText.Contains(@"Z:\ has 900.00 GiB free") && !first.InstallCommand.CanExecute(null),
-            "Setup asks where to work first when the default folder is on a drive with less room than another");
+        check(first.NeedsWorkingFolder && first.SelectedPage == "settings" && first.DataRoot.Length == 0
+            && first.DataRootDraft == @"Z:\Media Workbench" && !first.InstallCommand.CanExecute(null)
+            && asking.DataRoots.Count == 0 && asking.ProfileRoots.Count == 0 && !Directory.Exists(fresh.Folder),
+            "First start suggests a non-system drive but starts no worker and creates no settings or data folder");
         first.UseDriveCommand.Execute(asking.DriveChoices[1]);
-        check(first.DataRootDraft == @"Z:\Media Workbench" && first.DataRoot == AppSettings.Default(fresh.Folder).DataRoot,
-            "Use this drive fills in a folder on that drive without saving or moving anything");
-        first.DataRootDraft = first.DataRoot;
-        first.KeepDataDriveCommand.Execute(null);
-        check(!first.NeedsDriveChoice && first.InstallCommand.CanExecute(null) && fresh.Load().DataRootChosen, "Keeping the drive is remembered and lets setup start");
+        check(first.DataRootDraft == @"Z:\Media Workbench" && first.DataRoot.Length == 0,
+            "Use this drive fills in a folder without making it active");
+        first.DataRootDraft = Path.Combine(output, "explicit-working-folder");
+        first.SaveSettingsCommand.Execute(null);
+        check(!first.NeedsWorkingFolder && first.InstallCommand.CanExecute(null) && fresh.Load().DataRootChosen,
+            "Explicitly saving a working folder is remembered and enables setup");
         var again = new MainViewModel(asking, fresh, new FakeUpdates(null));
         await again.RefreshInstallationCommand.ExecuteAsync(null);
-        check(!again.NeedsDriveChoice, "A kept choice is not asked again");
+        check(!again.NeedsWorkingFolder, "A chosen available working folder is reused on restart");
         var older = new SettingsStore(Path.Combine(output, "drive-older"));
         older.Save(new AppSettings(1, Path.Combine(output, "picked-earlier"), "query"));
         var olderVm = new MainViewModel(asking, older, new FakeUpdates(null));
-        await olderVm.RefreshInstallationCommand.ExecuteAsync(null);
-        check(!olderVm.NeedsDriveChoice, "A folder chosen in an earlier version counts as chosen");
-        // Drives the user excludes are never suggested, saved, or moved to.
-        var excluding = new MainViewModel(asking, new SettingsStore(Path.Combine(output, "drive-exclusions")), new FakeUpdates(null));
+        check(!olderVm.NeedsWorkingFolder, "An available nondefault folder chosen in an earlier version counts as chosen");
+        // Exclusions made before choosing a folder stay in memory until the explicit save.
+        var exclusionStore = new SettingsStore(Path.Combine(output, "drive-exclusions"));
+        var excluding = new MainViewModel(asking, exclusionStore, new FakeUpdates(null));
         await excluding.RefreshStorageCommand.ExecuteAsync(null);
         var big = excluding.Drives.Single(drive => drive.Root == @"Z:\");
         excluding.ToggleDriveCommand.Execute(big);
-        check(excluding.Drives.Single(drive => drive.Root == @"Z:\").Excluded, "A drive can be marked never to use");
-        await excluding.RefreshInstallationCommand.ExecuteAsync(null);
-        check(!excluding.NeedsDriveChoice, "An excluded drive is never suggested before setup");
+        check(excluding.Drives.Single(drive => drive.Root == @"Z:\").Excluded && !Directory.Exists(exclusionStore.Folder),
+            "A drive can be excluded before choosing a folder without writing preferences elsewhere");
         string before = excluding.DataRoot;
         excluding.DataRootDraft = @"Z:\Media Workbench";
         excluding.SaveSettingsCommand.Execute(null);
         check(excluding.DataRoot == before && excluding.Notice.Contains("never to use Z:"), "Saving a folder on an excluded drive is refused");
         await excluding.CheckMoveCommand.ExecuteAsync(null);
-        check(!excluding.HasMovePlan && !excluding.MoveDataCommand.CanExecute(null), "Moving to an excluded drive is refused before checking anything");
-        var exclusionsReloaded = new MainViewModel(asking, new SettingsStore(Path.Combine(output, "drive-exclusions")), new FakeUpdates(null));
+        check(!excluding.HasMovePlan && !excluding.MoveDataCommand.CanExecute(null), "Moving before choosing a working folder is refused");
+        excluding.DataRootDraft = Path.Combine(output, "exclusions-working-folder");
+        excluding.SaveSettingsCommand.Execute(null);
+        var exclusionsReloaded = new MainViewModel(asking, exclusionStore, new FakeUpdates(null));
         await exclusionsReloaded.RefreshStorageCommand.ExecuteAsync(null);
         exclusionsReloaded.ToggleDriveCommand.Execute(exclusionsReloaded.Drives.Single(drive => drive.Root == @"Z:\"));
-        check(!exclusionsReloaded.Drives.Single(drive => drive.Root == @"Z:\").Excluded && new SettingsStore(Path.Combine(output, "drive-exclusions")).Load().ExcludedDrives is null,
-            "Exclusions are remembered, and a drive can be allowed again");
+        check(!exclusionsReloaded.Drives.Single(drive => drive.Root == @"Z:\").Excluded && exclusionStore.Load().ExcludedDrives is null,
+            "Exclusions are remembered with the chosen folder, and a drive can be allowed again");
         var drives = await new WorkbenchService(root, python).GetDrivesAsync(token);
         check(drives.Any(drive => string.Equals(drive.Root, here, StringComparison.OrdinalIgnoreCase) && drive.FreeBytes > 0 && drive.TotalBytes >= drive.FreeBytes)
             && drives.Count(drive => drive.IsSystem) <= 1, "The real drive list includes the checks' drive with its free space");

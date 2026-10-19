@@ -11,7 +11,8 @@ namespace MediaWorkbench.Core;
 public sealed record AppSettings(int SchemaVersion, string DataRoot, string LastSearch, bool CheckForUpdates = true, bool KeepDownloadCaches = false,
     string? PendingMove = null, bool DataRootChosen = false, string? MovedFrom = null, string[]? ExcludedDrives = null)
 {
-    public static AppSettings Default(string stateRoot) => new(1, Path.Combine(stateRoot, "Data"), "stable-diffusion");
+    /// <summary>First start has no active folder; only an explicit saved choice authorizes work.</summary>
+    public static AppSettings Default() => new(1, "", "stable-diffusion");
 }
 public sealed record HubModel(string Id, long Downloads, long Likes, string Task, string Library, string Access,
     string License = "Not specified", string Hint = "Load details to check model support.")

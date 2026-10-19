@@ -10,7 +10,7 @@ public sealed class SettingsStore(string stateRoot) : ISettingsStore
     public AppSettings Load()
     {
         string file = Path.Combine(stateRoot, "settings.json");
-        if (!File.Exists(file)) return AppSettings.Default(stateRoot);
+        if (!File.Exists(file)) return AppSettings.Default();
         if (new FileInfo(file).Length > 65536) throw new InvalidDataException("Settings file is unexpectedly large.");
         var result = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(file), Wire.Json)
             ?? throw new InvalidDataException("Settings file is empty.");
@@ -21,7 +21,15 @@ public sealed class SettingsStore(string stateRoot) : ISettingsStore
     public void Save(AppSettings settings)
     {
         Validate(settings);
+        // Check existing parents before creating anything: a junction must not redirect the chosen folder.
+        for (var folder = new DirectoryInfo(settings.DataRoot); folder is not null; folder = folder.Parent)
+            if (folder.Exists && folder.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                throw new InvalidDataException($"Choose a working folder that does not pass through a link or junction ({folder.FullName}).");
         Directory.CreateDirectory(settings.DataRoot);
+        // Choosing a folder must establish that it can be written before enabling downloads or saving the choice.
+        using (var probe = new FileStream(Path.Combine(settings.DataRoot, $".write-check-{Guid.NewGuid():N}"),
+            FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose))
+            probe.WriteByte(0);
         Directory.CreateDirectory(stateRoot);
         string temporary = Path.Combine(stateRoot, $"settings-{Guid.NewGuid():N}.tmp");
         File.WriteAllText(temporary, JsonSerializer.Serialize(settings, new JsonSerializerOptions(Wire.Json) { WriteIndented = true }));

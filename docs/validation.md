@@ -1,5 +1,23 @@
 # Initial alpha validation
 
+## Working-folder startup gate (0.3.0-alpha.12)
+
+18 October 2026, Windows 11 x64. The final `./scripts/check.ps1` run passed: 39 Rust tests, formatting/Clippy, 229 Python tests, and 298 C# checks including MCP. `./scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/working-folder-build-dotnet` passed with zero warnings/errors, including the published x64 payload, native/worker self-test and MCP smoke checks.
+
+New C# checks exercise first start with one/multiple/no drives, non-system drive suggestions without creating preferences or starting workers, explicitly saving the folder, restart with old and new settings, excluded drives, broken/null/incomplete/oversized/unsupported settings without overwriting them, an unchosen legacy default, a missing chosen folder without recreation, explicit reconnection, and a folder disappearing after startup. Direct command invocation is covered as well as disabled buttons. Existing folder move, saved-root routing, update and worker-containment checks still pass.
+
+Reproduction (process-local `TEMP` and `TMP` were placed under ignored `artifacts/session-temp`):
+
+```powershell
+./scripts/check.ps1
+./scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/working-folder-build-dotnet
+./scripts/test-publish.ps1 -ApplicationDirectory artifacts/publish/win-x64 -ReportsDirectory artifacts/working-folder-ui-checks
+```
+
+The published UI smoke test passed. It briefly opens the app with isolated preferences and verifies first start selects Settings, leaves the active root empty, disables setup and creates no preferences folder. It skips personal-folder maintenance and the startup update check. Its first run caught NavigationView's initial Home selection overriding Settings; navigation events are now ignored until the initial page is synchronized on Loaded, and the repeated test passed. Logs are under ignored `artifacts/working-folder-*.log` and UI reports under `artifacts/working-folder-ui-checks/`.
+
+Limits: no new GPU inference or complete write trace in this slice; inference profiles and readiness stamps are unchanged. The original alpha.11 default-folder incident was not reproduced. Preferences/startup logs and the installation remain outside the working folder, so this is not the complete 0.4.0 containment milestone.
+
 ## Low-space and disconnected-drive checks (installed 0.3.0-alpha.11, 18 October 2026)
 
 Same machine. `./scripts/containment/trace.ps1 -DriveFailure`, with one UAC prompt from the user. The elevated controller created a 24 GB expandable virtual disk in the run folder on D:, attached it as T: (formatted before it got a letter, so Windows offered no format prompt), and the data folder was `T:\Media Workbench`. Process Monitor traced every phase. At the end the disk was detached and its file deleted; T: and the file were confirmed gone.

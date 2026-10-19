@@ -1,6 +1,18 @@
 # Media Workbench handoff
 
-Updated 18 October 2026 for **0.3.0-alpha.11**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 18 October 2026 for **0.3.0-alpha.12**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+
+## Resume after the working-folder startup gate
+
+The user authorized implementation, pull/commit/push directly to main and GitHub Actions releases, and asked that each update's published installer be run locally so the existing taskbar target stays current. Keep the install destination and AppUserModelID stable; do not move the user's installation merely to satisfy a future design.
+
+**Implemented in alpha.12:** first start has no active data folder, opens Settings and suggests a drive without creating anything. Browse fills the draft; Save settings checks writability and linked parents, then explicitly activates it. Missing/corrupt settings and unchosen legacy defaults cannot trigger setup or maintenance using a fallback. A missing chosen folder is retained for reconnection but cannot start workers; losing it after startup also stops the next operation. Existing valid chosen-folder settings remain compatible. The exact trigger of the alpha.11 incident is still unknown; this slice removes the silent-fallback class, not a claimed reproduction.
+
+**Validation and reproduction:** see [alpha.12 validation](docs/validation.md#working-folder-startup-gate-030-alpha12). Use `./scripts/check.ps1`, `./scripts/build.ps1 -Configuration Release -Publish`, then the published UI smoke check when the user is available. The UI test uses isolated preferences and skips personal-folder maintenance and startup network checks. Generated reports and logs stay under ignored artifacts.
+
+**Next complete slice:** [preferences and startup-log migration](docs/next-steps.md#working-folder-startup-gate-030-alpha12), then optional installation under the working folder and full containment acceptance. Preferences/logs and the app still retain their earlier locations. Do not call the whole single-folder milestone complete or release it as 0.4.0-alpha.1 yet. Afterwards implement the curated Models view and one Get action, chaining all setup in the background while preserving file/runtime/real-GPU readiness gates. No new video work or rename is part of the present scope.
+
+Historical notes below record earlier milestones and validation; the latest instructions above take precedence over their resume directions.
 
 ## Planning checkpoint after 0.3.0-alpha.11 (18 October 2026, evening)
 

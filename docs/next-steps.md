@@ -1,5 +1,13 @@
 # Development direction after 0.3.0-alpha.11
 
+## Working-folder startup gate (0.3.0-alpha.12)
+
+The first implementation slice removes the silent default: first start requires a saved working folder, load failures stop work, saved missing folders are retained for recovery without recreation, and the chosen folder is checked before a worker starts. Browse, drive suggestions and existing-folder upgrades are implemented. The old alpha.11 incident's exact cause remains unknown; do not claim it was reproduced.
+
+Next bounded slice: move preferences and startup diagnostics under the working folder, keeping only a small location pointer in Local AppData. Design crash-safe migration and recovery first: missing/invalid pointers, disconnected drives, old settings, a data-folder move and settings-save failure must preserve the last usable state and never authorize a fallback. Then support installation under `<working folder>/App` with upgrade/uninstall acceptance and the full containment trace. Only call the milestone 0.4.0-alpha.1 when its acceptance gates pass.
+
+After the folder foundation: a Models view with curated choices and one Get action that chains prerequisite runtime/model setup, download verification and real GPU verification. Keep technical details and file imports under Advanced. Existing verification gates remain mandatory. No new video work or rename is part of these slices. This resume point supersedes historical directions below.
+
 This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, optional Stable Diffusion XL pictures, short SD 1.5 videos with AnimateDiff, adding SD 1.5-family models and single-file SDXL fine-tunes the user already downloaded or picks in Discover, a kept-loaded picture model and several versions per Generate, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance with automatic clean-up and free-space checks, runtime settings chosen from the computer's hardware, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
 
 ## Direction after the 0.3.0-alpha.11 checkpoint (18 October 2026)

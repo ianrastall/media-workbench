@@ -198,12 +198,6 @@
                                     Visibility="{x:Bind ViewModel.HasSystemProfile, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
                                 <TextBlock Text="Setup downloads about 5 GiB plus dependency files. Allow 20 GiB free for the runtime, model, and cache. NVIDIA GPU with 6 GB VRAM required. Downloads stay in the data folder shown in Settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <HyperlinkButton Content="Model card and CreativeML Open RAIL-M license" NavigateUri="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5" Padding="0" />
-                                <InfoBar Title="Where should Media Workbench work?" Severity="Informational" IsClosable="False"
-                                    IsOpen="{x:Bind ViewModel.NeedsDriveChoice, Mode=OneWay}" Message="{x:Bind ViewModel.DriveChoiceText, Mode=OneWay}">
-                                    <InfoBar.ActionButton>
-                                        <Button Content="Keep this drive" Command="{x:Bind ViewModel.KeepDataDriveCommand}" />
-                                    </InfoBar.ActionButton>
-                                </InfoBar>
                                 <StackPanel Orientation="Horizontal" Spacing="12">
                                     <Button Content="Install / verify" Command="{x:Bind ViewModel.InstallCommand}" Style="{ThemeResource AccentButtonStyle}" />
                                     <Button Content="Check model status" Command="{x:Bind ViewModel.RefreshInstallationCommand}" />
@@ -401,9 +395,13 @@
                     </StackPanel>
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsSettings, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                        <TextBox IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Text="{x:Bind ViewModel.DataRootDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Data folder" PlaceholderText="Choose an absolute folder path" />
+                        <InfoBar Title="Choose your working folder before getting started" Severity="Informational" IsClosable="False"
+                            IsOpen="{x:Bind ViewModel.NeedsWorkingFolder, Mode=OneWay}"
+                            Message="Models, pictures, downloads and temporary work will stay here. Choose a drive with plenty of free space, then select Save settings. If your saved folder is unavailable, reconnect its drive or choose it again. Media Workbench will not use another folder automatically." />
+                        <TextBox IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Text="{x:Bind ViewModel.DataRootDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Working folder" PlaceholderText="Choose a folder" />
                         <TextBlock Text="Models, private inference environments, media, caches and temporary work use this folder, so choose a drive with plenty of room. A new path takes effect when you save settings; it does not move existing files." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Browse…" Click="ChooseWorkingFolder" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
                             <Button Content="Save settings" Command="{x:Bind ViewModel.SaveSettingsCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             <Button Content="Move my data there…" Command="{x:Bind ViewModel.CheckMoveCommand}" />
                             <Button Content="Open folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
