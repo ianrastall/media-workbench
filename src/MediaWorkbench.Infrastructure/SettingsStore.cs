@@ -14,6 +14,9 @@ public sealed class SettingsStore(string stateRoot) : ISettingsStore
     private readonly object _gate = new();
     private string? _workingRoot;
     private readonly StartupLog _startupLog = new();
+    private readonly Action<string> _deleteLegacy = File.Delete;
+    // Allows checks to reproduce a source reappearing during deletion without a timing-dependent watcher.
+    internal SettingsStore(string stateRoot, Action<string> deleteLegacy) : this(stateRoot) => _deleteLegacy = deleteLegacy;
     private sealed record FolderPointer(int SchemaVersion, string DataRoot, bool MigrateLegacy = false, string? LegacySettingsSha256 = null);
 
     public string Folder => _workingRoot is { } root ? Preferences(root) : stateRoot;
@@ -114,7 +117,8 @@ public sealed class SettingsStore(string stateRoot) : ISettingsStore
             settings = settings with { DataRootChosen = true };
             SaveCore(settings, new(1, settings.DataRoot,
                 (explicitChoice && previous is null) || previous is { MigrateLegacy: true }, legacyHash ?? previous?.LegacySettingsSha256), repair);
-            if (repair) MigrationNote = "The previous location file was kept for recovery in " + stateRoot + ".";
+            if (repair) MigrationNote = (MigrationNote.Length == 0 ? "" : MigrationNote + " ")
+                + "The previous location file was kept for recovery in " + stateRoot + ".";
             return settings;
         }
     }
@@ -155,9 +159,15 @@ public sealed class SettingsStore(string stateRoot) : ISettingsStore
 
     private void FinishLegacyMigration(FolderPointer pointer)
     {
-        if (!pointer.MigrateLegacy) return;
         try
         {
+            if (!pointer.MigrateLegacy)
+            {
+                // An older app or another writer may recreate a source after migration finished.
+                // Never authorize it, delete it, or silently ignore it on subsequent loads/saves.
+                RequireLegacyFilesAbsent();
+                return;
+            }
             string logs = Path.Combine(stateRoot, "Logs");
             foreach (string name in new[] { "startup.old.log", "startup.log" })
             {
@@ -176,7 +186,8 @@ public sealed class SettingsStore(string stateRoot) : ISettingsStore
                 var current = new FileInfo(source);
                 if (!current.Exists || current.Length != oldLength || current.LastWriteTimeUtc != oldWrite)
                     throw new IOException("A previous startup log changed during migration and was kept.");
-                File.Delete(source);
+                _deleteLegacy(source);
+                RequireAbsent(source);
             }
             if (pointer.LegacySettingsSha256 is { } expected)
             {
@@ -184,16 +195,35 @@ public sealed class SettingsStore(string stateRoot) : ISettingsStore
                 if (old is not null)
                 {
                     if (Hash(old) != expected) throw new IOException("Previous preferences changed during migration and were kept.");
-                    File.Delete(LegacySettings);
+                    _deleteLegacy(LegacySettings);
+                    RequireAbsent(LegacySettings);
                 }
             }
             else if (ReadOptional(LegacySettings, MaximumSettingsBytes) is not null)
                 throw new IOException("Previous preferences could not be verified and were kept for recovery.");
             if (Directory.Exists(logs) && !Directory.EnumerateFileSystemEntries(logs).Any()) Directory.Delete(logs);
+            RequireLegacyFilesAbsent();
             AtomicWrite(PointerFile, JsonBytes(pointer with { MigrateLegacy = false, LegacySettingsSha256 = null }, MaximumPointerBytes));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         { MigrationNote = "Preferences now use your working folder. Some previous preferences or startup logs were kept in " + stateRoot + ": " + ex.Message; }
+    }
+
+    private void RequireLegacyFilesAbsent()
+    {
+        RequireAbsent(LegacySettings);
+        RequireAbsent(Path.Combine(stateRoot, "Logs", "startup.log"));
+        RequireAbsent(Path.Combine(stateRoot, "Logs", "startup.old.log"));
+    }
+
+    private static void RequireAbsent(string file)
+    {
+        RefuseLinks(file);
+        // File.Exists hides access errors and directories; only a confirmed missing path counts as gone.
+        try { File.GetAttributes(file); }
+        catch (FileNotFoundException) { return; }
+        catch (DirectoryNotFoundException) { return; }
+        throw new IOException("An old preferences or startup log file is still present. It was kept for recovery. Close older copies of Media Workbench before checking it.");
     }
 
     /// <summary>Never writes a profile fallback log. With no usable choice, retain one bounded error in memory.</summary>

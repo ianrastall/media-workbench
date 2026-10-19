@@ -1,5 +1,9 @@
 # Next milestone: choose where Media Workbench works
 
+## Latest implementation: cleanup verification (0.3.0-alpha.14)
+
+Migration verifies that old preferences and known startup logs are absent after deletion and before clearing its cleanup marker. A returning source leaves cleanup pending; a later leftover after completed migration is preserved and explained on each load/save. Neither case changes which preferences are authoritative. Tests reproduce these conditions deterministically; the origin of the actual alpha.13 leftover remains unknown. Optional app installation in the working folder and complete installer/write-trace acceptance remain pending.
+
 ## Latest implementation: preferences and diagnostics (0.3.0-alpha.13)
 
 Preferences and startup diagnostics now stay in `<working folder>/preferences/`; Local AppData normally holds only the bounded `working-folder.json` location pointer. New preferences are verified before the pointer switches. Existing chosen folders migrate on first start; old preferences and logs are removed only after their copies are safe. Changed or locked originals remain with an explanation, and cleanup resumes from a durable marker. Replaced working preferences retain one recovery copy. Explicitly choosing an existing working folder restores its valid preferences; invalid pointers and unavailable destinations never authorize a fallback.

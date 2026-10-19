@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-alpha.14 — 2026-10-19
+
+- **Check that old preferences are really gone.** Migration now confirms that its old preferences and startup logs are absent before marking cleanup complete. If a file returns during cleanup, the recovery marker stays in place and Settings explains what was kept.
+- **Explain later leftovers.** Old preferences or startup logs appearing after migration are preserved with a warning on every load and save. They never replace the preferences in your working folder, including when the old file is unreadable.
+
 ## 0.3.0-alpha.13 — 2026-10-18
 
 - **Preferences and startup logs now stay in your working folder.** Existing preferences move automatically on the next start, after the saved folder is checked. Local AppData keeps a small location file pointing to it. A missing drive or damaged location file stops work instead of falling back to old settings.

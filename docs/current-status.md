@@ -1,6 +1,12 @@
 # Current implementation status
 
-Version: **0.3.0-alpha.13**. Development started 17 October 2026.
+Version: **0.3.0-alpha.14**. Development started 17 October 2026.
+
+## Legacy cleanup verification (0.3.0-alpha.14)
+
+Migration now checks absence after each legacy deletion and again before clearing the durable cleanup marker. A recreated file keeps the marker pending and is preserved if its contents differ on retry. Even after completed migration, every preferences load/save checks for legacy settings and the two known startup-log paths; later leftovers are preserved and explained in Settings without reading or authorizing old preferences. Location-file recovery retains cleanup warnings alongside its own recovery note.
+
+Deterministic checks simulate preferences and logs reappearing during deletion, including an earlier log returning while the last source is removed. Published-payload checks cover an unreadable legacy file appearing after completed migration. These reproduce the unsafe cleanup conditions, not the unexplained origin of the actual alpha.13 leftover. Optional installation under the working folder and the simpler Models view remain the next planned slices. See [validation](validation.md#legacy-cleanup-verification-030-alpha14).
 
 ## Preferences in the working folder (0.3.0-alpha.13)
 

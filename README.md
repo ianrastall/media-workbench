@@ -7,13 +7,12 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.3.0-alpha.13](https://github.com/ianrastall/media-workbench/releases/tag/v0.3.0-alpha.13)** · 2026-10-18 · Pre-release · Windows x64
+**[0.3.0-alpha.14](https://github.com/ianrastall/media-workbench/releases/tag/v0.3.0-alpha.14)** · 2026-10-19 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.13/MediaWorkbench-0.3.0-alpha.13-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.13/MediaWorkbench-0.3.0-alpha.13-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.13/MediaWorkbench-0.3.0-alpha.13-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.14/MediaWorkbench-0.3.0-alpha.14-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.14/MediaWorkbench-0.3.0-alpha.14-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.14/MediaWorkbench-0.3.0-alpha.14-README.md)
 
-- **Preferences and startup logs now stay in your working folder.** Existing preferences move automatically on the next start, after the saved folder is checked. Local AppData keeps a small location file pointing to it. A missing drive or damaged location file stops work instead of falling back to old settings.
-- **Recovery is built in.** New preferences are verified before the location switches. Replaced preferences keep one recovery copy, and interrupted migration resumes next start. Old preferences and startup logs are removed only after their copies are safe; anything changed or unreadable is kept with an explanation.
-- Settings shows where the location file lives and measures preferences and startup logs with the rest of your storage. Startup logs stay bounded inside the working folder; without a usable folder, an error stays in memory instead of being saved elsewhere. The application installation still keeps its existing destination.
+- **Check that old preferences are really gone.** Migration now confirms that its old preferences and startup logs are absent before marking cleanup complete. If a file returns during cleanup, the recovery marker stays in place and Settings explains what was kept.
+- **Explain later leftovers.** Old preferences or startup logs appearing after migration are preserved with a warning on every load and save. They never replace the preferences in your working folder, including when the old file is unreadable.
 <!-- release-summary:end -->
 
 **Next after that: a much simpler way to choose models.** One list of recommended models that says what each is for and whether it suits your computer, with a single button to get it; everything technical happens in the background. See [development direction](docs/next-steps.md#direction-after-the-030-alpha11-checkpoint-18-october-2026).
@@ -22,7 +21,7 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 
 ## Install
 
-**Choose a working folder first (0.3.0-alpha.12).** First start opens Settings with a drive suggestion and **Browse…**. Select **Save settings** to confirm it. Broken preferences or an unavailable saved folder stop work and ask you to choose or reconnect it; no folder on C: is silently substituted. An existing chosen folder is reused when available. Suggestions do not create folders or download anything. Since 0.3.0-alpha.13, preferences and startup logs live in its `preferences/` subfolder. Only the small working-folder location file and the existing installation remain outside it.
+**Choose a working folder first (0.3.0-alpha.12).** First start opens Settings with a drive suggestion and **Browse…**. Select **Save settings** to confirm it. Broken preferences or an unavailable saved folder stop work and ask you to choose or reconnect it; no folder on C: is silently substituted. An existing chosen folder is reused when available. Suggestions do not create folders or download anything. Since 0.3.0-alpha.13, preferences and startup logs live in its `preferences/` subfolder. Local AppData normally keeps only the small working-folder location file; the existing installation stays at its current destination. Migration verifies that its old files are gone before marking cleanup complete. Any old preferences or startup logs appearing later are kept for recovery and explained in Settings, while the working-folder preferences stay authoritative.
 
 Download the Windows x64 installer from [Releases](https://github.com/ianrastall/media-workbench/releases). The installer adds Media Workbench to your Start menu and installed applications. The app has a stable Windows application identity and can be pinned to the taskbar normally. It does not change your existing taskbar pins.
 

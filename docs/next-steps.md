@@ -1,10 +1,16 @@
 # Development direction after 0.3.0-alpha.11
 
+## Legacy cleanup verification (0.3.0-alpha.14)
+
+Implemented: verify old preferences/log paths are absent after deletion and before clearing the migration marker; preserve/retry the marker if files return; explain later leftovers on every load/save without authorizing or changing them. Deterministic replacement tests and the published CLI exercise these conditions. The real alpha.13 leftover's origin remains unexplained; no new writer trace or claim of full automatic containment is made.
+
+Next bounded slice: first-install choice of `<working folder>/App` and discovery without a profile pointer, preserving existing upgrade paths and taskbar targets. Resolve how changing/moving the data folder affects a colocated running app before shipping that arrangement. Cover new install, upgrade, unavailable drive and uninstall/data preservation with isolated installer fixtures, then the complete write trace before 0.4.0-alpha.1. Keep Windows bookkeeping and temporary installer extraction explicit in the acceptance scope. The curated Models Get coordinator follows this foundation, reusing prerequisite/download/GPU gates. The alpha.13 and older notes below are historical.
+
 ## Preferences in the working folder (0.3.0-alpha.13)
 
 The preference/startup-log migration is implemented, including an authoritative small location pointer, previous-settings recovery copy, commit-last pointer switches, retryable legacy cleanup, no fallback diagnostics, and restoring preferences when an existing working folder is chosen again. The original alpha.11 incident remains unreproduced; the silent-default class has been removed rather than claimed reproduced.
 
-**Before the next storage release:** investigate the additional stale legacy preferences observed after the real alpha.13 migration ([evidence](validation.md#preferences-in-the-working-folder-030-alpha13)). The pointer and working preferences stayed correct, and the extra file was safely archived/removed manually. Its different hash and older timestamp have not been explained. Trace/reproduce it and consider verifying deletion before clearing the migration marker; do not count the manual cleanup as automatic-path acceptance.
+**Finding addressed by alpha.14:** additional stale legacy preferences were observed after the real alpha.13 migration ([evidence](validation.md#preferences-in-the-working-folder-030-alpha13)). The pointer and working preferences stayed correct, and the extra file was safely archived/removed manually. Alpha.14 adds deletion verification and later-leftover detection; the different hash and older timestamp have not been explained. A writer trace is still needed to establish their origin; manual cleanup does not count as automatic-path acceptance.
 
 Next complete slice: offer first installation in `<working folder>/App` and preserve it across updates. Plan first-start discovery of the folder from that arrangement so a colocated installation can avoid a profile pointer. Keep existing installations at their current path unless the user deliberately moves them, preserving taskbar targets and application identity. Verify new install, upgrade, data move, unavailable drive and uninstall; the uninstaller must preserve preferences, models, pictures and records. Installer extraction and Windows bookkeeping need explicit acceptance decisions. Then run the complete containment trace before naming the milestone 0.4.0-alpha.1.
 

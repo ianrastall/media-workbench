@@ -136,6 +136,58 @@ static class PreferencesChecks
         }
         check(new SettingsStore(recoveryState).Load() == recovery && !File.Exists(recoverySource),
             "Restart finishes an interrupted legacy cleanup without falling back to the source");
+        // Reproduce the observed leftover's behavior without assuming its unexplained real-world cause.
+        string lateBody = "{unreadable older preferences";
+        File.WriteAllText(recoverySource, lateBody);
+        byte[] completedPointer = File.ReadAllBytes(Path.Combine(recoveryState, SettingsStore.PointerName));
+        var lateSource = new SettingsStore(recoveryState);
+        check(lateSource.Load() == recovery && lateSource.MigrationNote.Contains("kept")
+            && File.ReadAllText(recoverySource) == lateBody
+            && File.ReadAllBytes(Path.Combine(recoveryState, SettingsStore.PointerName)).AsSpan().SequenceEqual(completedPointer),
+            "Legacy settings appearing after completed migration are explained without reading them or changing the authoritative pointer");
+        lateSource.Save(recovery);
+        check(lateSource.MigrationNote.Contains("kept") && File.ReadAllText(recoverySource) == lateBody,
+            "Saving current preferences cannot silently clear the warning about a later legacy leftover");
+        File.Delete(recoverySource);
+        Directory.CreateDirectory(Path.Combine(recoveryState, "Logs"));
+        string lateLog = Path.Combine(recoveryState, "Logs", "startup.log");
+        File.WriteAllText(lateLog, "later log");
+        var lateDiagnostics = new SettingsStore(recoveryState);
+        check(lateDiagnostics.Load() == recovery && lateDiagnostics.MigrationNote.Contains("kept")
+            && File.ReadAllText(lateLog) == "later log", "A legacy startup log appearing after migration is preserved with an explanation");
+        File.Delete(lateLog);
+        var resolved = new SettingsStore(recoveryState);
+        check(resolved.Load() == recovery && resolved.MigrationNote.Length == 0,
+            "Removing a legacy leftover leaves current working preferences usable");
+
+        foreach (string returningName in new[] { "settings.json", Path.Combine("Logs", "startup.log"), Path.Combine("Logs", "startup.old.log") })
+        {
+            string raceState = Area("returning-" + Path.GetFileName(returningName));
+            string raceRoot = Area("returning-work-" + Path.GetFileName(returningName));
+            Directory.CreateDirectory(raceRoot);
+            var raceSettings = original with { DataRoot = raceRoot };
+            WriteLegacy(raceState, raceSettings);
+            string returning = Path.Combine(raceState, returningName);
+            Directory.CreateDirectory(Path.GetDirectoryName(returning)!);
+            if (returningName != "settings.json") File.WriteAllText(returning, "original log");
+            var racing = new SettingsStore(raceState, file =>
+            {
+                File.Delete(file);
+                // The old log returns after its own deletion, while the last settings source is deleted.
+                if (file == (returningName.EndsWith("startup.old.log", StringComparison.Ordinal)
+                    ? Path.Combine(raceState, "settings.json") : returning))
+                    File.WriteAllText(returning, "recreated during cleanup");
+            });
+            var raceLoaded = racing.Load();
+            using var racePointer = JsonDocument.Parse(File.ReadAllText(Path.Combine(raceState, SettingsStore.PointerName)));
+            check(raceLoaded == raceSettings && racing.MigrationNote.Contains("kept")
+                && File.ReadAllText(returning) == "recreated during cleanup"
+                && racePointer.RootElement.GetProperty("migrateLegacy").GetBoolean(),
+                "A legacy " + returningName + " reappearing during deletion keeps the durable cleanup marker and the current working folder");
+            var retry = new SettingsStore(raceState);
+            check(retry.Load() == raceSettings && retry.MigrationNote.Contains("kept") && File.Exists(returning),
+                "Restart preserves a recreated legacy source whose contents differ from its migration checkpoint");
+        }
         WriteLegacy(recoveryState, recovery with { LastSearch = "changed by the older app" });
         Pointer(recoveryState, new { schemaVersion = 1, dataRoot = recoveryRoot, migrateLegacy = true, legacySettingsSha256 = sourceHash });
         var changedSource = new SettingsStore(recoveryState);

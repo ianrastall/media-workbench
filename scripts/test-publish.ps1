@@ -93,6 +93,15 @@ try {
         -not (Test-Path -LiteralPath (Join-Path $taskWork 'preferences/settings.json')) -or
         -not (Test-Path -LiteralPath (Join-Path $taskProfile 'working-folder.json'))) { throw 'Published preference migration was incomplete.' }
     Write-Output 'PASS: published preferences respect the desktop mutex and migrate with only a location pointer in the profile'
+    $taskLateSource = Join-Path $taskProfile 'settings.json'
+    '{legacy file appeared later' | Set-Content -LiteralPath $taskLateSource
+    $taskLateHash = (Get-FileHash -LiteralPath $taskLateSource -Algorithm SHA256).Hash
+    $taskPreferenceResult = & (Join-Path $ApplicationDirectory 'MediaWorkbench.Cli.exe') migrate-preferences $taskProfile
+    if ($LASTEXITCODE -ne 0) { throw 'Published preferences failed after a legacy leftover appeared.' }
+    $taskPreferenceState = $taskPreferenceResult | ConvertFrom-Json
+    if ($taskPreferenceState.dataRoot -ne $taskWork -or $taskPreferenceState.note -notlike '*kept*' -or
+        (Get-FileHash -LiteralPath $taskLateSource -Algorithm SHA256).Hash -ne $taskLateHash) { throw 'A later legacy source was ignored, loaded or changed.' }
+    Write-Output 'PASS: published preferences explain and preserve later legacy leftovers without using them'
 } finally {
     $taskPreferencesFull = [IO.Path]::GetFullPath($taskPreferencesCheck)
     $taskReportsPrefix = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($taskReports)) + [IO.Path]::DirectorySeparatorChar

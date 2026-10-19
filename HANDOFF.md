@@ -1,6 +1,14 @@
 # Media Workbench handoff
 
-Updated 18 October 2026 for **0.3.0-alpha.13**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 19 October 2026 for **0.3.0-alpha.14**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+
+## Resume after legacy cleanup verification
+
+Alpha.14 checks that legacy settings/log paths are absent after deleting them and before clearing the migration marker. Returning sources keep cleanup pending. Legacy settings/logs appearing after completed migration are kept and explained on every load/save without being loaded or replacing current preferences. Pointer repair preserves that warning. Deterministic C# checks inject returning sources during deletion; the published CLI also checks an unreadable later leftover. The actual alpha.13 leftover's origin is still unknown; this is cleanup hardening, not a claimed reproduction of its writer.
+
+Validation/release evidence is recorded in [alpha.14 validation](docs/validation.md#legacy-cleanup-verification-030-alpha14). Current commands: `scripts/check.ps1` and `scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/legacy-cleanup-build-dotnet`. No UI or GPU change requires an interactive check for this slice. Keep receipts and logs under ignored artifacts.
+
+Next: [optional colocated installation](docs/next-steps.md#legacy-cleanup-verification-030-alpha14), preserving existing install/taskbar paths. Resolve first-start discovery, data-folder changes/moves, unavailable-drive behavior and uninstall/data preservation before shipping it. Full installer/write-trace acceptance is still required before 0.4.0-alpha.1; the simpler Models Get flow follows. Continue direct-to-main commits, CI releases and running each published installer locally. Historical notes below retain earlier evidence.
 
 ## Resume after preferences moved into the working folder
 

@@ -1,5 +1,18 @@
 # Initial alpha validation
 
+## Legacy cleanup verification (0.3.0-alpha.14)
+
+19 October 2026, Windows 11 x64. `scripts/check.ps1` passed: 39 Rust tests plus formatting/Clippy, 229 Python tests and 341 C# checks including MCP. The Release publish build passed with zero warnings/errors; published x64 payload, bundled self-test, migration/mutex, later-leftover and MCP checks passed. Logs are under ignored `artifacts/legacy-cleanup-check.log` and `artifacts/legacy-cleanup-build.log`. Reproduction uses process-local `TEMP`/`TMP` under ignored `artifacts/session-temp`:
+
+```powershell
+./scripts/check.ps1
+./scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/legacy-cleanup-build-dotnet
+```
+
+New checks cover unreadable preferences and startup logs appearing after completed migration, warning persistence across saves, warning removal when the leftover is gone, preferences/logs returning during deletion, and an earlier log reappearing while the final settings source is deleted. Pending cleanup and the authoritative working folder must survive restart; changed returned sources must be preserved. The published CLI additionally checks the later-unreadable-file case. The real alpha.13 leftover's writer has not been identified; no new write trace, GPU inference, UI control or complete containment acceptance is claimed by these checks.
+
+The published CLI also loaded the actual profile through its existing location pointer. The selected working root, pointer bytes and working-preference bytes were unchanged, with no cleanup warning; the profile contained only its small pointer. This is headless real-profile evidence, separate from the isolated migration fixtures. Release/installation is pending CI publication.
+
 ## Preferences in the working folder (0.3.0-alpha.13)
 
 18 October 2026, Windows 11 x64. Final `scripts/check.ps1` passed: 39 Rust tests, formatting/Clippy, 229 Python tests, and 331 C# checks including MCP. The Release publish build passed with zero warnings/errors. Published x64, native/worker, preference-migration and MCP checks passed, as did the UI test confirming first start still requires a folder. The published CLI refused migration while the desktop mutex was held, then migrated successfully after it was released. Logs are under ignored `artifacts/preferences-*`.
