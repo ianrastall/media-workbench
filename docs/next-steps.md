@@ -1,6 +1,29 @@
-# Development direction after 0.3.0-alpha.9
+# Development direction after 0.3.0-alpha.11
 
 This is a plan, not a list of supported features. The implemented path is SD 1.5 text/image-to-image and painted partial changes, optional Stable Diffusion XL pictures, short SD 1.5 videos with AnimateDiff, adding SD 1.5-family models and single-file SDXL fine-tunes the user already downloaded or picks in Discover, a kept-loaded picture model and several versions per Generate, Real-ESRGAN upscaling, durable job evidence, indexed Library browsing and PNG export, storage maintenance with automatic clean-up and free-space checks, runtime settings chosen from the computer's hardware, and checksum-verified app updates. Those operations share one saved data folder and preserve model/runtime verification gates.
+
+## Direction after the 0.3.0-alpha.11 checkpoint (18 October 2026)
+
+**What the user found using the app as a beginner.** After setting up Stable Diffusion 1.5 and XL from the installed alpha.11, the user made a complete picture (not a good one) and found the app too complex to follow. The clearest example: the "Add a model you already downloaded" card ("one .safetensors file, or a Diffusers model folder…") appeared during setup, and its purpose was not clear. The user's conclusion: the app must become much simpler before more features. They also asked whether video belongs in the app, and whether it should be renamed *Image Workbench*.
+
+**Assessment.** The architecture is sound, and the drive-containment traces and drive-failure checks exercised it end to end. What needs work is the presentation, the defaults, and one data-folder defect found on the same day (below). Video is not untestable here: setup and a 16-frame clip passed in three traced runs on the 6 GB card. Its limits are quality and time (about 3 minutes for a 2-second 512-pixel clip), not verification.
+
+**Agreed priority: simple model choice (planned, not implemented).**
+
+- One **Models** view: a table of a few curated models, each with its name, what it is good for (in plain words), picture size, download size, an estimate of how long a picture takes on this computer (from measured timings), and a single action: **Get**, **Ready**, or why this computer cannot run it.
+- Getting a model does everything else in the background: the private runtime on first use, the download, the checks and the GPU test.
+- Create shows only a **Model** dropdown of ready models, each with its one-line description.
+- Adding your own files or folders, Hugging Face search (Discover) and model removal move under **Advanced** in that view, in plain words.
+- Better defaults, so a first picture is good: a recommended model chosen from this computer's hardware (an SDXL-family model where it runs acceptably, SD 1.5 otherwise), per-model step and size defaults, and a few plain style choices instead of raw sampler settings.
+
+**Open decisions for the user (recommendations, not decided):**
+
+1. **Video:** keep the existing, verified short-video feature but **freeze** it. No new video work until pictures are simple and good, and present it as one optional item ("Short clips, experimental") in the Models view rather than on the main path. Removing it would cut maintenance but discard working, verified code that is already isolated (`video.py`, `mw_encode_video`).
+2. **Name:** keep **Media Workbench** for now. A rename touches the repository, the installer's identity (which upgrades depend on), the data and preferences folder names, the MCP server name and every document, and pictures plus upscaling plus optional clips still fit "media". If the focus becomes images only, change the display name later as its own small release.
+
+**Defect found the same day (blocks 0.4.0-alpha.1):** the installed alpha.11 set up SD 1.5 and SDXL in the *default* data folder, `%LOCALAPPDATA%\MediaWorkbench\Data` on C: (13.2 GiB, leaving C: with 9.6 GB free). Yet `settings.json` named an existing D: folder with both models already verified. `SettingsStore.Load` reads that file correctly (checked with the built assembly), so the cause is not yet known. The default folder was created at 05:34 local time, after the settings file was last written (04:15). That folder had last been set during development and was never chosen in the app's Settings, so a development-only cause has not been ruled out. First step: open Settings, see which data folder the app shows, and reproduce from a fresh launch. The drive-containment traces did not catch this because they always passed an explicit data folder.
+
+**Order from here:** (1) find and fix the data-folder defect; (2) finish 0.4.0-alpha.1 (the interactive session, then release); (3) the simple-model-choice milestone (0.5.0); (4) quality defaults; and only then video, models of other families or other tools.
 
 ## Purpose and next feature priority
 
@@ -32,7 +55,7 @@ Alpha.15 centralizes tensor-layout compatibility in Rust for Discover and local 
 
 The alpha.14 Discover download slice is implemented, and the alpha.13 handoff is completed: hardware-aware inference is checked, drive detection is shared through Rust, and NuGet versions/locks, x64 enforcement, and native loading have been tightened. See [stack alignment](stack-alignment.md) and [handoff](../HANDOFF.md). The reference is an acceptance target; the older architecture proposals remain historical.
 
-In order, as of 18 October 2026 (after 0.3.0-alpha.9, a deliberate plateau; see [handoff](../HANDOFF.md#plateau-at-030-alpha9-18-october-2026) for what this computer can and cannot verify). Items 0, 2, 3, 5 and 6 and most of item 4 can be fully verified on the development computer; item 1 needs other GPUs:
+The [direction section above](#direction-after-the-030-alpha11-checkpoint-18-october-2026) sets the order from here; the list below is the earlier backlog. In order, as of 18 October 2026 (after 0.3.0-alpha.9, a deliberate plateau; see [handoff](../HANDOFF.md#plateau-at-030-alpha9-18-october-2026) for what this computer can and cannot verify). Items 0, 2, 3, 5 and 6 and most of item 4 can be fully verified on the development computer; item 1 needs other GPUs:
 
 0. **Finish the drive-containment milestone's acceptance (needs the user).** The code side is in place: temporary work, caches, hand-overs and update downloads in the data folder with no fallback (0.3.0-alpha.2), locations and drives in Settings, the drive question before setup, never-use drives, **Move my data there…** and removing the old copy (alpha.3–alpha.4). What remains for 0.4.0-alpha.1 is in [storage locations](storage-locations.md#acceptance-decisions-and-tooling-18-october-2026): the trace tooling (`scripts/containment/trace.ps1`) is written and dry-run; next come a short and then a full Process Monitor trace on this two-volume machine, fixes for anything found, low-space and disconnected-drive checks, and an interactive session with the user. The all-app-owned-files arrangement and clean-machine installs are deferred by the user's decision.
 

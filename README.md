@@ -14,6 +14,8 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 - **Cancelled pictures are listed as cancelled.** Stopping a picture partway could list it in Library as interrupted, as though the app had crashed, because Media Workbench stopped waiting before the graphics card was released. It now waits until the picture is properly stopped, and Library shows it as cancelled.
 <!-- release-summary:end -->
 
+**Next after that: a much simpler way to choose models.** One list of recommended models that says what each is for and whether it suits your computer, with a single button to get it; everything technical happens in the background. See [development direction](docs/next-steps.md#direction-after-the-030-alpha11-checkpoint-18-october-2026).
+
 **In progress: [control over where Media Workbench works](docs/storage-locations.md)** (milestone 0.4.0-alpha.1): keep large files, caches and temporary work on the chosen drive, with no silent fallback to another drive. Since 0.3.0-alpha.2, temporary work, painted-area hand-overs, update downloads and the GPU kernel cache go into the data folder's `temp/` and `cache/` folders, a missing data-folder drive stops work instead of falling back to Windows temp, Settings shows where everything is kept and lists your drives (with **Never use this drive** for ones you want left alone), setup asks which drive to use before its first download, and **Move my data there…** copies the data folder to another drive with every file checked, then offers to remove the old copy. Preferences, the startup log and the installation itself still use Local AppData, and the old folder is kept after a move until you remove it.
 
 ## Install

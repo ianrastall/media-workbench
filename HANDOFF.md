@@ -2,6 +2,17 @@
 
 Updated 18 October 2026 for **0.3.0-alpha.11**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
 
+## Planning checkpoint after 0.3.0-alpha.11 (18 October 2026, evening)
+
+Read [direction after the alpha.11 checkpoint](docs/next-steps.md#direction-after-the-030-alpha11-checkpoint-18-october-2026) first. Using the installed app as a beginner, the user found it too complex. The agreed next big priority is **simple model choice** (one Models view with curated models and a single Get/Ready action, everything technical in the background or under Advanced, and better first-picture defaults). Video and renaming are open decisions, with recommendations recorded there (freeze video and present it as optional; keep the name).
+
+**Resume here, in order:**
+
+1. **Data-folder defect (blocks 0.4.0-alpha.1).** The installed app set up SD 1.5 and SDXL in `%LOCALAPPDATA%\MediaWorkbench\Data` on C: (13.2 GiB; C: is down to 9.6 GB free), although `settings.json` names an existing D: folder. Ask the user what Settings shows as the data folder, then reproduce. Do not delete either folder; the C: one holds the user's own pictures from 18 October. Settings → **Move my data there…** can move it to D: once the cause is understood.
+2. **The interactive session** for 0.4.0-alpha.1 has not been done. Computer-use tools were not available in the session that tried (the user turned the setting on, but the tools reached the conversation only afterwards), so a new session should load them with ToolSearch (`computer-use`) and ask for access to Media Workbench.
+3. Release 0.4.0-alpha.1, which also ships the plain drive-error message (unreleased in `main`).
+4. Plan and build the simple-model-choice milestone.
+
 ## Plateau at 0.3.0-alpha.9 (18 October 2026)
 
 This is a deliberate resting point before further careful development. The user considered freezing the project because the development computer (GTX 1660 Ti, 6 GB) cannot test every hardware path, and decided to continue: most remaining work can be fully verified here, and per-install GPU verification already protects machines that cannot be tested here.

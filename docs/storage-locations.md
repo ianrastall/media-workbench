@@ -94,7 +94,7 @@ The user decided the scope of 0.4.0-alpha.1's acceptance:
 
 The driver writes filler files outside the data folder with `SetEndOfFile`, which allocates without writing. The controller detaches and deletes the disk when it exits.
 
-Still to do for the milestone, in order: the interactive session with the user (GUI painted change, Cancel, crash recovery, an older alpha → 0.3.0-alpha.11 Update now and relaunch, never-use drive); then validation notes and the release.
+Still to do for the milestone, in order: find and fix the data-folder defect recorded in [next steps](next-steps.md#direction-after-the-030-alpha11-checkpoint-18-october-2026) (the installed app used the default folder on C: although `settings.json` named a D: folder); the interactive session with the user (GUI painted change, Cancel, crash recovery, an older alpha → 0.3.0-alpha.11 Update now and relaunch, never-use drive); then validation notes and the release.
 
 ## Resume here
 
