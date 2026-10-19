@@ -8,6 +8,8 @@ Alpha.14 checks that legacy settings/log paths are absent after deleting them an
 
 Validation/release evidence is recorded in [alpha.14 validation](docs/validation.md#legacy-cleanup-verification-030-alpha14). Current commands: `scripts/check.ps1` and `scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/legacy-cleanup-build-dotnet`. No UI or GPU change requires an interactive check for this slice. Keep receipts and logs under ignored artifacts.
 
+**Released/installed:** all checks passed (39 Rust, 229 Python, 341 C# including MCP), as did the zero-warning Release publish build. GitHub Actions published alpha.14 from `825f73d`; the checksum-verified CI installer upgraded the existing local installation, exit 0. Installed headless checks passed, pointer/preferences were byte-for-byte unchanged, and the Start-menu target stayed at the original executable path. The profile still has only its 135-byte pointer. The downloaded installer was removed. No new UI/GPU run or complete containment acceptance is claimed.
+
 Next: [optional colocated installation](docs/next-steps.md#legacy-cleanup-verification-030-alpha14), preserving existing install/taskbar paths. Resolve first-start discovery, data-folder changes/moves, unavailable-drive behavior and uninstall/data preservation before shipping it. Full installer/write-trace acceptance is still required before 0.4.0-alpha.1; the simpler Models Get flow follows. Continue direct-to-main commits, CI releases and running each published installer locally. Historical notes below retain earlier evidence.
 
 ## Resume after preferences moved into the working folder

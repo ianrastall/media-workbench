@@ -8,6 +8,8 @@ Migration now checks absence after each legacy deletion and again before clearin
 
 Deterministic checks simulate preferences and logs reappearing during deletion, including an earlier log returning while the last source is removed. Published-payload checks cover an unreadable legacy file appearing after completed migration. These reproduce the unsafe cleanup conditions, not the unexplained origin of the actual alpha.13 leftover. Optional installation under the working folder and the simpler Models view remain the next planned slices. See [validation](validation.md#legacy-cleanup-verification-030-alpha14).
 
+Alpha.14 is released through passing GitHub Actions and installed locally from its checksum-verified release installer. Installed checks passed; the existing install/shortcut path and real working-folder preference hashes were preserved. Full headless checks passed (39 Rust, 229 Python, 341 C# including MCP), and the Release publish build had zero warnings/errors. No new UI or GPU check was needed for this cleanup-only slice.
+
 ## Preferences in the working folder (0.3.0-alpha.13)
 
 Preferences now live at `<working folder>/preferences/settings.json`, with one `settings.previous.json` recovery copy. Startup diagnostics use `preferences/Logs/`: two current logs and up to two migrated legacy logs, each bounded to 1 MiB. Without a usable choice, startup logging retains only the newest bounded error in memory and creates no fallback log. Settings measures this area without offering to clear preferences.
