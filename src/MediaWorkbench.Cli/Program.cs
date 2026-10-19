@@ -2,6 +2,30 @@ using System.Text.Json;
 using MediaWorkbench.Core;
 using MediaWorkbench.Infrastructure;
 
+if (args.FirstOrDefault() == "migrate-preferences")
+{
+    try
+    {
+        if (args.Length != 2 || !Path.IsPathFullyQualified(args[1]))
+            throw new ArgumentException("migrate-preferences requires an explicit absolute profile folder.");
+        // Share the desktop installer's/app's identity; migrating beside a running GUI could race an old save.
+        using var instance = new Mutex(false, @"Local\ianrastall.MediaWorkbench");
+        bool owned;
+        try { owned = instance.WaitOne(0); } catch (AbandonedMutexException) { owned = true; }
+        if (!owned) throw new InvalidOperationException("Close Media Workbench before migrating preferences.");
+        try
+        {
+            var store = new SettingsStore(Path.GetFullPath(args[1]));
+            var settings = store.Load();
+            Console.WriteLine(JsonSerializer.Serialize(new { settings.DataRoot, settings.DataRootChosen,
+                preferencesFolder = store.Folder, locationFolder = store.LocationFolder, note = store.MigrationNote }, Wire.Json));
+        }
+        finally { instance.ReleaseMutex(); }
+        return 0;
+    }
+    catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+}
+
 if (args.FirstOrDefault() == "mcp")
 {
     try

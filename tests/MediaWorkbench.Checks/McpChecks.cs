@@ -50,7 +50,7 @@ static class McpChecks
                 check(!videoStatus.GetProperty("isError").GetBoolean() && videoStatus.GetProperty("structuredContent").GetProperty("status").GetString() == "not_installed",
                     "MCP reads the real video setup state of the scoped folder");
                 var storage = (await Call("storage", "workbench_storage", new { })).GetProperty("result");
-                check(!storage.GetProperty("isError").GetBoolean() && storage.GetProperty("structuredContent").GetProperty("items").GetArrayLength() == 9,
+                check(!storage.GetProperty("isError").GetBoolean() && storage.GetProperty("structuredContent").GetProperty("items").GetArrayLength() == 10,
                     "MCP inspects the scoped data folder through the Rust storage service");
                 var listedModels = (await Call("models", "workbench_models", new { })).GetProperty("result");
                 check(!listedModels.GetProperty("isError").GetBoolean() && listedModels.GetProperty("structuredContent").GetProperty("models")[0].GetProperty("id").GetString() == ModelChoice.BuiltInId

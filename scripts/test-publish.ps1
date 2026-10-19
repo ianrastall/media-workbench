@@ -55,6 +55,50 @@ foreach ($taskMode in $taskModes) {
     } finally { $taskProcess.Dispose() }
 }
 # A persistent stdio session verifies the shipped console host, shared runtime, and real worker.
+$taskPreferencesCheck = Join-Path $taskReports ('preferences-' + [guid]::NewGuid().ToString('N'))
+try {
+    $taskProfile = Join-Path $taskPreferencesCheck 'profile'
+    $taskWork = Join-Path $taskPreferencesCheck 'work'
+    New-Item -ItemType Directory -Path $taskProfile, $taskWork -Force | Out-Null
+    @{ schemaVersion = 1; dataRoot = $taskWork; lastSearch = 'smoke'; dataRootChosen = $true } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskProfile 'settings.json')
+    $taskMigrationMutex = [Threading.Mutex]::new($false, 'Local\ianrastall.MediaWorkbench')
+    $taskMigrationOwned = $false
+    try {
+        try { $taskMigrationOwned = $taskMigrationMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $taskMigrationOwned = $true }
+        if (-not $taskMigrationOwned) { throw 'Close Media Workbench before the published preference check.' }
+        $taskMigrationInfo = [Diagnostics.ProcessStartInfo]::new((Join-Path $ApplicationDirectory 'MediaWorkbench.Cli.exe'))
+        $taskMigrationInfo.UseShellExecute = $false
+        $taskMigrationInfo.CreateNoWindow = $true
+        $taskMigrationInfo.RedirectStandardError = $true
+        $taskMigrationInfo.RedirectStandardOutput = $true
+        $taskMigrationInfo.ArgumentList.Add('migrate-preferences')
+        $taskMigrationInfo.ArgumentList.Add($taskProfile)
+        $taskBlockedMigration = [Diagnostics.Process]::Start($taskMigrationInfo)
+        try {
+            if (-not $taskBlockedMigration.WaitForExit(30000)) { $taskBlockedMigration.Kill($true); throw 'Concurrent preference migration did not stop.' }
+            if ($taskBlockedMigration.ExitCode -ne 1 -or $taskBlockedMigration.StandardError.ReadToEnd() -notlike '*Close Media Workbench*' -or
+                -not (Test-Path -LiteralPath (Join-Path $taskProfile 'settings.json')) -or
+                (Test-Path -LiteralPath (Join-Path $taskProfile 'working-folder.json'))) { throw 'Preference migration did not respect the desktop mutex.' }
+        } finally { $taskBlockedMigration.Dispose() }
+    } finally {
+        if ($taskMigrationOwned) { $taskMigrationMutex.ReleaseMutex() }
+        $taskMigrationMutex.Dispose()
+    }
+    $taskPreferenceResult = & (Join-Path $ApplicationDirectory 'MediaWorkbench.Cli.exe') migrate-preferences $taskProfile
+    if ($LASTEXITCODE -ne 0) { throw 'Published preference migration failed.' }
+    $taskPreferenceState = $taskPreferenceResult | ConvertFrom-Json
+    if ($taskPreferenceState.dataRoot -ne $taskWork -or -not $taskPreferenceState.dataRootChosen -or
+        (Test-Path -LiteralPath (Join-Path $taskProfile 'settings.json')) -or
+        -not (Test-Path -LiteralPath (Join-Path $taskWork 'preferences/settings.json')) -or
+        -not (Test-Path -LiteralPath (Join-Path $taskProfile 'working-folder.json'))) { throw 'Published preference migration was incomplete.' }
+    Write-Output 'PASS: published preferences respect the desktop mutex and migrate with only a location pointer in the profile'
+} finally {
+    $taskPreferencesFull = [IO.Path]::GetFullPath($taskPreferencesCheck)
+    $taskReportsPrefix = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($taskReports)) + [IO.Path]::DirectorySeparatorChar
+    if (-not $taskPreferencesFull.StartsWith($taskReportsPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Preference fixture cleanup escaped its reports folder.' }
+    if (Test-Path -LiteralPath $taskPreferencesFull) { Remove-Item -LiteralPath $taskPreferencesFull -Recurse -Force }
+}
 $taskMcpInfo = [Diagnostics.ProcessStartInfo]::new((Join-Path $ApplicationDirectory 'MediaWorkbench.Cli.exe'))
 $taskMcpInfo.UseShellExecute = $false
 $taskMcpInfo.CreateNoWindow = $true
@@ -83,7 +127,7 @@ try {
     if ($taskState.isError -or $taskState.structuredContent.status -ne 'not_installed') { throw 'Published MCP worker status check failed.' }
     $taskMcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"workbench_storage","arguments":{}}}')
     $taskStorage = (Read-McpSmokeResponse).result
-    if ($taskStorage.isError -or $taskStorage.structuredContent.items.Count -ne 9 -or $taskStorage.structuredContent.freeBytes -le 0) { throw 'Published MCP native storage check failed.' }
+    if ($taskStorage.isError -or $taskStorage.structuredContent.items.Count -ne 10 -or $taskStorage.structuredContent.freeBytes -le 0) { throw 'Published MCP native storage check failed.' }
     $taskMcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"workbench_models","arguments":{}}}')
     $taskModels = (Read-McpSmokeResponse).result
     if ($taskModels.isError -or $taskModels.structuredContent.models[0].id -ne 'sd15-baseline' -or $taskModels.structuredContent.models.Count -ne 2 -or $taskModels.structuredContent.models[1].id -ne 'sdxl-base') { throw 'Published MCP model listing failed.' }

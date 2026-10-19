@@ -1,5 +1,19 @@
 # Initial alpha validation
 
+## Preferences in the working folder (0.3.0-alpha.13)
+
+18 October 2026, Windows 11 x64. Final `scripts/check.ps1` passed: 39 Rust tests, formatting/Clippy, 229 Python tests, and 331 C# checks including MCP. The Release publish build passed with zero warnings/errors. Published x64, native/worker, preference-migration and MCP checks passed, as did the UI test confirming first start still requires a folder. The published CLI refused migration while the desktop mutex was held, then migrated successfully after it was released. Logs are under ignored `artifacts/preferences-*`; installed-release evidence follows after publication.
+
+Coverage includes explicit folder choice and restart, moving preferences and old startup logs without deleting unrelated files, missing legacy/current roots, malformed/oversized/unsupported pointers overriding valid stale legacy files, explicit pointer repair preserving its bytes, previous-settings recovery, a locked pointer refusing a switch while retaining the old root, interrupted legacy cleanup and retry, changed source settings being kept, corrupt working preferences blocking automatic work, no fallback logging/recreation, stale staging cleanup, bounded log rotation, and junction refusal before writes. The real Rust data move copies preferences; after commit, reopening follows the new pointer and root. Native/Python/C#/MCP storage inventory includes preferences as non-clearable.
+
+```powershell
+./scripts/check.ps1
+./scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/preferences-build-dotnet
+./scripts/test-publish.ps1 -ApplicationDirectory artifacts/publish/win-x64 -ReportsDirectory artifacts/preferences-ui-checks
+```
+
+Process-local `TEMP` and `TMP` point to ignored `artifacts/session-temp` during development checks/build/install. The published CLI migration smoke uses disposable profile/work folders and removes them. No GPU inference or full process-write trace is claimed in this slice; runtime/model verification profiles and stamps are unchanged. The existing application installation stays at its previous destination, and installer extraction/colocated installation remain next-milestone acceptance work.
+
 ## Working-folder startup gate (0.3.0-alpha.12)
 
 18 October 2026, Windows 11 x64. The final `./scripts/check.ps1` run passed: 39 Rust tests, formatting/Clippy, 229 Python tests, and 298 C# checks including MCP. `./scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/working-folder-build-dotnet` passed with zero warnings/errors, including the published x64 payload, native/worker self-test and MCP smoke checks.

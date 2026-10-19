@@ -86,16 +86,22 @@ public partial class MainViewModel : ObservableObject
             _movedFrom = saved.MovedFrom;
             _excludedDrives = [.. saved.ExcludedDrives ?? []];
             ShowOldCopy();
-            // Earlier versions did not record the choice; a folder other than the default was chosen on purpose.
-            _dataRootChosen = saved.DataRootChosen || (saved.DataRoot.Length > 0 && !string.Equals(saved.DataRoot,
-                Path.Combine(settings.Folder, "Data"), StringComparison.OrdinalIgnoreCase));
+            _dataRootChosen = saved.DataRootChosen;
             if (!_dataRootChosen) DataRootDraft = "";
             if (_dataRootChosen)
             {
                 DataRoot = saved.DataRoot;
                 NeedsWorkingFolder = !Directory.Exists(DataRoot);
                 if (NeedsWorkingFolder) Notice = $"Your working folder is unavailable: {DataRoot}. Reconnect its drive or choose a folder in Settings. Nothing will be saved elsewhere.";
+                else if (settings.MigrationNote.Length > 0) Notice = settings.MigrationNote;
             }
+        }
+        catch (WorkingFolderUnavailableException ex)
+        {
+            DataRoot = DataRootDraft = ex.DataRoot;
+            _dataRootChosen = true;
+            NeedsWorkingFolder = true;
+            Notice = ex.Message;
         }
         catch (Exception ex) { Notice = $"Could not load settings: {ex.Message}. Choose your working folder in Settings before continuing. Nothing will be saved elsewhere."; }
         _loading = false;
@@ -1028,8 +1034,8 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDrives));
     });
 
-    /// <summary>Preferences and the startup log together stay below this (settings.json plus two rotated 1 MiB logs).</summary>
-    public const string ProfileFootprint = "about 2 MB at most";
+    /// <summary>Two current and two migrated startup logs, plus current/previous preferences.</summary>
+    public const string ProfileFootprint = "about 4 MB at most";
 
     /// <summary>
     /// Lists where the app keeps files and which drive each is really on (mounted folders included), and says in
@@ -1051,6 +1057,7 @@ public partial class MainViewModel : ObservableObject
         static bool Different(DriveStatus? left, DriveStatus? right) => Known(left) && Known(right) && !Same(left, right);
         var data = await Drive(root);
         var preferences = await Drive(_settings.Folder);
+        var pointer = await Drive(_settings.LocationFolder);
         string appFolder = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
         var app = await Drive(appFolder);
         if (root != DataRoot) return;
@@ -1065,13 +1072,16 @@ public partial class MainViewModel : ObservableObject
             "Same drive as the data folder. Setup's downloads are removed once it passes its test, unless you keep them below."));
         Locations.Add(new("Preferences and startup log", _settings.Folder, Elsewhere(preferences, $"Small: {ProfileFootprint}.")));
         Locations.Add(new("Media Workbench itself", appFolder, Elsewhere(app, "Updates replace the app here.")));
+        Locations.Add(new("Working-folder location", _settings.LocationFolder, Elsewhere(pointer,
+            "Only a small file pointing to your working folder (at most 8 KB). Recovery copies are kept if a location file needs repair.") +
+            (_settings.MigrationNote.Length > 0 ? " " + _settings.MigrationNote : "")));
         var apart = new List<string>();
-        if (Different(preferences, data)) apart.Add($"preferences and the startup log ({ProfileFootprint}) are on {Name(preferences)}");
         if (Different(app, data)) apart.Add($"the app itself is on {Name(app)}");
+        if (Different(pointer, data)) apart.Add($"the small working-folder location file is on {Name(pointer)}");
         LocationsText = data is null ? where
             : $"Your pictures, videos, models, caches and temporary work all stay on {Name(data)}." +
               (apart.Count > 0 ? " Only " + string.Join(", and ", apart) + "."
-                : Same(preferences, data) && Same(app, data) ? " So does everything else Media Workbench keeps." : "");
+                : Same(preferences, data) && Same(app, data) && Same(pointer, data) ? " So does everything else Media Workbench keeps." : "");
     }
     private Task ClearStorageAsync(string? area) => RunAsync(area == "installation" ? "Removing Stable Diffusion 1.5…" : "Clearing storage…", async token =>
     {
@@ -1313,6 +1323,7 @@ public partial class MainViewModel : ObservableObject
     private void SaveSettings()
     {
         bool chosen = _dataRootChosen;
+        string? movedFrom = _movedFrom;
         try
         {
             if (!Path.IsPathFullyQualified(DataRootDraft)) throw new InvalidDataException("Choose an absolute data folder.");
@@ -1320,15 +1331,27 @@ public partial class MainViewModel : ObservableObject
             _dataRootChosen = true; // Saving a folder is choosing where Media Workbench works.
             _movedFrom = null; // An old copy relates only to the folder it was moved to.
             var value = CurrentSettings(Path.GetFullPath(DataRootDraft));
-            _settings.Save(value);
+            value = _settings.Choose(value);
+            _loading = true;
+            try
+            {
+                SearchQuery = value.LastSearch;
+                CheckForUpdates = value.CheckForUpdates;
+                KeepDownloadCaches = value.KeepDownloadCaches;
+            }
+            finally { _loading = false; }
+            _pendingMove = value.PendingMove;
+            _movedFrom = value.MovedFrom;
+            _excludedDrives = [.. value.ExcludedDrives ?? []];
             NeedsWorkingFolder = false;
             DataRoot = DataRootDraft = value.DataRoot;
             ShowOldCopy();
             ShowExcludedDrive();
-            Notice = "Settings saved. Models, generation, and Library now use this data folder.";
+            Notice = "Settings saved. Models, generation, and Library now use this data folder." +
+                (_settings.MigrationNote.Length > 0 ? " " + _settings.MigrationNote : "");
             Record("Storage settings saved");
         }
-        catch (Exception ex) { _dataRootChosen = chosen; Notice = $"Settings were not saved. {ex.Message}"; }
+        catch (Exception ex) { _dataRootChosen = chosen; _movedFrom = movedFrom; Notice = $"Settings were not saved. {ex.Message}"; }
     }
 
     private AppSettings CurrentSettings(string? dataRoot = null) =>
@@ -1434,9 +1457,18 @@ public partial class MainViewModel : ObservableObject
             throw;
         }
         _pendingMove = null;
+        bool previousChoice = _dataRootChosen;
+        string? previousMovedFrom = _movedFrom;
         _dataRootChosen = true;
         _movedFrom = source;
-        _settings.Save(CurrentSettings(target));
+        try { _settings.Save(CurrentSettings(target)); }
+        catch
+        {
+            _pendingMove = target;
+            _dataRootChosen = previousChoice;
+            _movedFrom = previousMovedFrom;
+            throw;
+        }
         DataRoot = DataRootDraft = target;
         ClearMovePlan();
         ShowOldCopy();

@@ -1,5 +1,13 @@
 # Development direction after 0.3.0-alpha.11
 
+## Preferences in the working folder (0.3.0-alpha.13)
+
+The preference/startup-log migration is implemented, including an authoritative small location pointer, previous-settings recovery copy, commit-last pointer switches, retryable legacy cleanup, no fallback diagnostics, and restoring preferences when an existing working folder is chosen again. The original alpha.11 incident remains unreproduced; the silent-default class has been removed rather than claimed reproduced.
+
+Next complete slice: offer first installation in `<working folder>/App` and preserve it across updates. Plan first-start discovery of the folder from that arrangement so a colocated installation can avoid a profile pointer. Keep existing installations at their current path unless the user deliberately moves them, preserving taskbar targets and application identity. Verify new install, upgrade, data move, unavailable drive and uninstall; the uninstaller must preserve preferences, models, pictures and records. Installer extraction and Windows bookkeeping need explicit acceptance decisions. Then run the complete containment trace before naming the milestone 0.4.0-alpha.1.
+
+After that, implement the curated Models Get coordinator described below. Reuse the existing prerequisite/download/GPU checks, keep total download/space costs visible, and retain technical setup controls under Advanced. This resume point supersedes the historical directions below.
+
 ## Working-folder startup gate (0.3.0-alpha.12)
 
 The first implementation slice removes the silent default: first start requires a saved working folder, load failures stop work, saved missing folders are retained for recovery without recreation, and the chosen folder is checked before a worker starts. Browse, drive suggestions and existing-folder upgrades are implemented. The old alpha.11 incident's exact cause remains unknown; do not claim it was reproduced.

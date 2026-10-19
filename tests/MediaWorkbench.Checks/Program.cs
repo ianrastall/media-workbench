@@ -53,7 +53,7 @@ var hashFile = Path.Combine(output, "hash café 森林.txt");
 await File.WriteAllTextAsync(hashFile, "abc");
 Check(NativeCore.Sha256File(hashFile) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "Native streaming SHA-256 handles Unicode file paths");
 var store = new SettingsStore(Path.Combine(output, "settings"));
-var settings = new AppSettings(1, Path.Combine(output, "data"), "image");
+var settings = new AppSettings(1, Path.Combine(output, "data"), "image", DataRootChosen: true);
 store.Save(settings);
 Check(store.Load() == settings, "Application settings survive a save/load round trip");
 bool rootRejected = false;
@@ -139,13 +139,13 @@ var legacy = System.Text.Json.JsonSerializer.Deserialize<GenerationSettings>("{\
 Check(legacy is { Width: 512, Height: 512, Sampler: "pndm", GuidanceScale: 7.5 }, "Older job records read with the original fixed settings");
 await vm.RefreshStorageCommand.ExecuteAsync(null);
 Check(vm.StorageItems.Count == 2 && vm.StorageText.Contains("5.00 GiB") && workbench.DataRoots[^1] == nextRoot, "Storage is measured in the saved data folder");
-Check(vm.Locations.Count == 5 && vm.Locations[0].Path == nextRoot && vm.Locations[1].Path == WorkFolders.Temporary(nextRoot)
+Check(vm.Locations.Count == 6 && vm.Locations[0].Path == nextRoot && vm.Locations[1].Path == WorkFolders.Temporary(nextRoot)
     && !vm.LocationsText.Contains("Only") && !vm.LocationsText.Contains("So does"), "Settings lists every location; drives Windows did not name are not compared");
 workbench.DriveFor = path => path.StartsWith(nextRoot, StringComparison.OrdinalIgnoreCase)
     ? new(200L << 30, 900L << 30, "hdd", @"E:\") : new(30L << 30, 250L << 30, "ssd", @"C:\");
 await vm.RefreshStorageCommand.ExecuteAsync(null);
-Check(vm.LocationsText == "Your pictures, videos, models, caches and temporary work all stay on E:\\. Only preferences and the startup log (about 2 MB at most) are on C:\\, and the app itself is on C:\\."
-    && vm.Locations[0].Detail == "On E:\\: a hard disk, 200.00 GiB free." && vm.Locations[3].Detail.StartsWith("On C:\\."),
+Check(vm.LocationsText == "Your pictures, videos, models, caches and temporary work all stay on E:\\. Only the app itself is on C:\\, and the small working-folder location file is on C:\\."
+    && vm.Locations[0].Detail == "On E:\\: a hard disk, 200.00 GiB free." && vm.Locations[3].Detail.StartsWith("Same drive"),
     "Settings names the data folder's drive and exactly what stays on another drive");
 workbench.DriveFor = _ => new(200L << 30, 900L << 30, "ssd", @"E:\");
 await vm.RefreshStorageCommand.ExecuteAsync(null);
@@ -446,6 +446,7 @@ await HousekeepingChecks.RunAsync(Check, root, output, deadline.Token);
 await WorkFolderChecks.RunAsync(Check, python, output, deadline.Token);
 await MoveChecks.RunAsync(Check, root, python, output, deadline.Token);
 await WorkingFolderChecks.RunAsync(Check, output);
+PreferencesChecks.Run(Check, output);
 await BatchChecks.RunAsync(Check, output, root, python);
 using (var keptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(90))) await KeptModelChecks.RunAsync(Check, python, output, keptDeadline.Token);
 

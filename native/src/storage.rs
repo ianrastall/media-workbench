@@ -187,6 +187,12 @@ pub(crate) fn summary(input: &[u8], cancel: Cancel, context: *mut c_void) -> Res
         ("jobs", "Job records", vec!["jobs".into()], ""),
         ("temp", "Temporary work", vec!["temp".into()], ""),
         ("library", "Library index", vec!["library".into()], ""),
+        (
+            "preferences",
+            "Preferences and startup logs",
+            vec!["preferences".into()],
+            "",
+        ),
     ];
     let mut items = Vec::new();
     let mut installation_bytes = 0;

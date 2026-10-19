@@ -16,7 +16,8 @@ static class StorageChecks
             ["models/imported/" + new string('c', 32) + "/model.safetensors"] = 9,
             ["cache/wheel.bin"] = 40, ["bootstrap/runtime.zip"] = 10,
             ["artifacts/image.png"] = 5, ["jobs/record.json"] = 4, ["logs/inference.log"] = 3,
-            ["library/index.sqlite"] = 2, ["unmanaged/keep.bin"] = 1000
+            ["library/index.sqlite"] = 2, ["unmanaged/keep.bin"] = 1000,
+            ["preferences/settings.json"] = 8, ["preferences/Logs/startup.log"] = 11
         };
         foreach (var file in files)
         {
@@ -33,7 +34,8 @@ static class StorageChecks
         check(drive.Volume.EndsWith(Path.DirectorySeparatorChar) && Path.GetFullPath(folder).StartsWith(drive.Volume, StringComparison.OrdinalIgnoreCase) && !Directory.Exists(Path.Combine(folder, "not")),
             "Rust names the volume a data folder is really on without creating it");
         var items = snapshot.Items.ToDictionary(item => item.Id);
-        check(items.Count == 9 && items["temp"].Bytes == 0 && items["images"].Bytes == 5 && items["library"].Bytes == 2 && items["model"].Files == 2 && items["imported"].Bytes == 9,
+        check(items.Count == 10 && items["temp"].Bytes == 0 && items["images"].Bytes == 5 && items["library"].Bytes == 2 && items["model"].Files == 2 && items["imported"].Bytes == 9
+            && items["preferences"] is { Bytes: 19, Files: 2, Clearable: false },
             "Native storage inventory preserves per-area sizes/counts and Unicode paths");
         check(snapshot.Items.Where(item => item.Clearable).Select(item => item.Id).SequenceEqual(["caches", "logs"]),
             "Native inventory never offers images or job records for clearing");
@@ -50,7 +52,7 @@ static class StorageChecks
         await using var worker = await PythonWorkerClient.StartAsync(Path.Combine(root, "runtime", "python", "python.exe"), root, folder, token);
         var result = await worker.ExecuteAsync("storage.summary", new { dataRoot = folder }, cancellationToken: token);
         check(result.Kind == "result" && result.Payload.GetProperty("installationBytes").GetInt64() == snapshot.InstallationBytes
-            && result.Payload.GetProperty("items").GetArrayLength() == 9,
+            && result.Payload.GetProperty("items").GetArrayLength() == 10,
             "Worker clients use the same Rust storage inventory as the desktop");
     }
 }

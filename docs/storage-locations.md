@@ -1,5 +1,13 @@
 # Next milestone: choose where Media Workbench works
 
+## Latest implementation: preferences and diagnostics (0.3.0-alpha.13)
+
+Preferences and startup diagnostics now stay in `<working folder>/preferences/`; Local AppData normally holds only the bounded `working-folder.json` location pointer. New preferences are verified before the pointer switches. Existing chosen folders migrate on first start; old preferences and logs are removed only after their copies are safe. Changed or locked originals remain with an explanation, and cleanup resumes from a durable marker. Replaced working preferences retain one recovery copy. Explicitly choosing an existing working folder restores its valid preferences; invalid pointers and unavailable destinations never authorize a fallback.
+
+Current and migrated startup logs are bounded to four 1 MiB files in total. Without an available chosen folder, logging keeps only the newest bounded error in memory. Recovery copies of a broken location file or unreadable/changed old preferences may remain outside the working folder deliberately; the app explains that exception rather than deleting them. Settings separately lists the location file and includes the preferences area in storage inventory as non-clearable. After a real data move, preferences name the new root and the pointer switches last; changed preferences in the old folder are kept by Remove the old copy's existing identical-file rule.
+
+Still pending: optional installation under `<working folder>/App`, pointer-free discovery for that arrangement, installer/update/uninstall acceptance and the full write trace. The source audit still finds installation and Windows/installer bookkeeping outside the working folder; this is not the complete 0.4.0 milestone. Earlier sections below are historical.
+
 ## Latest implementation: startup choice (0.3.0-alpha.12)
 
 First start now requires an explicitly saved working folder. The app suggests a suitable drive without creating folders or starting Python, offers Browse, and checks the selected folder is writable and has no linked/junction parents before saving it. Missing or corrupt settings no longer leave a usable Local AppData default. A chosen but missing folder is retained in Settings for reconnection; maintenance and worker operations do not recreate it or substitute another location. An existing nondefault folder from older settings counts as chosen. An old default without `dataRootChosen` requires confirmation. This supersedes the conditional drive question and Keep this drive described in the historical slices below.

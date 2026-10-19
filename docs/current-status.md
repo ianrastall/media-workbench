@@ -1,6 +1,14 @@
 # Current implementation status
 
-Version: **0.3.0-alpha.12**. Development started 17 October 2026.
+Version: **0.3.0-alpha.13**. Development started 17 October 2026.
+
+## Preferences in the working folder (0.3.0-alpha.13)
+
+Preferences now live at `<working folder>/preferences/settings.json`, with one `settings.previous.json` recovery copy. Startup diagnostics use `preferences/Logs/`: two current logs and up to two migrated legacy logs, each bounded to 1 MiB. Without a usable choice, startup logging retains only the newest bounded error in memory and creates no fallback log. Settings measures this area without offering to clear preferences.
+
+Local AppData normally holds only `working-folder.json` (at most 8 KiB). It is authoritative: bad/missing destination preferences or a disconnected drive stop loading; neither legacy preferences nor the recovery copy silently takes over. A valid existing legacy choice migrates automatically: preferences are written, flushed and verified before the pointer is published; old settings are deleted only while their hash still matches the migration checkpoint, and startup logs only after their managed copies are safe. Locked/changed originals remain with an explanation and a durable cleanup marker for retry. Broken location files can be repaired by explicitly choosing a folder, retaining the original pointer for recovery. Choosing an existing folder after losing the pointer restores its valid preferences. Stale app-owned preference staging files older than ten minutes are swept at startup.
+
+The existing installer destination is retained. Installation inside the working folder, full fresh-install/update/uninstall write tracing, and the simpler Models view remain planned. See [validation](validation.md#preferences-in-the-working-folder-030-alpha13) and [next slice](next-steps.md#preferences-in-the-working-folder-030-alpha13). The alpha.12 notes below describe the preceding release.
 
 ## Working-folder startup gate (0.3.0-alpha.12)
 

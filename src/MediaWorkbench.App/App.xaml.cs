@@ -16,6 +16,8 @@ namespace MediaWorkbench_App;
 public partial class App : Application
 {
     private Window? _window;
+    private MediaWorkbench.Infrastructure.SettingsStore _settings = new(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench"));
 
     /// <summary>
     /// Initializes the singleton application object.  This is the first line of authored code
@@ -83,7 +85,7 @@ public partial class App : Application
                     var library = await service.GetLibraryAsync(libraryCheck, deadline.Token);
                     if (library.Total != 0 || library.Images.Count != 0) throw new InvalidDataException("The bundled Library index check failed.");
                     var storage = await service.GetStorageAsync(libraryCheck, deadline.Token);
-                    if (storage.Items.Count != 9 || storage.FreeBytes <= 0 || storage.InstallationBytes != 0)
+                    if (storage.Items.Count != 10 || storage.FreeBytes <= 0 || storage.InstallationBytes != 0)
                         throw new InvalidDataException("The bundled native storage check failed.");
                     var models = await service.GetModelsAsync(libraryCheck, deadline.Token);
                     if (models.Count != 2 || !models[0].BuiltIn || models[0].IsReady || !models[1].IsXl || models[1].IsReady)
@@ -112,7 +114,8 @@ public partial class App : Application
             if (uiCheckIndex >= 0 && (uiCheckIndex + 1 >= arguments.Length || !Path.IsPathFullyQualified(arguments[uiCheckIndex + 1])))
                 throw new ArgumentException("--ui-self-test requires an absolute report path.");
             string? testStateRoot = uiCheckIndex >= 0 ? Path.Combine(Path.GetDirectoryName(arguments[uiCheckIndex + 1])!, "ui-settings-" + Guid.NewGuid().ToString("N")) : null;
-            var main = new MainWindow(testStateRoot);
+            if (testStateRoot is not null) _settings = new(testStateRoot);
+            var main = new MainWindow(_settings, selfTest: uiCheckIndex >= 0);
             _window = main;
             if (uiCheckIndex >= 0 && _window.Content is FrameworkElement root)
             {
@@ -134,18 +137,5 @@ public partial class App : Application
         catch (Exception ex) { WriteStartupError(ex); Environment.ExitCode = 1; Exit(); }
     }
 
-    private static void WriteStartupError(Exception exception)
-    {
-        try
-        {
-            string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench", "Logs");
-            Directory.CreateDirectory(folder);
-            string log = Path.Combine(folder, "startup.log");
-            // Bounded: past 1 MiB the log becomes startup.old.log, replacing the previous one.
-            if (File.Exists(log) && new FileInfo(log).Length > 1 << 20) File.Move(log, Path.Combine(folder, "startup.old.log"), overwrite: true);
-            File.AppendAllText(log, $"{DateTimeOffset.Now:O}\n{exception}\n\n");
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
+    private void WriteStartupError(Exception exception) => _settings.RecordStartupError(exception);
 }

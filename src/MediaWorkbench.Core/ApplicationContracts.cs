@@ -293,10 +293,15 @@ public interface IUpdateService
 }
 public interface ISettingsStore
 {
-    /// <summary>Where preferences (and, beside them, the startup log) are kept; outside the data folder.</summary>
+    /// <summary>Where preferences and startup logs are kept, inside the chosen working folder.</summary>
     string Folder { get; }
+    /// <summary>Only the small working-folder location pointer remains here.</summary>
+    string LocationFolder { get; }
+    string MigrationNote { get; }
     AppSettings Load();
     void Save(AppSettings settings);
+    /// <summary>An explicit user choice, which may repair a broken location pointer.</summary>
+    AppSettings Choose(AppSettings settings);
 }
 /// <summary>Every operation names the data folder: its temporary work stays there, never in Windows' temporary folder.</summary>
 public interface IWorkbenchService

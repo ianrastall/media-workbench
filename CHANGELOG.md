@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.13 — 2026-10-18
+
+- **Preferences and startup logs now stay in your working folder.** Existing preferences move automatically on the next start, after the saved folder is checked. Local AppData keeps a small location file pointing to it. A missing drive or damaged location file stops work instead of falling back to old settings.
+- **Recovery is built in.** New preferences are verified before the location switches. Replaced preferences keep one recovery copy, and interrupted migration resumes next start. Old preferences and startup logs are removed only after their copies are safe; anything changed or unreadable is kept with an explanation.
+- Settings shows where the location file lives and measures preferences and startup logs with the rest of your storage. Startup logs stay bounded inside the working folder; without a usable folder, an error stays in memory instead of being saved elsewhere. The application installation still keeps its existing destination.
+
 ## 0.3.0-alpha.12 — 2026-10-18
 
 - **Choose a working folder before anything downloads.** First start opens Settings, suggests a folder on a non-Windows drive with the most free space when available, and offers **Browse…**. Nothing starts using it until you save. An unreadable settings file, an unchosen old default, or a missing saved folder stops work instead of silently using Local AppData. Your existing chosen folder is kept on upgrade.

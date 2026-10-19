@@ -61,7 +61,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(clearable, {"caches", "logs"})
             self.assertEqual({item["id"]: item["files"] for item in result["items"]},
                              {"runtime": 1, "model": 2, "caches": 3, "imported": 2, "images": 1, "logs": 1, "jobs": 2, "library": 0,
-                              "temp": 0})
+                              "temp": 0, "preferences": 0})
             self.assertEqual(measured["imported"], 7 + (Path(folder) / "models/imported" / ("b" * 32) / "model.json").stat().st_size)
 
     def test_unicode_roots_and_only_managed_profiles_are_measured(self):

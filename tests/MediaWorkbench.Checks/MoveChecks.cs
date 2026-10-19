@@ -116,18 +116,25 @@ static class MoveChecks
             settings = new GenerationSettings("Moved forest", "", 77, 5), completedUtc = "2026-10-18T12:00:00Z", seconds = 1, gpu = "Test GPU"
         }, Wire.Json), token);
         var service = new WorkbenchService(root, python);
+        var movedPreferences = new SettingsStore(Path.Combine(output, "real-move-profile"));
+        movedPreferences.Choose(new AppSettings(1, source, "saved search", DataRootChosen: true));
         check((await service.GetLibraryAsync(source, token)).Total == 1, "The folder to move has a Library image and index");
         string temp = Path.Combine(WorkFolders.Temporary(source), "work", "leftover.bin");
         Directory.CreateDirectory(Path.GetDirectoryName(temp)!);
         await File.WriteAllBytesAsync(temp, [1], token);
         string destination = Path.Combine(output, "moved here", "data");
         var plan = await service.PlanDataMoveAsync(source, destination, token);
-        check(plan is { CanMove: true, Files: 2 } && !Directory.Exists(destination), "The real plan counts the files to copy and creates nothing");
+        check(plan is { CanMove: true, Files: 3 } && !Directory.Exists(destination), "The real plan counts the files to copy, including preferences, and creates nothing");
         long reported = 0;
         await service.MoveDataAsync(source, destination, new SynchronousProgress(value => reported = value.Completed), token);
         check(reported == plan.Bytes * 2 && File.ReadAllBytes(Path.Combine(destination, "artifacts", jobId, "image.png")).SequenceEqual(picture)
             && File.Exists(Path.Combine(source, "artifacts", jobId, "image.png")) && !Directory.Exists(WorkFolders.Temporary(destination))
             && !Directory.Exists(Path.Combine(destination, "library")), "The real move copies and verifies every byte, leaves the source, and skips temporary work and the index");
+        movedPreferences.Save(movedPreferences.Load() with { DataRoot = destination, MovedFrom = source });
+        var reopenedPreferences = new SettingsStore(movedPreferences.LocationFolder);
+        check(reopenedPreferences.Load() is { DataRoot: var preferenceRoot, LastSearch: "saved search", MovedFrom: var oldPreferenceRoot }
+            && preferenceRoot == destination && oldPreferenceRoot == source && reopenedPreferences.Folder == SettingsStore.Preferences(destination),
+            "After a real data move, preferences name the new root and restart follows the new location pointer");
         var moved = await service.GetLibraryAsync(destination, token, new("moved"));
         check(moved.Total == 1 && moved.Images.Single().Settings.Seed == 77 && moved.Images.Single().ImagePath.StartsWith(destination, StringComparison.OrdinalIgnoreCase),
             "Library rebuilds its index in the moved folder and finds images there");
@@ -138,9 +145,9 @@ static class MoveChecks
         string late = Path.Combine(source, "artifacts", "added-later.png");
         await File.WriteAllBytesAsync(late, [5], token);
         var removed = await service.RemoveMovedDataAsync(source, destination, token);
-        check(removed is { RemovedFiles: 2, KeptFiles: 1, FolderRemoved: false } && File.Exists(late) && !File.Exists(Path.Combine(source, "artifacts", jobId, "image.png"))
+        check(removed is { RemovedFiles: 2, KeptFiles: 2, FolderRemoved: false } && File.Exists(late) && !File.Exists(Path.Combine(source, "artifacts", jobId, "image.png"))
             && File.ReadAllBytes(Path.Combine(destination, "artifacts", jobId, "image.png")).SequenceEqual(picture),
-            "The real removal deletes only files the new folder holds unchanged and keeps a file added later");
+            "The real removal deletes identical copies and keeps later files and the changed previous preferences");
     }
 
     /// <summary>Reports on the calling thread, so the last value is known when the move returns.</summary>

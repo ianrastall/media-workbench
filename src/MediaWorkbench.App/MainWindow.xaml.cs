@@ -10,16 +10,15 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel ViewModel { get; }
 
-    public MainWindow(string? testStateRoot = null)
+    public MainWindow(SettingsStore settings, bool selfTest = false)
     {
-        string stateRoot = testStateRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaWorkbench");
         string python = Path.Combine(AppContext.BaseDirectory, "runtime", "python", "python.exe");
 #if DEBUG
         // Development override only; a shipped build always runs its bundled interpreter.
         python = Environment.GetEnvironmentVariable("MEDIA_WORKBENCH_PYTHON") ?? python;
 #endif
         string version = UpdateService.ApplicationVersion();
-        ViewModel = new(new WorkbenchService(AppContext.BaseDirectory, python), new SettingsStore(stateRoot),
+        ViewModel = new(new WorkbenchService(AppContext.BaseDirectory, python), settings,
             new UpdateService(UpdateService.CreateClient(version), version));
         ViewModel.InstallerReady += RunInstallerAndExit;
         InitializeComponent();
@@ -37,7 +36,7 @@ public sealed partial class MainWindow : Window
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(display.X + (display.Width - width) / 2, display.Y + (display.Height - height) / 2, width, height));
         Closed += (_, _) => ViewModel.CancelActiveWork();
         // The packaging smoke test opens the window briefly; it must not tidy the tester's data folder.
-        if (testStateRoot is null)
+        if (!selfTest)
         {
             _ = ViewModel.CheckForUpdatesQuietlyAsync();
             _ = ViewModel.StartupMaintenanceAsync();

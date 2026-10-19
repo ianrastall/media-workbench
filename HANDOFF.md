@@ -1,6 +1,16 @@
 # Media Workbench handoff
 
-Updated 18 October 2026 for **0.3.0-alpha.12**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 18 October 2026 for **0.3.0-alpha.13**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+
+## Resume after preferences moved into the working folder
+
+Alpha.13 implements `<working folder>/preferences/settings.json`, one previous-settings recovery copy, bounded startup logs there, and the authoritative small `working-folder.json` pointer in Local AppData. Migration writes/verifies preferences before switching the pointer, then removes only unchanged legacy settings and safely copied logs; failed cleanup is remembered and explained. Missing/corrupt pointers or destinations never authorize old settings or a fallback log. Explicitly choosing an existing folder restores its valid preferences. Settings separately lists the pointer and measures the non-clearable preferences area. No inference profile/readiness change.
+
+Validation and commands: [alpha.13 validation](docs/validation.md#preferences-in-the-working-folder-030-alpha13). Use `scripts/check.ps1`, `scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/preferences-build-dotnet`, and published smoke checks. `MediaWorkbench.Cli.exe migrate-preferences <absolute-profile-folder>` exercises the same loader without opening a window; it is used by isolated published checks and can verify the installed migration. Keep generated logs/reports/receipts under ignored artifacts.
+
+Next: [optional installation under the working folder](docs/next-steps.md#preferences-in-the-working-folder-030-alpha13), preserving existing install paths/taskbar targets. Resolve colocated first-start discovery, new install/upgrade/uninstall and installer extraction before full containment acceptance. The simpler Models Get coordinator follows that foundation. Do not label the whole 0.4.0 milestone complete yet. Continue committing/pushing directly to main, releasing through GitHub Actions, then running each published installer locally as the user requested.
+
+The alpha.12 and earlier resume notes below are historical; this resume point takes precedence.
 
 ## Resume after the working-folder startup gate
 
