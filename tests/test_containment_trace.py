@@ -5,8 +5,20 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "containment"))
+import acceptance  # noqa: E402
 import procmon_config  # noqa: E402
 import summarize_writes  # noqa: E402
+
+
+class FillerTests(unittest.TestCase):
+    def test_allocation_sets_the_size_without_writing(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            filler = Path(folder) / "filler.bin"
+            acceptance.allocate(filler, 3 * 1024 ** 2)
+            self.assertEqual(filler.stat().st_size, 3 * 1024 ** 2)
+            acceptance.allocate(filler, 1024)  # Replaces, never grows an older filler.
+            self.assertEqual(filler.stat().st_size, 1024)
 
 
 def records(data):

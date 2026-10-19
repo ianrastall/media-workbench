@@ -7,14 +7,24 @@ stops and exports captures. It acts on fixed request file names in the control f
   quit.request          -> stop any capture and exit
 First it checks which filter file Process Monitor obeys (a small capture of a known write and read), falling back
 to an unfiltered capture. It stops by itself when the driver's heartbeat is older than 20 minutes or after 12 hours.
+
+With -Vhd (the drive-failure checks), it also creates an expandable test virtual disk of -VhdSizeMB at that path,
+formats it and gives it -VhdLetter, then on request:
+  vhd-detach.request -> detaches it (as if the drive were unplugged), then writes vhd-detached
+  vhd-attach.request -> attaches it again with the same letter, then writes vhd-attached
+When it exits it detaches the disk and deletes the file. Nothing else on the computer is changed.
 #>
 param(
     [Parameter(Mandatory)] [string]$Procmon,
     [Parameter(Mandatory)] [string]$Control,
-    [Parameter(Mandatory)] [string]$Output
+    [Parameter(Mandatory)] [string]$Output,
+    [string]$Vhd,
+    [ValidatePattern('^[D-Z]$')] [string]$VhdLetter,
+    [ValidateRange(1024, 65536)] [int]$VhdSizeMB = 24576
 )
 $ErrorActionPreference = 'Stop'
 foreach ($path in @($Procmon, $Control, $Output)) { if (-not [IO.Path]::IsPathFullyQualified($path)) { throw "Not an absolute path: $path" } }
+if ($Vhd -and (-not [IO.Path]::IsPathFullyQualified($Vhd) -or -not $Vhd.EndsWith('.vhdx', 'OrdinalIgnoreCase') -or -not $VhdLetter)) { throw 'The test disk needs an absolute .vhdx path and a letter.' }
 Start-Transcript -LiteralPath (Join-Path $Control 'controller.log') -Append | Out-Null
 $deadline = (Get-Date).AddHours(12)
 
@@ -69,14 +79,45 @@ function Test-Filter([string]$config, [string]$label) {
     return ($wrote -and ($null -eq $config -or $noise -eq 0))
 }
 
+function Mount-TestDisk {
+    # No automatic letter, so Windows never offers to format a raw volume; the letter is added explicitly.
+    $disk = Mount-DiskImage -ImagePath $Vhd -NoDriveLetter -PassThru | Get-Disk
+    if ($disk.PartitionStyle -eq 'RAW') {
+        Initialize-Disk -Number $disk.Number -PartitionStyle GPT
+        $partition = New-Partition -DiskNumber $disk.Number -UseMaximumSize
+        Format-Volume -Partition $partition -FileSystem NTFS -NewFileSystemLabel 'MW-TEST' -Confirm:$false | Out-Null
+    }
+    $partition = Get-Partition -DiskNumber $disk.Number | Where-Object Type -eq 'Basic' | Select-Object -First 1
+    if (-not (Test-Path "${VhdLetter}:\")) { Add-PartitionAccessPath -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber -AccessPath "${VhdLetter}:\" }
+    $until = (Get-Date).AddSeconds(30)
+    while (-not (Test-Path "${VhdLetter}:\") -and (Get-Date) -lt $until) { Start-Sleep -Milliseconds 500 }
+    if (-not (Test-Path "${VhdLetter}:\")) { throw "The test disk did not appear as ${VhdLetter}:." }
+}
+
+function Dismount-TestDisk {
+    if ($Vhd -and (Test-Path -LiteralPath $Vhd) -and (Get-DiskImage -ImagePath $Vhd -ErrorAction SilentlyContinue).Attached) {
+        Dismount-DiskImage -ImagePath $Vhd | Out-Null
+    }
+}
+
 try {
+    if ($Vhd) {
+        if (Test-Path -LiteralPath $Vhd) { throw "The test disk file already exists: $Vhd" }
+        if (Test-Path "${VhdLetter}:\") { throw "Drive ${VhdLetter}: is already in use." }
+        $script = Join-Path $Control 'create-vhd.txt'
+        Set-Content -LiteralPath $script -Value "create vdisk file=`"$Vhd`" maximum=$VhdSizeMB type=expandable" -Encoding ascii
+        & diskpart.exe /s $script | Out-Host
+        if (-not (Test-Path -LiteralPath $Vhd)) { throw 'diskpart did not create the test disk.' }
+        Mount-TestDisk
+        Write-Host "Test disk attached as ${VhdLetter}: ($VhdSizeMB MB, expandable)"
+    }
     $mode = 'unfiltered'; $config = $null
     foreach ($candidate in @(@{ Label = 'terminated'; File = 'filter.pmc' }, @{ Label = 'unterminated'; File = 'filter-unterminated.pmc' })) {
         $file = Join-Path $Control $candidate.File
         if ((Test-Path -LiteralPath $file) -and (Test-Filter $file $candidate.Label)) { $mode = "filtered ($($candidate.Label))"; $config = $file; break }
     }
     if (-not $config -and -not (Test-Filter $null 'unfiltered')) { throw 'Process Monitor did not record the calibration write even without a filter.' }
-    @{ mode = $mode; ready = $true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Control 'controller-status.json') -Encoding utf8
+    @{ mode = $mode; ready = $true; vhdLetter = $VhdLetter } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Control 'controller-status.json') -Encoding utf8
     Write-Host "Trace mode: $mode"
 
     $active = $null
@@ -87,6 +128,11 @@ try {
         if (-not $request) { Start-Sleep -Seconds 1; continue }
         Remove-Item -LiteralPath $request.FullName
         if ($request.Name -eq 'quit.request') { break }
+        if ($Vhd -and $request.Name -in 'vhd-detach.request', 'vhd-attach.request') {
+            if ($request.Name -eq 'vhd-detach.request') { Dismount-TestDisk; $marker = 'vhd-detached' } else { Mount-TestDisk; $marker = 'vhd-attached' }
+            Set-Content -LiteralPath (Join-Path $Control $marker) -Value '' -Encoding ascii
+            continue
+        }
         if ($request.Name -notmatch '^(start|stop)-([a-z0-9-]{1,40})\.request$') { Write-Host "Ignored $($request.Name)"; continue }
         $verb = $Matches[1]; $phase = $Matches[2]
         $backing = Join-Path $Output "$phase.pml"
@@ -111,5 +157,9 @@ catch {
 }
 finally {
     Stop-Capture
+    try { Dismount-TestDisk } catch { Write-Host "Could not detach the test disk: $($_.Exception.Message)" }
+    if ($Vhd -and (Test-Path -LiteralPath $Vhd)) {
+        try { Remove-Item -LiteralPath $Vhd -Force } catch { Write-Host "Could not delete the test disk file: $($_.Exception.Message)" }
+    }
     Stop-Transcript | Out-Null
 }

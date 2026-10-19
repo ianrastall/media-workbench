@@ -8,11 +8,15 @@ artifacts/containment-trace/<time>/data, traces the app's file changes with Proc
 the elevated controller; Process Monitor itself is not shipped or committed, see .tools/procmon), and writes
 report.md beside it. The full run downloads about 15 GB into that data folder and uses the GPU for an hour or more.
 -Quick runs read-only phases only; -NoTrace skips Process Monitor (no elevation) to check the driver.
+-DriveFailure instead puts the data folder on a 24 GB expandable test virtual disk that the elevated controller
+creates in the run folder (about 7 GB used on this drive), fills it with filler files to just below setup's and a
+picture's space needs, and detaches it before and during a picture; the disk is detached and deleted at the end.
 Process Monitor's capture files are removed once the report is written; the data folder is kept for inspection.
 #>
 param(
     [switch]$Quick,
     [switch]$NoTrace,
+    [switch]$DriveFailure,
     [string]$Procmon = (Join-Path $PSScriptRoot '..\..\.tools\procmon\Procmon64.exe'),
     [string]$App = (Join-Path $env:LOCALAPPDATA 'Programs\Media Workbench')
 )
@@ -32,6 +36,16 @@ if (-not $Quick -and $free -lt 60GB) { throw "The full run needs about 60 GB fre
 
 $arguments = @('-I', '-B', (Join-Path $PSScriptRoot 'acceptance.py'), '--run', $run, '--app', $App)
 if ($Quick) { $arguments += '--quick' }
+$diskArguments = @()
+if ($DriveFailure) {
+    if ($NoTrace -or $Quick) { throw '-DriveFailure needs the elevated controller; do not combine it with -NoTrace or -Quick.' }
+    $used = @((Get-PSDrive -PSProvider FileSystem).Name) + @(Get-CimInstance Win32_LogicalDisk | ForEach-Object { $_.DeviceID.Substring(0, 1) })
+    $letter = @('T', 'R', 'S', 'U', 'V', 'W', 'X', 'Y', 'Q', 'P') | Where-Object { $_ -notin $used } | Select-Object -First 1
+    if (-not $letter) { throw 'No free drive letter for the test disk.' }
+    $diskArguments = @('-Vhd', "`"$(Join-Path $run 'drive-failure.vhdx')`"", '-VhdLetter', $letter)
+    $arguments += '--drive-failure'
+    Write-Host "The test disk will appear as ${letter}: while the checks run."
+}
 if (-not $NoTrace) {
     $Procmon = (Resolve-Path $Procmon).Path
     if ((Get-AuthenticodeSignature $Procmon).Status -ne 'Valid') { throw "$Procmon is not validly signed." }
@@ -39,8 +53,9 @@ if (-not $NoTrace) {
     & $python -I -B (Join-Path $PSScriptRoot 'procmon_config.py') (Join-Path $control 'filter-unterminated.pmc') --no-terminator
     $shell = (Get-Process -Id $PID).Path
     Write-Host 'Starting the elevated trace controller: Windows will ask for permission once.'
-    Start-Process -FilePath $shell -Verb RunAs -WindowStyle Minimized -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-        "`"$(Join-Path $PSScriptRoot 'trace-controller.ps1')`"", '-Procmon', "`"$Procmon`"", '-Control', "`"$control`"", '-Output', "`"$capture`"")
+    $controllerArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $PSScriptRoot 'trace-controller.ps1')`"",
+        '-Procmon', "`"$Procmon`"", '-Control', "`"$control`"", '-Output', "`"$capture`"") + $diskArguments
+    Start-Process -FilePath $shell -Verb RunAs -WindowStyle Minimized -ArgumentList $controllerArguments
     $until = (Get-Date).AddMinutes(15)
     while (-not (Test-Path (Join-Path $control 'controller-status.json'))) {
         if (Test-Path (Join-Path $control 'controller-failed')) { throw 'The trace controller failed: ' + (Get-Content (Join-Path $control 'controller-failed') -Raw) }

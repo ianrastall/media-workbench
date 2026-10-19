@@ -302,8 +302,166 @@ def storage(app, data, state):
     return f"Data folder {folder_bytes(data) / 1024 ** 3:.1f} GiB after the run."
 
 
+# Drive-failure checks: the data folder is on the controller's test virtual disk. Filler files outside the data
+# folder (written by this driver, so never counted as the app's) bring free space just below each requirement.
+def _filler(data):
+    return Path(data.anchor) / "filler.bin"
+
+
+def fill(data, leave):
+    filler = _filler(data)
+    filler.unlink(missing_ok=True)
+    size = max(0, shutil.disk_usage(data.anchor).free - leave)
+    allocate(filler, size)
+    return shutil.disk_usage(data.anchor).free
+
+
+def allocate(path, size):
+    """Reserve `size` bytes with SetEndOfFile, which allocates without writing (Python's truncate writes zeros)."""
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.SetFilePointerEx.argtypes = [wintypes.HANDLE, ctypes.c_longlong, ctypes.POINTER(ctypes.c_longlong), wintypes.DWORD]
+    kernel.SetEndOfFile.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.CreateFileW(str(path), 0x40000000, 0, None, 2, 0x80, None)  # GENERIC_WRITE, CREATE_ALWAYS, NORMAL
+    if handle in (None, wintypes.HANDLE(-1).value):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        if not kernel.SetFilePointerEx(handle, size, None, 0) or not kernel.SetEndOfFile(handle):
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def unfill(data):
+    _filler(data).unlink(missing_ok=True)
+
+
+def vhd(control, verb):
+    marker = control / ("vhd-detached" if verb == "detach" else "vhd-attached")
+    marker.unlink(missing_ok=True)
+    (control / f"vhd-{verb}.request").write_text("", encoding="ascii")
+    deadline = time.time() + 300
+    while not marker.exists():
+        if (control / "controller-failed").exists():
+            raise RuntimeError("The trace controller stopped: " + (control / "controller-failed").read_text(encoding="utf-8"))
+        if time.time() > deadline:
+            raise RuntimeError(f"The test disk did not {verb}.")
+        time.sleep(1)
+
+
+def _expect_refusal(result, words):
+    if not result.get("isError"):
+        raise RuntimeError("The operation was not refused.")
+    if not any(word in result["text"].lower() for word in words):
+        raise RuntimeError("Refused for another reason: " + result["text"])
+    return result["text"]
+
+
+def _jobs(data):
+    return sorted(path.name for path in (data / "jobs").glob("*.json") if not path.name.startswith("install-")) if (data / "jobs").is_dir() else []
+
+
+def setup_low_space(app, data, state):
+    free = fill(data, 10 * 1024 ** 3)
+    data.mkdir(parents=True, exist_ok=True)
+    text = with_host(app, data, lambda host: _expect_refusal(host.tool("workbench_install_model", expect_error=True), ["free space"]))
+    written = folder_bytes(data)
+    if written > 50 * 1024 ** 2:
+        raise RuntimeError(f"{written / 1024 ** 2:.0f} MiB was written before the refusal.")
+    return f"With {free / 1024 ** 3:.1f} GiB free, setup refused: {text} The data folder holds {written / 1024:.0f} KiB."
+
+
+def setup_on_disk(app, data, state):
+    unfill(data)
+    return with_host(app, data, lambda host: "SD 1.5 on the test disk " + _installed(host.tool("workbench_install_model")))
+
+
+def generate_low_space(app, data, state):
+    before = _jobs(data)
+    free = fill(data, 150 * 1024 ** 2)
+    text = with_host(app, data, lambda host: _expect_refusal(host.tool("workbench_generate_image", {"prompt": "A lighthouse", "seed": 1, "steps": 12}, expect_error=True), ["free space"]))
+    if _jobs(data) != before:
+        raise RuntimeError("A job record was written although the picture was refused.")
+    python = app / "runtime" / "python" / "python.exe"
+    update = subprocess.run([str(app / "MediaWorkbench.Cli.exe"), str(python), str(app), "update-check", "0.3.0-alpha.8", "--download", str(data)],
+                            capture_output=True, text=True, timeout=1800)
+    if update.returncode == 0:
+        raise RuntimeError("The update download was not refused.")
+    kept = list((data / "temp" / "updates").glob("*")) if (data / "temp" / "updates").is_dir() else []
+    if kept:
+        raise RuntimeError(f"The refused update left {[path.name for path in kept]}.")
+    return (f"With {free / 1024 ** 2:.0f} MiB free, the picture was refused with no job record: {text} "
+            f"The update download was refused too: {(update.stderr or update.stdout).strip()[:300]}")
+
+
+def generate_after_space(app, data, state):
+    unfill(data)
+    picture = with_host(app, data, lambda host: host.tool("workbench_generate_image", {"prompt": "A lighthouse at dusk", "seed": 2, "steps": 12}))
+    return f"After freeing space, a picture was made in {picture['seconds']} s."
+
+
+def disconnected(app, data, state):
+    vhd(state["control"], "detach")
+    if data.exists():
+        raise RuntimeError("The data folder is still reachable after detaching the disk.")
+    def run(host):
+        status = host.tool("workbench_model_status", expect_error=True)
+        picture = host.tool("workbench_generate_image", {"prompt": "A lighthouse", "seed": 3, "steps": 12}, expect_error=True)
+        return status, picture
+    status, picture = with_host(app, data, run)
+    if not picture.get("isError"):
+        raise RuntimeError("A picture was made with the data folder's drive disconnected.")
+    python = app / "runtime" / "python" / "python.exe"
+    update = subprocess.run([str(app / "MediaWorkbench.Cli.exe"), str(python), str(app), "update-check", "0.3.0-alpha.8", "--download", str(data)],
+                            capture_output=True, text=True, timeout=1800)
+    if update.returncode == 0:
+        raise RuntimeError("The update download did not stop with the drive disconnected.")
+    shown = status.get("text") or status.get("message") or status.get("status")
+    return (f"Model status: {shown}. Picture: {picture['text']} Update download: {(update.stderr or update.stdout).strip()[:300]}")
+
+
+def disconnected_mid_picture(app, data, state):
+    vhd(state["control"], "attach")
+    host = Host(app, data)
+    try:
+        request = host.send("tools/call", {"name": "workbench_generate_image", "arguments": {"prompt": "A windmill in a tulip field", "seed": 4, "steps": 50},
+                                           "_meta": {"progressToken": "unplug"}})
+        _when_generating(host, request)
+        vhd(state["control"], "detach")
+        answer = queue.Queue()
+        threading.Thread(target=lambda: answer.put(host.wait(request)), daemon=True).start()
+        try:
+            result = answer.get(timeout=900)
+        except queue.Empty:
+            raise RuntimeError("The picture neither failed nor finished within 15 minutes of unplugging the drive.")
+    finally:
+        try:
+            host.close(timeout=120)
+        except subprocess.TimeoutExpired:
+            host.process.kill()
+            raise RuntimeError("The MCP host did not exit after the drive was unplugged.")
+    left = owned_processes(app, data)
+    if left:
+        raise RuntimeError("Processes outlived the host: " + "; ".join(left))
+    message = result["content"][0]["text"] if result.get("isError") else "the picture was saved"
+    vhd(state["control"], "attach")
+    def recover(fresh):
+        status = fresh.tool("workbench_model_status")
+        library = fresh.tool("workbench_library", {"query": "", "kind": "generate", "limit": 5})
+        again = fresh.tool("workbench_generate_image", {"prompt": "A windmill at noon", "seed": 5, "steps": 12})
+        return status, library, again
+    status, library, again = with_host(app, data, recover)
+    return (f"Unplugged mid-picture: {message[:300]}; no process left behind. Plugged back in: model status {status.get('status')}, "
+            f"Library unfinished: {_unfinished(library)}; a new picture took {again['seconds']} s.")
+
+
 FULL = [setup_sd15, pictures_sd15, setup_xl, pictures_xl, setup_video, video, discover, cancel, crash, reverify, update_download, storage]
 QUICK = [inspect, discover, storage]
+DRIVE_FAILURE = [setup_low_space, setup_on_disk, generate_low_space, generate_after_space, disconnected, disconnected_mid_picture]
 
 
 def request_trace(control, verb, phase, timeout):
@@ -327,9 +485,15 @@ def main():
     parser.add_argument("--app", required=True, type=Path)
     parser.add_argument("--control", type=Path)
     parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--drive-failure", action="store_true", help="use the controller's test disk (needs --control)")
     options = parser.parse_args()
     run, app = options.run.resolve(), options.app.resolve()
     data = run / "data"
+    if options.drive_failure:
+        letter = json.loads((options.control / "controller-status.json").read_text(encoding="utf-8")).get("vhdLetter") if options.control else None
+        if not letter:
+            raise SystemExit("--drive-failure needs the trace controller's test disk.")
+        data = Path(f"{letter}:\\") / "Media Workbench"
     data.mkdir(parents=True, exist_ok=True)
     version = subprocess.run(["powershell", "-NoProfile", "-Command", f"(Get-Item -LiteralPath '{app / 'MediaWorkbench.exe'}').VersionInfo.ProductVersion"],
                              capture_output=True, text=True).stdout.strip()
@@ -340,10 +504,10 @@ def main():
               "dataVolume": str(data)[:2], "appVolume": str(app)[:2], "phases": []}
     sampler = Sampler(data, options.control)
     sampler.start()
-    state = {}
+    state = {"control": options.control}
     failed = False
     try:
-        for phase in QUICK if options.quick else FULL:
+        for phase in DRIVE_FAILURE if options.drive_failure else QUICK if options.quick else FULL:
             name = phase.__name__.replace("_", "-")
             print(f"== {name}", flush=True)
             request_trace(options.control, "start", name, 600)
@@ -368,6 +532,11 @@ def main():
             if failed:
                 break
     finally:
+        if options.drive_failure:
+            try:
+                unfill(data)
+            except OSError:
+                pass  # The disk is detached; the controller deletes it anyway.
         if options.control:
             (options.control / "quit.request").write_text("", encoding="ascii")
         (run / "run.json").write_text(json.dumps(record, indent=2), encoding="utf-8")

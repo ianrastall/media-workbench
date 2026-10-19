@@ -83,7 +83,18 @@ The user decided the scope of 0.4.0-alpha.1's acceptance:
 
 **Repeat traced run on the installed 0.3.0-alpha.11 (18 October 2026):** clean. Apart from the NVIDIA driver's 0-byte profile open, the app changed nothing outside the data folder, and cancel records *cancelled*. See [validation](validation.md#repeat-drive-containment-trace-installed-030-alpha11-18-october-2026).
 
-Still to do for the milestone, in order: low-space and disconnected-drive checks on a small attached virtual disk (a second UAC prompt); the interactive session with the user (GUI painted change, Cancel, crash recovery, an older alpha → 0.3.0-alpha.11 Update now and relaunch, never-use drive); then validation notes and the release.
+**Drive-failure checks (tooling ready, not yet run):** `./scripts/containment/trace.ps1 -DriveFailure`, with one UAC prompt. The elevated controller creates a 24 GB *expandable* virtual disk in the run folder (about 7 GB used on D:), formats it and gives it a free letter, and the data folder goes on that disk. The traced phases, in order:
+
+- setup with 10 GiB free must refuse before writing more than 50 MiB;
+- setup with the disk freed;
+- a picture with 150 MiB free must refuse without a job record, and an update download must be refused and leave nothing;
+- a picture after freeing space;
+- with the disk detached, status, a picture and an update download must fail plainly;
+- the disk is detached mid-picture: the picture must fail without leaving processes behind, and after re-attaching, the job is recovered and a new picture works.
+
+The driver writes filler files outside the data folder with `SetEndOfFile`, which allocates without writing. The controller detaches and deletes the disk when it exits.
+
+Still to do for the milestone, in order: run the drive-failure checks above; the interactive session with the user (GUI painted change, Cancel, crash recovery, an older alpha → 0.3.0-alpha.11 Update now and relaunch, never-use drive); then validation notes and the release.
 
 ## Resume here
 
