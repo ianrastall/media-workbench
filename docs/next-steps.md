@@ -1,5 +1,13 @@
 # Development direction after 0.3.0-alpha.11
 
+## Simpler model setup (0.3.0-alpha.15)
+
+The user's renewed 19 October request prioritizes a simpler UI and background setup. The curated Models/Get coordinator is now implemented ahead of the optional installer layout: one Get for XL preflights all missing prerequisites, prepares the shared setup as needed and retains the existing verification gates. Create is clear of setup/import cards. Advanced options in Models contains imports, Hub search, repairs and short-clip setup; model removal still lives in Settings.
+
+Next bounded UI slice: ready-model descriptions and useful per-model first-picture defaults, then hardware recommendations and measured timings from saved evidence. Plan that independently of the optional installer work; do not change inference settings without real per-choice GPU verification. The new Models/Create layout still needs interactive keyboard, narrow-window and scaling acceptance with the user available; do not open/control windows unattended. A fresh real-GPU Get chain can be included then, using isolated settings/data and without redownloading the user's working models.
+
+The containment backlog is retained: optional `<working folder>/App` first install/discovery, folder changes/moves, unavailable drives and data-preserving uninstall require isolated installer fixtures and a full write trace before calling that milestone 0.4.0-alpha.1. Preserve existing install/taskbar paths. Continue checks/builds, direct-to-main pushes, GitHub Actions releases and checksum-verified local installation of each published release, as requested. Historical sections below retain the earlier ordering.
+
 ## Legacy cleanup verification (0.3.0-alpha.14)
 
 Implemented: verify old preferences/log paths are absent after deletion and before clearing the migration marker; preserve/retry the marker if files return; explain later leftovers on every load/save without authorizing or changing them. Deterministic replacement tests and the published CLI exercise these conditions. The real alpha.13 leftover's origin remains unexplained; no new writer trace or claim of full automatic containment is made.

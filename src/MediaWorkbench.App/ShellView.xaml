@@ -22,7 +22,7 @@
             IsBackButtonVisible="Collapsed" SelectionChanged="Navigate" IsSettingsVisible="True">
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Home" Tag="home" Icon="Home" IsSelected="True" />
-                <NavigationViewItem Content="Discover" Tag="discover" Icon="Find" />
+                <NavigationViewItem Content="Models" Tag="models" Icon="Find" />
                 <NavigationViewItem Content="Create" Tag="create" Icon="Edit" />
                 <NavigationViewItem Content="Library" Tag="library" Icon="Library" />
                 <NavigationViewItem Content="Tools" Tag="tools" Icon="Repair" />
@@ -36,25 +36,12 @@
                     <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Message="{x:Bind ViewModel.Notice, Mode=OneWay}" />
 
                     <StackPanel Spacing="20" Visibility="{x:Bind ViewModel.IsHome, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="Components" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.NativeStatus, Mode=OneWay}" TextWrapping="Wrap" />
-                                    <TextBlock Text="{x:Bind ViewModel.WorkerStatus, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                    <Button Content="Check components" Command="{x:Bind ViewModel.DiagnosticsCommand}" />
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Column="1" Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="Your workspace" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.DataRoot, Mode=OneWay}" TextWrapping="Wrap" />
-                                    <TextBlock Text="Manage the data folder in Settings. Model files and media stay separate from application updates." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                    <Button Content="Open data folder" Command="{x:Bind ViewModel.OpenDataFolderCommand}" />
-                                </StackPanel>
-                            </Border>
-                        </Grid>
+                        <TextBlock Text="Start a picture" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBlock Text="Choose a model once. Then describe what you would like to make in Create." TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Choose a model" Command="{x:Bind ViewModel.GoToModelsCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                            <Button Content="Create a picture" Command="{x:Bind ViewModel.GoToCreateCommand}" />
+                        </StackPanel>
                         <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="Updates" Style="{ThemeResource SubtitleTextBlockStyle}" />
@@ -69,88 +56,144 @@
                                 <TextBlock Text="Updating downloads the new installer from GitHub, checks it against its published checksum, then closes and reopens Media Workbench. Your models, images, and settings are kept." TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                             </StackPanel>
                         </Border>
-                        <TextBlock Text="First model pipeline" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                        <TextBlock Text="Open Create to install Stable Diffusion 1.5, verify your GPU, and generate your first image." TextWrapping="Wrap" />
-                        <Button Content="Preview installation plan" Command="{x:Bind ViewModel.PlanCommand}" />
-                        <TextBlock Text="{x:Bind ViewModel.PlanText, Mode=OneWay}" TextWrapping="Wrap" />
                     </StackPanel>
 
-                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsDiscover, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="180" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <TextBox Text="{x:Bind ViewModel.SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Search Hugging Face" PlaceholderText="Model name or publisher" MaxLength="200" />
-                            <ComboBox Grid.Column="1" Header="Task" HorizontalAlignment="Stretch" SelectedIndex="{x:Bind ViewModel.TaskIndex, Mode=TwoWay}">
-                                <ComboBoxItem Content="All tasks" Tag="" />
-                                <ComboBoxItem Content="Text to image" Tag="text-to-image" />
-                                <ComboBoxItem Content="Image to image" Tag="image-to-image" />
-                                <ComboBoxItem Content="Text to video" Tag="text-to-video" />
-                                <ComboBoxItem Content="Image to video" Tag="image-to-video" />
-                            </ComboBox>
-                            <Button Grid.Column="2" Content="Search" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.SearchCommand}" Style="{ThemeResource AccentButtonStyle}" />
-                        </Grid>
-                        <Grid ColumnSpacing="20">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="2*" /></Grid.ColumnDefinitions>
-                            <ListView ItemsSource="{x:Bind ViewModel.Models}" SelectedItem="{x:Bind ViewModel.SelectedModel, Mode=TwoWay}" SelectionMode="Single"
-                                MaxHeight="580" MinHeight="260" AutomationProperties.Name="Hugging Face search results" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="core:HubModel">
-                                        <StackPanel Spacing="5" Padding="8,12">
-                                            <TextBlock Text="{x:Bind Id}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                            <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                            <TextBlock Text="{x:Bind Stats}" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                                            <TextBlock Text="{x:Bind Hint}" TextWrapping="Wrap" />
-                                            <TextBlock Text="{x:Bind License}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                            <StackPanel Grid.Column="1" Spacing="12">
-                                <TextBlock Text="Model details" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                <StackPanel Spacing="8">
-                                    <Button Content="Check model" Command="{x:Bind ViewModel.DetailsCommand}" />
-                                    <Button Content="Model card / license" Command="{x:Bind ViewModel.OpenModelCommand}" />
-                                </StackPanel>
-                                <TextBlock Text="{x:Bind ViewModel.HubPlanText, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-                                <CheckBox IsChecked="{x:Bind ViewModel.HubLicenseReviewed, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
-                                    <TextBlock Text="I reviewed the publisher's model card and license." TextWrapping="Wrap" />
-                                </CheckBox>
-                                <Button Content="Download and test" Command="{x:Bind ViewModel.DownloadModelCommand}" Style="{ThemeResource AccentButtonStyle}" />
-                                <Expander Header="Advanced options" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsModels, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <TextBlock Text="Setup stays in your working folder. You can cancel at any time; safe downloads are kept for another try. A model becomes ready only after its files, software and a test picture pass their checks." TextWrapping="Wrap" />
+                        <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Stable Diffusion 1.5" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <TextBlock Text="A smaller download for quick ideas, illustrations and everyday pictures. Starts at 512 pixels; you can make pictures bigger in Tools." TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind ViewModel.BaselineSetupText, Mode=OneWay}" TextWrapping="Wrap" />
+                                <HyperlinkButton Content="Model details and license" NavigateUri="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5" Padding="0" />
+                                <Button Content="{x:Bind ViewModel.BaselineActionLabel, Mode=OneWay}" Command="{x:Bind ViewModel.GetModelCommand}" CommandParameter="sd15-baseline" Style="{ThemeResource AccentButtonStyle}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Stable Diffusion XL" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <TextBlock Text="Larger, more detailed pictures at about 1024 pixels. Uses more memory; a picture can take several minutes on a 6 GB graphics card. Get also prepares the shared picture setup when needed." TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind ViewModel.XlSetupText, Mode=OneWay}" TextWrapping="Wrap" />
+                                <HyperlinkButton Content="Model details and license" NavigateUri="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0" Padding="0" />
+                                <Button Content="{x:Bind ViewModel.XlActionLabel, Mode=OneWay}" Command="{x:Bind ViewModel.GetModelCommand}" CommandParameter="sdxl-base" Style="{ThemeResource AccentButtonStyle}" />
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="Create a picture" Command="{x:Bind ViewModel.GoToCreateCommand}" />
+                            <Button Content="Check again" Command="{x:Bind ViewModel.RefreshModelsCommand}" />
+                        </StackPanel>
+                        <Expander Header="Advanced options" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="This computer and setup repairs" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.SystemProfileText, Mode=OneWay}" TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind ViewModel.RuntimeNote, Mode=OneWay}" TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind ViewModel.InstallationText, Mode=OneWay}" TextWrapping="Wrap" />
+                                <Button Content="Repair or test the shared picture setup" Command="{x:Bind ViewModel.InstallCommand}" />
+                                <Button Content="Repair or test Stable Diffusion XL" Command="{x:Bind ViewModel.InstallXlCommand}" />
+                                <Expander Header="Add a model you already downloaded" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                                     <StackPanel Spacing="12">
-                                        <ComboBox Header="Model file" ItemsSource="{x:Bind ViewModel.HubFiles}" SelectedItem="{x:Bind ViewModel.SelectedHubFile, Mode=TwoWay}" DisplayMemberPath="Label" HorizontalAlignment="Stretch" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
-                                        <Button Content="Check this file" Command="{x:Bind ViewModel.CheckHubFileCommand}" />
-                                        <TextBox Text="{x:Bind ViewModel.DetailsText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160" MaxHeight="260" AutomationProperties.Name="Selected model details" />
+                                        <TextBlock TextWrapping="Wrap" Text="Use a Stable Diffusion 1.5-family model you downloaded elsewhere: one .safetensors file, or a Diffusers model folder. Media Workbench copies it into your data folder (your original stays where it is), checks the copy, and tests it on your GPU before you can choose it. Nothing is downloaded." />
+                                        <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind ViewModel.HasNoImportCandidate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                                            <Button Content="Choose a model file…" Click="ChooseModelFile" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                            <Button Content="Choose a model folder…" Click="ChooseModelFolder" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                        </StackPanel>
+                                        <TextBlock Text="{x:Bind ViewModel.ImportText, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.HasImportCandidate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                                            <TextBox Header="Name" Text="{x:Bind ViewModel.ImportName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" Width="360" HorizontalAlignment="Left" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                                <Button Content="Add and test" Command="{x:Bind ViewModel.ImportModelCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                                <Button Content="Choose another" Command="{x:Bind ViewModel.CancelImportCommand}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                            Text="Only .safetensors files are accepted: older .ckpt files can run hidden code when opened. Follow the license on the page you downloaded the model from. Remove added models in Settings." />
                                     </StackPanel>
                                 </Expander>
+                                <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Text="Short clips (experimental)" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="{x:Bind ViewModel.VideoText, Mode=OneWay}" TextWrapping="Wrap" />
+                                        <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            Text="Videos use Stable Diffusion 1.5 with AnimateDiff motion layers to make 2- or 3-second clips. Setup downloads 1.7 GB into the data folder and makes a short test video on your graphics card. On a 6 GB card that test, and each video, can take several minutes." />
+                                        <HyperlinkButton Content="AnimateDiff motion adapter (Apache-2.0)" NavigateUri="https://huggingface.co/guoyww/animatediff-motion-adapter-v1-5-3" Padding="0" />
+                                        <Button Content="Set up videos" Command="{x:Bind ViewModel.InstallVideoCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Text="Find other models on Hugging Face" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <TextBlock Text="These are community models. Check the model and its license before downloading. You can remove added models in Settings." TextWrapping="Wrap" />
+                                <StackPanel Spacing="16">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="180" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBox Text="{x:Bind ViewModel.SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Header="Search Hugging Face" PlaceholderText="Model name or publisher" MaxLength="200" />
+                                        <ComboBox Grid.Column="1" Header="Task" HorizontalAlignment="Stretch" SelectedIndex="{x:Bind ViewModel.TaskIndex, Mode=TwoWay}">
+                                            <ComboBoxItem Content="All tasks" Tag="" />
+                                            <ComboBoxItem Content="Text to image" Tag="text-to-image" />
+                                            <ComboBoxItem Content="Image to image" Tag="image-to-image" />
+                                            <ComboBoxItem Content="Text to video" Tag="text-to-video" />
+                                            <ComboBoxItem Content="Image to video" Tag="image-to-video" />
+                                        </ComboBox>
+                                        <Button Grid.Column="2" Content="Search" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.SearchCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="2*" /></Grid.ColumnDefinitions>
+                                        <ListView ItemsSource="{x:Bind ViewModel.Models}" SelectedItem="{x:Bind ViewModel.SelectedModel, Mode=TwoWay}" SelectionMode="Single"
+                                            MaxHeight="580" MinHeight="260" AutomationProperties.Name="Hugging Face search results" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate x:DataType="core:HubModel">
+                                                    <StackPanel Spacing="5" Padding="8,12">
+                                                        <TextBlock Text="{x:Bind Id}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        <TextBlock Text="{x:Bind Stats}" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                                        <TextBlock Text="{x:Bind Hint}" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{x:Bind License}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                        <StackPanel Grid.Column="1" Spacing="12">
+                                            <TextBlock Text="Model details" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                            <StackPanel Spacing="8">
+                                                <Button Content="Check model" Command="{x:Bind ViewModel.DetailsCommand}" />
+                                                <Button Content="Model card / license" Command="{x:Bind ViewModel.OpenModelCommand}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{x:Bind ViewModel.HubPlanText, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                            <CheckBox IsChecked="{x:Bind ViewModel.HubLicenseReviewed, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                                                <TextBlock Text="I reviewed the publisher's model card and license." TextWrapping="Wrap" />
+                                            </CheckBox>
+                                            <Button Content="Download and test" Command="{x:Bind ViewModel.DownloadModelCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                            <Expander Header="Advanced options" HorizontalAlignment="Stretch">
+                                                <StackPanel Spacing="12">
+                                                    <ComboBox Header="Model file" ItemsSource="{x:Bind ViewModel.HubFiles}" SelectedItem="{x:Bind ViewModel.SelectedHubFile, Mode=TwoWay}" DisplayMemberPath="Label" HorizontalAlignment="Stretch" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                                                    <Button Content="Check this file" Command="{x:Bind ViewModel.CheckHubFileCommand}" />
+                                                    <TextBox Text="{x:Bind ViewModel.DetailsText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160" MaxHeight="260" AutomationProperties.Name="Selected model details" />
+                                                </StackPanel>
+                                            </Expander>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+
                             </StackPanel>
-                        </Grid>
+                        </Expander>
                     </StackPanel>
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsCreate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}"
                         AllowDrop="True" DragOver="AcceptPictureDrag" Drop="DropPicture">
-                        <!-- Once ready, setup shrinks to one line so Create is about the picture, not the plumbing. -->
-                        <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                            <FontIcon Glyph="&#xE73E;" Foreground="{ThemeResource SystemFillColorSuccessBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Stable Diffusion 1.5 is installed and verified on this computer." VerticalAlignment="Center" TextWrapping="Wrap" />
-                            <HyperlinkButton Content="Check again" Command="{x:Bind ViewModel.RefreshInstallationCommand}" />
-                        </StackPanel>
-                        <InfoBar IsOpen="{x:Bind ViewModel.HasRuntimeNote, Mode=OneWay}" IsClosable="False" Severity="Informational"
-                            Message="{x:Bind ViewModel.RuntimeNote, Mode=OneWay}" Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
-                        <RadioButtons Header="What to make" ItemsSource="{x:Bind ViewModel.CreateKindLabels}" SelectedIndex="{x:Bind ViewModel.CreateKindIndex, Mode=TwoWay}" MaxColumns="2"
-                            Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
-                        <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" Visibility="{x:Bind ViewModel.NeedsVideoSetup, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" Visibility="{x:Bind ViewModel.NeedsSetup, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                             <StackPanel Spacing="12">
-                                <TextBlock Text="Set up short videos" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                <TextBlock Text="{x:Bind ViewModel.VideoText, Mode=OneWay}" TextWrapping="Wrap" />
-                                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Text="Videos use Stable Diffusion 1.5 with AnimateDiff motion layers to make 2- or 3-second clips. Setup downloads 1.7 GB into the data folder and makes a short test video on your graphics card. On a 6 GB card that test, and each video, can take several minutes." />
-                                <HyperlinkButton Content="AnimateDiff motion adapter (Apache-2.0)" NavigateUri="https://huggingface.co/guoyww/animatediff-motion-adapter-v1-5-3" Padding="0" />
-                                <Button Content="Set up videos" Command="{x:Bind ViewModel.InstallVideoCommand}" Style="{ThemeResource AccentButtonStyle}" />
+                                <TextBlock Text="Choose a model to get started" Style="{ThemeResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
+                                <TextBlock Text="Models explains your choices and handles setup and checks in the background." TextWrapping="Wrap" />
+                                <Button Content="Choose a model" Command="{x:Bind ViewModel.GoToModelsCommand}" Style="{ThemeResource AccentButtonStyle}" />
                             </StackPanel>
                         </Border>
-                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                        <!-- The chooser appears only once a model the user added has passed its test. -->
-                        <ComboBox Header="Model" ItemsSource="{x:Bind ViewModel.ModelChoices}" SelectedIndex="{x:Bind ViewModel.ModelIndex, Mode=TwoWay}" Width="360"
+                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <RadioButtons Header="What to make" ItemsSource="{x:Bind ViewModel.CreateKindLabels}" SelectedIndex="{x:Bind ViewModel.CreateKindIndex, Mode=TwoWay}" MaxColumns="2" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
+                        <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.NeedsVideoSetup, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                            <TextBlock Text="Short clips need an extra setup. Find it in Models under Advanced options." TextWrapping="Wrap" />
+                            <Button Content="Open Models" Command="{x:Bind ViewModel.GoToModelsCommand}" />
+                        </StackPanel>
+                        <StackPanel Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
+                        <ComboBox Header="Model" ItemsSource="{x:Bind ViewModel.ModelChoices}" SelectedIndex="{x:Bind ViewModel.ModelIndex, Mode=TwoWay}" HorizontalAlignment="Stretch" MaxWidth="520"
                             Visibility="{x:Bind ViewModel.HasModelChoice, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="core:ModelChoice">
@@ -158,52 +201,7 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <Expander Header="Get Stable Diffusion XL for larger, more detailed pictures" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                            Visibility="{x:Bind ViewModel.NeedsXlSetup, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                            <StackPanel Spacing="12">
-                                <TextBlock TextWrapping="Wrap" Text="Stable Diffusion XL makes 1024-pixel pictures with more detail and better composition than Stable Diffusion 1.5. Setup downloads 6.9 GB into the data folder and makes a test picture on your graphics card before you can choose it under Model. It uses the runtime already installed." />
-                                <TextBlock Text="{x:Bind ViewModel.XlText, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                    Text="On graphics cards with 6 GB, or without reliable half precision, the model streams to the card layer by layer: it fits, but each picture can take several minutes, and full precision needs 16 GB of system memory." />
-                                <HyperlinkButton Content="Model card and CreativeML Open RAIL++-M license" NavigateUri="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0" Padding="0" />
-                                <Button Content="Set up Stable Diffusion XL" Command="{x:Bind ViewModel.InstallXlCommand}" Style="{ThemeResource AccentButtonStyle}" />
-                            </StackPanel>
-                        </Expander>
-                        <Expander Header="Add a model you already downloaded" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                            Visibility="{x:Bind ViewModel.ModelReady, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                            <StackPanel Spacing="12">
-                                <TextBlock TextWrapping="Wrap" Text="Use a Stable Diffusion 1.5-family model you downloaded elsewhere: one .safetensors file, or a Diffusers model folder. Media Workbench copies it into your data folder (your original stays where it is), checks the copy, and tests it on your GPU before you can choose it. Nothing is downloaded." />
-                                <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind ViewModel.HasNoImportCandidate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                                    <Button Content="Choose a model file…" Click="ChooseModelFile" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
-                                    <Button Content="Choose a model folder…" Click="ChooseModelFolder" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
-                                </StackPanel>
-                                <TextBlock Text="{x:Bind ViewModel.ImportText, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.HasImportCandidate, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                                    <TextBox Header="Name" Text="{x:Bind ViewModel.ImportName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" Width="360" HorizontalAlignment="Left" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
-                                    <StackPanel Orientation="Horizontal" Spacing="12">
-                                        <Button Content="Add and test" Command="{x:Bind ViewModel.ImportModelCommand}" Style="{ThemeResource AccentButtonStyle}" />
-                                        <Button Content="Choose another" Command="{x:Bind ViewModel.CancelImportCommand}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
-                                    </StackPanel>
-                                </StackPanel>
-                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                    Text="Only .safetensors files are accepted: older .ckpt files can run hidden code when opened. Follow the license on the page you downloaded the model from. Remove added models in Settings." />
-                            </StackPanel>
-                        </Expander>
                         </StackPanel>
-                        <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" Visibility="{x:Bind ViewModel.NeedsSetup, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
-                            <StackPanel Spacing="12">
-                                <TextBlock Text="Set up Stable Diffusion 1.5" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                <TextBlock Text="{x:Bind ViewModel.InstallationText, Mode=OneWay}" TextWrapping="Wrap" />
-                                <TextBlock Text="{x:Bind ViewModel.SystemProfileText, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True"
-                                    Visibility="{x:Bind ViewModel.HasSystemProfile, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}" />
-                                <TextBlock Text="Setup downloads about 5 GiB plus dependency files. Allow 20 GiB free for the runtime, model, and cache. NVIDIA GPU with 6 GB VRAM required. Downloads stay in the data folder shown in Settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <HyperlinkButton Content="Model card and CreativeML Open RAIL-M license" NavigateUri="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5" Padding="0" />
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <Button Content="Install / verify" Command="{x:Bind ViewModel.InstallCommand}" Style="{ThemeResource AccentButtonStyle}" />
-                                    <Button Content="Check model status" Command="{x:Bind ViewModel.RefreshInstallationCommand}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
                         <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.IsPictureMode, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                             <TextBlock Text="Start from a picture (optional)" />
                             <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind ViewModel.HasNoSourceImage, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
@@ -325,6 +323,7 @@
                             <Button Content="Save a copy…" Tag="{x:Bind ViewModel.LatestImage, Mode=OneWay}" Click="SaveImageCopy" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" />
                         </StackPanel>
                         </StackPanel>
+                    </StackPanel>
                     </StackPanel>
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsLibrary, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">

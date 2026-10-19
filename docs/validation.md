@@ -1,5 +1,13 @@
 # Initial alpha validation
 
+## Simpler model setup (0.3.0-alpha.15)
+
+19 October 2026, Windows 11 x64. `scripts/check.ps1` passed: 39 Rust tests plus formatting/Clippy, 235 Python tests and 355 C# checks including MCP. The final Release publish build passed with zero warnings/errors, including x64 payload, bundled headless self-test, preferences/mutex/migration/leftover and MCP checks. Logs: ignored `artifacts/models-check.log` and `artifacts/models-build.log`.
+
+Six focused Python preflight tests cover combined space including all missing prerequisites, XL-specific memory refusal before base download, verified shared setup reuse, present-file estimate reduction without readiness, unsupported hardware and invalid paths. Deterministic C# checks cover single-operation ordering, prerequisite reuse/refusal, cancelling either stage, retry, failed prerequisite/XL tests, stale hardware readiness, blocked Get and the mandatory working-folder gate. A real metadata-worker protocol check exercises plan transport without installation. A read-only preflight against the actual chosen folder reported SD 1.5 ready, XL unready and no hardware/space blocker; it did not write readiness or run inference. CI release/installed verification is pending at this checkpoint.
+
+Reproduce headlessly from the repository root with `scripts/check.ps1` and `scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/models-build-dotnet`; focused tests use `runtime/python/python.exe -B -m unittest discover -s tests -p test_model_setup.py -v`. Put process-local `TEMP`/`TMP` under ignored `artifacts/models-session-temp`. No new GPU inference or interactive layout/keyboard/scaling check is claimed. Earlier real-GPU evidence covers the unchanged stage installers; the new coordinator is exercised with deterministic fakes. Optional colocated-install/full-containment acceptance remains pending.
+
 ## Legacy cleanup verification (0.3.0-alpha.14)
 
 19 October 2026, Windows 11 x64. `scripts/check.ps1` passed: 39 Rust tests plus formatting/Clippy, 229 Python tests and 341 C# checks including MCP. The Release publish build passed with zero warnings/errors; published x64 payload, bundled self-test, migration/mutex, later-leftover and MCP checks passed. Logs are under ignored `artifacts/legacy-cleanup-check.log` and `artifacts/legacy-cleanup-build.log`. Reproduction uses process-local `TEMP`/`TMP` under ignored `artifacts/session-temp`:

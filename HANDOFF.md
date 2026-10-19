@@ -1,6 +1,16 @@
 # Media Workbench handoff
 
-Updated 19 October 2026 for **0.3.0-alpha.14**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+Updated 19 October 2026 for **0.3.0-alpha.15**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
+
+## Resume after simpler model setup
+
+The user renewed authorization for autonomous development, pull/commit/push to main, GitHub Actions releases and installing every published release locally, preserving the existing taskbar target. They prioritized simpler UI/background work, so this bounded milestone advances Models/Get ahead of the optional colocated installer. Models now offers SD 1.5/XL with costs/licenses/Get; Advanced contains imports, Hub search, repairs and short clips. Create has picture controls and a Models link before setup. XL Get preflights combined space/hardware before preparing its shared setup, then calls the existing verified XL installer. One cancellation covers both stages. No verification gates or inference settings changed.
+
+Reproduction commands: `scripts/check.ps1`; `scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/models-build-dotnet`. Focused Python checks: `runtime/python/python.exe -B -m unittest discover -s tests -p test_model_setup.py -v`. Generated logs/reports stay under ignored artifacts. See [alpha.15 validation](docs/validation.md#simpler-model-setup-030-alpha15) for observed results and release/install evidence; do not infer an interactive or GPU check from headless checks.
+
+**Validation:** checks passed (39 Rust, 235 Python, 355 C# including MCP), as did the final zero-warning Release publish and headless payload checks. CI release and local installation remain pending at this checkpoint.
+
+Next: [first-picture defaults and descriptions](docs/next-steps.md#simpler-model-setup-030-alpha15). Optional installation inside the working folder, installer fixtures, full containment tracing and interactive acceptance remain open. Do not call this 0.4.0-alpha.1. The alpha.14 and older notes below are historical.
 
 ## Resume after legacy cleanup verification
 

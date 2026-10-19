@@ -41,6 +41,16 @@ public sealed record HubDownloadPlan(ModelDetails Details, HubDownloadFile[] Fil
 }
 /// <summary>CleanedBytes: what setup removed after passing its test because nothing needs it any more.</summary>
 public sealed record InstallationState(string Status, string Message, long CleanedBytes = 0);
+/// <summary>A cost/compatibility estimate, never evidence that files or inference passed verification.</summary>
+public sealed record ModelSetupPlan(string Model, bool Ready, bool RequiresBase, long DownloadBytes,
+    long RequiredBytes, long FreeBytes, string Blocker, string[] Notes)
+{
+    public string Summary => Ready ? "Ready to use on this computer." : string.Join("\n", new[] {
+        Blocker,
+        $"Model files to download: {StorageSnapshot.Format(DownloadBytes)}. Allow {StorageSnapshot.Format(RequiredBytes)} free; {StorageSnapshot.Format(FreeBytes)} is available.",
+        RequiresBase ? "Includes the shared picture setup. Its private software and dependency downloads are additional; the free-space allowance includes them." : "Uses the shared picture setup already on this computer."
+    }.Where(line => line.Length > 0));
+}
 public sealed record OperationProgress(string Stage, long Completed = 0, long Total = 0, string Unit = "");
 /// <summary>Defaults match records written before guidance, size, and sampler were selectable.</summary>
 public sealed record GenerationSettings(string Prompt, string NegativePrompt, long Seed, int Steps,
@@ -313,6 +323,7 @@ public interface IWorkbenchService
     Task<string> GetHealthAsync(string dataRoot, CancellationToken cancellationToken);
     InstallationPlan GetBaselinePlan();
     Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ModelSetupPlan>> GetSetupPlansAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Reads the GPU, memory, and data-folder drive, and the settings chosen from them; creates nothing.</summary>
     Task<SystemProfile> GetSystemProfileAsync(string dataRoot, CancellationToken cancellationToken);
     /// <summary>Sets up and verifies the bundled model; afterwards removes the download caches unless keepDownloadCaches.</summary>

@@ -146,6 +146,9 @@ public sealed class WorkbenchService(string applicationRoot, string pythonExecut
     public async Task<SystemProfile> GetSystemProfileAsync(string dataRoot, CancellationToken cancellationToken) =>
         JsonSerializer.Deserialize<SystemProfile>(await Execute(dataRoot, "system.profile", new { dataRoot }, cancellationToken), Wire.Json)
             ?? throw new InvalidDataException("Empty hardware profile.");
+    public async Task<IReadOnlyList<ModelSetupPlan>> GetSetupPlansAsync(string dataRoot, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<ModelSetupPlan[]>((await Execute(dataRoot, "models.setup_plan", new { dataRoot }, cancellationToken)).GetProperty("plans"), Wire.Json)
+            ?? throw new InvalidDataException("Empty model setup plans.");
     public async Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false)
     {
         var plan = GetBaselinePlan();

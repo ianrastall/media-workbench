@@ -21,11 +21,13 @@ static class WorkingFolderChecks
             vm.CheckForUpdates = false;
             vm.KeepDownloadCaches = true;
             await vm.InstallCommand.ExecuteAsync(null); // ExecuteAsync can bypass CanExecute; the action must also refuse.
+            await vm.GetModelCommand.ExecuteAsync(ModelChoice.XlId);
             await vm.RefreshLibraryCommand.ExecuteAsync(null);
             await vm.GenerateCommand.ExecuteAsync(null);
             await vm.AddToQueueCommand.ExecuteAsync(null);
             check(vm.NeedsWorkingFolder && vm.DataRoot.Length == 0 && vm.SelectedPage == "settings"
                 && service.DataRoots.Count == 0 && service.ProfileRoots.Count == 0
+                && service.SetupCalls.Count == 0
                 && !Directory.Exists(Path.Combine(state, "Data")) && File.ReadAllText(file) == body,
                 "Invalid preferences never start data operations, create a fallback or overwrite the original file");
         }

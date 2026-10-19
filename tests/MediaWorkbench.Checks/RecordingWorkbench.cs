@@ -36,6 +36,16 @@ sealed class RecordingWorkbench : IWorkbenchService
     }
     public InstallationPlan GetBaselinePlan() => throw new NotSupportedException();
     public string InstallationStatus { get; set; } = "ready";
+    public List<string> SetupCalls { get; } = [];
+    public IReadOnlyList<ModelSetupPlan>? SetupPlansOverride { get; set; }
+    public Task<IReadOnlyList<ModelSetupPlan>> GetSetupPlansAsync(string dataRoot, CancellationToken cancellationToken)
+    {
+        SetupCalls.Add("plan");
+        bool ready = InstallationStatus == "ready";
+        return Task.FromResult(SetupPlansOverride ?? new ModelSetupPlan[] {
+            new(ModelChoice.BuiltInId, ready, !ready, 5L << 30, 20L << 30, 100L << 30, "", []),
+            new(ModelChoice.XlId, ready && Xl.IsReady, !ready, (ready ? 7L : 12L) << 30, 29L << 30, 100L << 30, "", []) });
+    }
     public Task<InstallationState> GetInstallationAsync(string dataRoot, CancellationToken cancellationToken) =>
         Record(dataRoot, new InstallationState(InstallationStatus, InstallationStatus == "ready" ? "Ready" : "Not installed"));
     /// <summary>A GTX 1660 Ti like the development machine's; reads are counted, not recorded as data-folder operations.</summary>
@@ -54,10 +64,15 @@ sealed class RecordingWorkbench : IWorkbenchService
         MemorySaving);
     public bool? LastKeepDownloadCaches { get; private set; }
     public long InstallCleanedBytes { get; set; }
-    public Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false)
+    public Task? InstallGate { get; set; }
+    public string BaseInstallResult { get; set; } = "ready";
+    public async Task<InstallationState> InstallAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken, bool keepDownloadCaches = false)
     {
+        SetupCalls.Add("base");
+        if (InstallGate is { } gate) await gate.WaitAsync(cancellationToken);
+        InstallationStatus = BaseInstallResult;
         LastKeepDownloadCaches = keepDownloadCaches;
-        return Record(dataRoot, new InstallationState("ready", "Ready", InstallCleanedBytes));
+        return await Record(dataRoot, new InstallationState(BaseInstallResult, BaseInstallResult, InstallCleanedBytes));
     }
     public GenerationSettings? LastGeneration { get; private set; }
     public byte[]? LastMaskBytes { get; private set; }
@@ -96,11 +111,16 @@ sealed class RecordingWorkbench : IWorkbenchService
     /// <summary>Stable Diffusion XL's row, as the worker lists it after Stable Diffusion 1.5.</summary>
     public ModelChoice Xl { get; set; } = new(ModelChoice.XlId, "Stable Diffusion XL", "not_installed", "Stable Diffusion XL is not set up.", "bundled-xl", 6_938_451_574, BuiltIn: true);
     public int XlInstalls { get; private set; }
-    public Task<AddonState> InstallXlAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
+    public Task? XlInstallGate { get; set; }
+    public Exception? XlInstallFailure { get; set; }
+    public async Task<AddonState> InstallXlAsync(string dataRoot, IProgress<OperationProgress> progress, CancellationToken cancellationToken)
     {
+        SetupCalls.Add("xl");
         XlInstalls++;
+        if (XlInstallGate is { } gate) await gate.WaitAsync(cancellationToken);
+        if (XlInstallFailure is { } failure) throw failure;
         Xl = Xl with { Status = "ready", Message = "Ready" };
-        return Task.FromResult(new AddonState("ready", "Stable Diffusion XL is ready on Test GPU with memory-saving settings."));
+        return new AddonState("ready", "Stable Diffusion XL is ready on Test GPU with memory-saving settings.");
     }
     public Task<AddonState> RemoveXlAsync(string dataRoot, CancellationToken cancellationToken)
     {

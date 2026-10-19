@@ -9,6 +9,7 @@ $taskRequired += 'workers/python/file_verification.py'
 $taskRequired += 'workers/python/model_library.py'
 $taskRequired += 'workers/python/hardware.py'
 $taskRequired += 'workers/python/hub_models.py'
+$taskRequired += 'workers/python/model_setup.py'
 foreach ($taskFile in $taskRequired) {
     if (-not (Test-Path -LiteralPath (Join-Path $ApplicationDirectory $taskFile))) { throw "Published application is incomplete: $taskFile" }
 }

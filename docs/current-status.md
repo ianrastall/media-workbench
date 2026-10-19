@@ -1,6 +1,16 @@
 # Current implementation status
 
-Version: **0.3.0-alpha.14**. Development started 17 October 2026.
+Version: **0.3.0-alpha.15**. Development started 17 October 2026.
+
+## Simpler model setup (0.3.0-alpha.15)
+
+Models replaces the top-level Discover page with two curated picture choices, plain descriptions, model/license links, combined missing-model download and free-space estimates, and Get/Ready actions. Its Advanced options retain local imports, Hub search, hardware/runtime detail, repairs and optional short-clip setup. Model removal remains in Settings. Create no longer contains model installation/import cards or runtime status; before setup it links to Models, and afterwards it shows picture controls. Home points to Models/Create instead of component diagnostics.
+
+One Get for XL runs a fresh worker preflight, including its shared setup's disk allowance and XL-specific memory/graphics limits, before downloading anything. It reuses a verified base or prepares it, requires that stage to pass, then runs the existing XL download/checksum/runtime/real-GPU verification. Cancellation spans both stages; failed or cancelled XL never becomes a ready choice. The standard-library worker estimates file downloads by sizes, not hashes; the estimate excludes variable dependency downloads and says so. Presence never certifies readiness. Setup's existing checks still run at each stage, protecting against changes after preflight.
+
+This UI milestone takes priority under the user's renewed simplification request. It does not finish the earlier containment milestone: optional installation inside the working folder, first-start discovery for that arrangement, fresh-install/upgrade/uninstall fixtures and full write tracing remain open. Hardware recommendations, style/default improvements and measured picture-time estimates are follow-ups. See [validation](validation.md#simpler-model-setup-030-alpha15) and [next steps](next-steps.md#simpler-model-setup-030-alpha15). No new interactive or real-GPU result is claimed for this orchestration/layout change.
+
+Headless validation passed: 39 Rust tests, 235 Python tests and 355 C# checks including MCP. The final Release publish build and published headless checks passed with zero warnings/errors. Release/installed evidence will be recorded after CI publication and local upgrade.
 
 ## Legacy cleanup verification (0.3.0-alpha.14)
 

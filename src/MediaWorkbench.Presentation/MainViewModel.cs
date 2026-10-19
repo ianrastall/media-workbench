@@ -59,6 +59,10 @@ public partial class MainViewModel : ObservableObject
         UseForUpscaleCommand = new RelayCommand<string?>(path => UseForUpscale(path));
         UpscaleCommand = new AsyncRelayCommand(UpscaleAsync, () => !IsBusy && ModelReady && HasUpscaleSource);
         GoToCreateCommand = new RelayCommand(() => SelectedPage = "create");
+        GoToModelsCommand = new RelayCommand(() => SelectedPage = "models");
+        RefreshModelsCommand = new AsyncRelayCommand(RefreshModelsAsync, () => !IsBusy && !NeedsWorkingFolder);
+        GetModelCommand = new AsyncRelayCommand<string?>(GetModelAsync, model => !IsBusy && !NeedsWorkingFolder &&
+            (model == ModelChoice.BuiltInId ? !ModelReady && !BaselineSetupBlocked : model == ModelChoice.XlId && !(ModelReady && XlReady) && !XlSetupBlocked));
         ClearStartingPictureCommand = new RelayCommand(() => SourceImagePath = "");
         ClearPaintingCommand = new RelayCommand(() => { Mask?.Clear(); MaskVersion++; }, () => IsPainting);
         StopPaintingCommand = new RelayCommand(StopPainting, () => IsPainting);
@@ -113,7 +117,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsHome), nameof(IsDiscover), nameof(IsCreate), nameof(IsLibrary), nameof(IsSettings), nameof(IsDiagnostics), nameof(IsPlanned), nameof(PageTitle), nameof(PageDescription))]
+    [NotifyPropertyChangedFor(nameof(IsHome), nameof(IsModels), nameof(IsDiscover), nameof(IsCreate), nameof(IsLibrary), nameof(IsSettings), nameof(IsDiagnostics), nameof(IsPlanned), nameof(PageTitle), nameof(PageDescription))]
     public partial string SelectedPage { get; set; } = "home";
     [ObservableProperty] public partial string SearchQuery { get; set; } = "stable-diffusion";
     [ObservableProperty] public partial int TaskIndex { get; set; } = 1;
@@ -121,17 +125,18 @@ public partial class MainViewModel : ObservableObject
     /// <summary>The saved data folder every install, generation, and library operation uses. Changes only on load or save.</summary>
     [ObservableProperty] public partial string DataRoot { get; private set; } = "";
     /// <summary>No worker or maintenance may run until a folder has been explicitly chosen and is available.</summary>
-    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(InstallCommand))]
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(GetModelCommand), nameof(RefreshModelsCommand))]
     public partial bool NeedsWorkingFolder { get; private set; } = true;
     /// <summary>The Settings text box; it has no effect until Save settings applies it.</summary>
     [ObservableProperty] public partial string DataRootDraft { get; set; } = "";
     [ObservableProperty] public partial string NativeStatus { get; set; } = "Checking native core…";
     [ObservableProperty] public partial string WorkerStatus { get; set; } = "Checking worker…";
     [ObservableProperty] public partial string Status { get; set; } = "Ready";
-    [ObservableProperty] public partial string Notice { get; set; } = "Start in Create to install and verify Stable Diffusion 1.5. Requires an NVIDIA GPU with 6 GB VRAM and 20 GiB free space.";
+    [ObservableProperty] public partial string Notice { get; set; } = "Choose a model in Models, then describe your picture in Create. Setup and checks run in the background.";
     [ObservableProperty] public partial string InstallationText { get; set; } = "Check model status, or install / verify to prepare image generation.";
     [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateCommand), nameof(UpscaleCommand), nameof(ImportModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(InstallXlCommand)),
-     NotifyPropertyChangedFor(nameof(NeedsSetup), nameof(NeedsVideoSetup), nameof(CanMakeVideo), nameof(CanMakePicture), nameof(NeedsXlSetup))] public partial bool ModelReady { get; set; }
+     NotifyCanExecuteChangedFor(nameof(GetModelCommand)),
+     NotifyPropertyChangedFor(nameof(BaselineActionLabel), nameof(XlActionLabel), nameof(NeedsSetup), nameof(NeedsVideoSetup), nameof(CanMakeVideo), nameof(CanMakePicture), nameof(NeedsXlSetup))] public partial bool ModelReady { get; set; }
     public bool NeedsSetup => !ModelReady;
     /// <summary>"This computer" for Create's setup card: hardware and the settings chosen from it.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSystemProfile))] public partial string SystemProfileText { get; set; } = "";
@@ -203,13 +208,13 @@ public partial class MainViewModel : ObservableObject
     partial void OnModelIndexChanged(int value) => ShowSizes();
     partial void OnCreateKindIndexChanged(int value) => ShowSizes();
     /// <summary>Stable Diffusion XL's row from the model list; null until the list is read.</summary>
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(XlReady), nameof(NeedsXlSetup), nameof(XlText), nameof(XlSettingsText))]
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GetModelCommand)), NotifyPropertyChangedFor(nameof(XlActionLabel), nameof(XlReady), nameof(NeedsXlSetup), nameof(XlText), nameof(XlSettingsText))]
     public partial ModelChoice? XlChoice { get; private set; }
     public bool XlReady => XlChoice?.IsReady == true;
     public bool NeedsXlSetup => ModelReady && !XlReady;
     public string XlText => XlChoice is { IsReady: false, Message.Length: > 0 } xl ? xl.Message : "Stable Diffusion XL is not set up.";
     public string XlSettingsText => XlReady ? "Stable Diffusion XL is set up and tested; choose it under Model in Create."
-        : "Stable Diffusion XL is not set up. Create offers it once Stable Diffusion 1.5 is ready.";
+        : "Stable Diffusion XL is not set up. Select Get in Models to prepare it.";
     public IAsyncRelayCommand InstallXlCommand { get; }
     public IAsyncRelayCommand RemoveXlCommand { get; }
     public IReadOnlyList<string> SamplerLabels { get; } = [.. GenerationSettings.Samplers.Select(sampler => sampler.Label)];
@@ -290,6 +295,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
     [NotifyCanExecuteChangedFor(nameof(SearchCommand), nameof(DetailsCommand), nameof(DiagnosticsCommand), nameof(PlanCommand), nameof(SaveSettingsCommand), nameof(CheckMoveCommand), nameof(MoveDataCommand), nameof(RemoveOldCopyCommand), nameof(AddToQueueCommand), nameof(RunQueueCommand), nameof(RemoveQueuedCommand), nameof(CancelCommand), nameof(InstallCommand), nameof(RefreshInstallationCommand), nameof(GenerateCommand), nameof(RefreshLibraryCommand), nameof(RetryJobCommand), nameof(RefreshStorageCommand), nameof(ClearStorageCommand), nameof(CheckForUpdatesCommand), nameof(InstallUpdateCommand), nameof(UpscaleCommand), nameof(PreviousLibraryPageCommand), nameof(NextLibraryPageCommand), nameof(UseImageSettingsCommand), nameof(ExportImageCommand), nameof(ImportModelCommand), nameof(RetestModelCommand), nameof(RemoveModelCommand), nameof(CheckHubFileCommand), nameof(DownloadModelCommand), nameof(InstallVideoCommand), nameof(GenerateVideoCommand), nameof(RemoveVideoCommand), nameof(InstallXlCommand), nameof(RemoveXlCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GetModelCommand), nameof(RefreshModelsCommand))]
     public partial bool IsBusy { get; set; }
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DetailsCommand), nameof(OpenModelCommand))]
@@ -477,18 +483,18 @@ public partial class MainViewModel : ObservableObject
     public bool IsPlanned => SelectedPage == "tools";
     public string PageTitle => SelectedPage switch
     {
-        "discover" => "Discover models", "create" => "Create", "library" => "Library",
+        "models" or "discover" => "Models", "create" => "Create", "library" => "Library",
         "tools" => "Tools", "settings" => "Settings", "diagnostics" => "Diagnostics", _ => "Your local media workspace"
     };
     public string PageDescription => SelectedPage switch
     {
-        "discover" => "Search public Hugging Face models and inspect their metadata before choosing a local pipeline.",
-        "create" => "Make pictures and short videos locally with Stable Diffusion 1.5, or pictures with a compatible model you already downloaded. The first setup downloads a private runtime and model, then tests your GPU.",
+        "models" or "discover" => "Choose what suits your picture. Get handles the downloads, setup and checks on this computer.",
+        "create" => "Describe a picture, choose its shape, and make it on your computer.",
         "library" => "Images and their prompts, seeds, and runtime evidence are saved in your data folder.",
         "tools" => "Make a picture bigger and sharper, offline. Works on your own pictures and on images from Library.",
         "settings" => "Choose where models, private environments, and media are stored.",
         "diagnostics" => "Check the components that power Media Workbench.",
-        _ => "Discover local generation models, understand their requirements, and prepare a dependable creative setup."
+        _ => "Choose a model in Models, make a picture in Create, and find your pictures in Library."
     };
 
     /// <summary>A picture or the queue is being made: Add to queue stays available meanwhile.</summary>
@@ -539,7 +545,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Whether videos are set up here; they need a ready Stable Diffusion 1.5 first.</summary>
     private async Task UpdateVideo(CancellationToken token)
     {
-        if (!ModelReady) { ShowVideo(new("needs_base", "Set up Stable Diffusion 1.5 first (Install / verify under A picture); videos use it.")); return; }
+        if (!ModelReady) { ShowVideo(new("needs_base", "Get Stable Diffusion 1.5 in Models first; short clips use its picture setup.")); return; }
         try { ShowVideo(await _service.GetVideoAsync(DataRoot, token)); }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowVideo(new("unknown", "Video setup could not be read: " + ex.Message)); }
     }
@@ -550,7 +556,7 @@ public partial class MainViewModel : ObservableObject
         VideoText = state.Message;
         VideoSettingsText = state.Settings is { } settings
             ? $"Videos are set up and tested with {settings.Label.ToLowerInvariant()} settings ({settings.Description})."
-            : state.IsReady ? "Videos are set up and tested." : "Videos are not set up. Create sets them up when you choose A short video.";
+            : state.IsReady ? "Videos are set up and tested." : "Videos are not set up. Models offers short clips under Advanced options.";
     }
 
     /// <summary>Reads the hardware once per data folder in a session; setup and Diagnostics read it again.</summary>
@@ -665,7 +671,8 @@ public partial class MainViewModel : ObservableObject
     }
     private string _restoreNote = "";
     private Task RefreshInstallationAsync() => RunAsync("Checking model state…", UpdateInstallation);
-    private Task InstallAsync() => RunAsync("Preparing Stable Diffusion 1.5…", async token =>
+    private Task InstallAsync() => RunAsync("Preparing Stable Diffusion 1.5…", PrepareBaseAsync, longRunning: true);
+    private async Task PrepareBaseAsync(CancellationToken token)
     {
         ModelReady = false;
         try
@@ -682,7 +689,7 @@ public partial class MainViewModel : ObservableObject
             // A force-stopped worker leaves an interrupted attempt that the next check recovers.
             if (!ModelReady) InstallationText = "Setup did not finish. Check model status for details; install / verify resumes retained downloads.";
         }
-    }, longRunning: true);
+    }
     /// <summary>The Advanced options shared by pictures and videos, checked before any work starts.</summary>
     private void CheckRefinement()
     {
@@ -997,6 +1004,8 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnDataRootChanged(string value)
     {
+        BaselineSetupText = XlSetupText = "Open Models to check this computer and the download size.";
+        BaselineSetupBlocked = XlSetupBlocked = false;
         ClearHubPlan();
         ModelReady = false; Images.Clear(); Problems.Clear(); HasProblems = false; PreviewPath = "";
         UpscalePreviewPath = ""; SourceImagePath = ""; UpscaleSourcePath = "";
@@ -1242,10 +1251,11 @@ public partial class MainViewModel : ObservableObject
     {
         if (_loading) return;
         if (NeedsWorkingFolder) { if (value == "settings") _ = LoadDrivesAsync(); return; }
+        if (value is "models" or "discover" && !IsBusy) RefreshModelsCommand.Execute(null);
         if ((value == "create" || value == "tools") && !IsBusy) RefreshInstallationCommand.Execute(null);
         if (value == "library" && !IsBusy) RefreshLibraryCommand.Execute(null);
         if (value == "settings" && !IsBusy) RefreshStorageCommand.Execute(null);
-        if (value is "create" or "tools" or "settings") _ = RefreshDriveAsync();
+        if (value is "models" or "discover" or "create" or "tools" or "settings") _ = RefreshDriveAsync();
     }
 
     private Task SearchAsync() => RunAsync("Searching Hugging Face…", async token =>

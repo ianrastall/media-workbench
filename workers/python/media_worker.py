@@ -21,6 +21,7 @@ import hub_catalog
 import hub_models
 import inference_setup
 import model_library
+import model_setup
 import picture_queue
 import storage
 import artifact_export
@@ -145,6 +146,8 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
                 lambda value: emit(request_id, "progress", value))
         elif operation == "models.list":
             result = model_library.listing(root, payload)
+        elif operation == "models.setup_plan":
+            result = model_setup.plans(root, payload)
         elif operation == "models.inspect":
             result = model_library.inspect(payload)
         elif operation == "models.import":
@@ -230,7 +233,7 @@ def main() -> int:
         return 2
     emit(None, "hello", {"worker": "media-workbench-python", "mode": "alpha",
                          "operations": ["health", "catalog.list", "catalog.search", "catalog.details", "catalog.plan", "models.download", "demo.run",
-                                        "system.profile", "installation.status", "installation.run", "generate.image", "upscale.image", "video.status", "video.install", "video.remove", "generate.video", "xl.status", "xl.install", "xl.remove", "models.list", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear", "queue.add", "queue.list", "queue.remove"],
+                                        "system.profile", "installation.status", "installation.run", "generate.image", "upscale.image", "video.status", "video.install", "video.remove", "generate.video", "xl.status", "xl.install", "xl.remove", "models.list", "models.setup_plan", "models.inspect", "models.import", "models.retest", "models.remove", "library.list", "library.export", "storage.summary", "storage.clear", "queue.add", "queue.list", "queue.remove"],
                          "generationAvailable": False, "installationAvailable": True})
     while True:
         raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)

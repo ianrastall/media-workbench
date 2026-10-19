@@ -22,6 +22,11 @@ await using (var client = await PythonWorkerClient.StartAsync(python, root, null
     Check(health.Kind == "result" && !health.Payload.GetProperty("generationAvailable").GetBoolean(), "Health does not claim generation availability");
     var catalog = await client.ExecuteAsync("catalog.list", new { }, cancellationToken: deadline.Token);
     Check(catalog.Kind == "result" && catalog.Payload.GetProperty("recipes")[0].GetProperty("runtimeProfileId").GetString() == "sd15-cu126-v1", "Catalog reports the pinned runtime profile");
+    var setupPlans = await client.ExecuteAsync("models.setup_plan", new { dataRoot = output }, cancellationToken: deadline.Token);
+    Check(setupPlans.Kind == "result" && setupPlans.Payload.GetProperty("plans").GetArrayLength() == 2
+        && setupPlans.Payload.GetProperty("plans")[1].GetProperty("requiresBase").GetBoolean()
+        && !setupPlans.Payload.GetProperty("plans")[1].GetProperty("ready").GetBoolean(),
+        "The real metadata worker transports combined model setup plans without installing a model");
     List<WorkerEvent> events = [];
     const string label = "Unicode: café — 森林; spaces & $ characters";
     var result = await client.ExecuteAsync("demo.run", new { label, outputDirectory = Path.Combine(output, "folder with spaces"), steps = 3, delayMs = 5 }, events.Add, deadline.Token);
@@ -446,6 +451,7 @@ await HousekeepingChecks.RunAsync(Check, root, output, deadline.Token);
 await WorkFolderChecks.RunAsync(Check, python, output, deadline.Token);
 await MoveChecks.RunAsync(Check, root, python, output, deadline.Token);
 await WorkingFolderChecks.RunAsync(Check, output);
+await ModelSetupChecks.RunAsync(Check, output);
 PreferencesChecks.Run(Check, output);
 await BatchChecks.RunAsync(Check, output, root, python);
 using (var keptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(90))) await KeptModelChecks.RunAsync(Check, python, output, keptDeadline.Token);

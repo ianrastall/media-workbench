@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.15 — 2026-10-19
+
+- **Choose a model, then make a picture.** The new Models page offers Stable Diffusion 1.5 for smaller pictures and Stable Diffusion XL for larger, more detailed ones, with plain descriptions, download/space costs, model licenses and one **Get** action. Create focuses on picture controls; model imports, Hugging Face search, setup repairs and optional short-clip setup are under Models → Advanced options.
+- **Get handles the shared setup.** Getting XL checks the combined space and XL-specific hardware requirements before any downloads, prepares its shared picture setup when needed, then downloads, checks and tests XL under one cancellable operation. Existing verified setup is reused. A failed or cancelled stage never exposes unfinished XL in Create; safe download files remain available for retry. Files, runtime checks and real GPU inference still have to pass before a model becomes ready.
+- Home now points directly to Models and Create. Existing installation and working-folder paths are preserved. The optional colocated installer and complete containment/interactive acceptance remain unfinished.
+
 ## 0.3.0-alpha.14 — 2026-10-19
 
 - **Check that old preferences are really gone.** Migration now confirms that its old preferences and startup logs are absent before marking cleanup complete. If a file returns during cleanup, the recovery marker stays in place and Settings explains what was kept.
