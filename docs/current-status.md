@@ -10,7 +10,7 @@ One Get for XL runs a fresh worker preflight, including its shared setup's disk 
 
 This UI milestone takes priority under the user's renewed simplification request. It does not finish the earlier containment milestone: optional installation inside the working folder, first-start discovery for that arrangement, fresh-install/upgrade/uninstall fixtures and full write tracing remain open. Hardware recommendations, style/default improvements and measured picture-time estimates are follow-ups. See [validation](validation.md#simpler-model-setup-030-alpha15) and [next steps](next-steps.md#simpler-model-setup-030-alpha15). No new interactive or real-GPU result is claimed for this orchestration/layout change.
 
-Headless validation passed: 39 Rust tests, 235 Python tests and 355 C# checks including MCP. The final Release publish build and published headless checks passed with zero warnings/errors. Release/installed evidence will be recorded after CI publication and local upgrade.
+Headless validation passed: 39 Rust tests, 235 Python tests and 355 C# checks including MCP. The final Release publish build and published headless checks passed with zero warnings/errors. GitHub Actions published alpha.15 from `260532a`; its checksum-verified installer upgraded the existing local installation successfully. Installed headless payload and model-plan checks passed. Executable/shortcut paths, pointer/preferences bytes and existing model readiness were preserved; the downloaded installer was removed. No new interactive or GPU run is claimed.
 
 ## Legacy cleanup verification (0.3.0-alpha.14)
 
