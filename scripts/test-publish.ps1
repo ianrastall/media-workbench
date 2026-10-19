@@ -60,7 +60,8 @@ $taskMcpInfo.CreateNoWindow = $true
 $taskMcpInfo.RedirectStandardInput = $true
 $taskMcpInfo.RedirectStandardOutput = $true
 $taskMcpInfo.RedirectStandardError = $true
-foreach ($taskArgument in @('mcp','--data-root',(Join-Path ([IO.Path]::GetTempPath()) ('MediaWorkbench-mcp-smoke-' + [guid]::NewGuid().ToString('N'))))) { $taskMcpInfo.ArgumentList.Add($taskArgument) }
+$taskMcpData = Join-Path ([IO.Path]::GetTempPath()) ('MediaWorkbench-mcp-smoke-' + [guid]::NewGuid().ToString('N'))
+foreach ($taskArgument in @('mcp','--data-root',$taskMcpData)) { $taskMcpInfo.ArgumentList.Add($taskArgument) }
 $taskMcp = [Diagnostics.Process]::Start($taskMcpInfo)
 function Read-McpSmokeResponse {
     $taskRead = $taskMcp.StandardOutput.ReadLineAsync()
@@ -91,4 +92,6 @@ try {
 } finally {
     if (-not $taskMcp.HasExited) { $taskMcp.Kill($true); $taskMcp.WaitForExit(5000) | Out-Null }
     $taskMcp.Dispose()
+    # The smoke check's data folder is disposable; earlier versions left one per run in %TEMP%.
+    if (Test-Path -LiteralPath $taskMcpData) { Remove-Item -LiteralPath $taskMcpData -Recurse -Force -ErrorAction SilentlyContinue }
 }

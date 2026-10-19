@@ -19,7 +19,7 @@ Recorded 18 October 2026. **In progress; not complete or released as 0.4.0-alpha
 | Choosing a drive before setup | **Done (slice 4)**: drive list in Settings, question before the first setup |
 | Installer destination | Already kept on upgrade and shown on first install (Inno defaults); not yet tested on a clean machine. Since 0.3.0-alpha.5, only a `/SILENT` installation (the in-app updater's) reopens the app; an unattended `/VERYSILENT` installation leaves it closed |
 | Drive exclusions | **Done (0.3.0-alpha.4)**: Never use this drive, enforced on save, move and the setup question |
-| All-app-owned-files arrangement (preferences and startup log with the data) | **Not started**; needs launch/update/uninstall testing before it is offered |
+| All-app-owned-files arrangement (preferences and startup log with the data) | **Not started; now a main priority for 0.4.0-alpha.1** (user decision, 18 October 2026): one working folder for everything, no silent `%LOCALAPPDATA%` default |
 
 **Slice 2 implemented:** Settings has **Where Media Workbench keeps things**, listing the data folder, its `temp/` and `cache/` folders, the preferences/startup-log folder and the app folder, each with the volume it is really on (Rust `mw_drive_info` now returns the mount point from `GetVolumePathNameW`, so mounted folders are named correctly) and one sentence saying what, if anything, is on another drive.
 
@@ -71,7 +71,7 @@ The promise covers Media Workbench and its owned processes. Windows may independ
 
 The user decided the scope of 0.4.0-alpha.1's acceptance:
 
-- **All-app-owned-files arrangement:** not part of 0.4.0-alpha.1. The milestone documents the measured footprint outside the data folder (preferences, startup log, the installation and installer bookkeeping) instead; the arrangement comes in a later release with its own launch, update and uninstall tests.
+- **All-app-owned-files arrangement:** first deferred, then **made a main priority the same evening**. The user wants everything the app writes (preferences, the startup log and, optionally, the installation) in the one working folder they choose, with no silent default on the system drive. See [next steps](next-steps.md#direction-after-the-030-alpha11-checkpoint-18-october-2026). It is now part of 0.4.0-alpha.1.
 - **Clean-machine installs:** deferred and recorded as an open gap before 1.0. Windows Sandbox could not be enabled on the development machine (Windows reports a corrupted component store and the repair stalls); Windows 10 needs a VM or spare PC in any case.
 - **Write trace:** Sysinternals Process Monitor, run on the development machine. C: is a 256 GB system SSD with about 23 GB free; D: is an internal hard disk that holds the data folder.
 
