@@ -1,5 +1,23 @@
 # Initial alpha validation
 
+## Low-space and disconnected-drive checks (installed 0.3.0-alpha.11, 18 October 2026)
+
+Same machine. `./scripts/containment/trace.ps1 -DriveFailure`, with one UAC prompt from the user. The elevated controller created a 24 GB expandable virtual disk in the run folder on D:, attached it as T: (formatted before it got a letter, so Windows offered no format prompt), and the data folder was `T:\Media Workbench`. Process Monitor traced every phase. At the end the disk was detached and its file deleted; T: and the file were confirmed gone.
+
+| Phase | Result |
+|---|---|
+| Setup with 10.0 GiB free | Refused before downloading: "At least 20.0 GiB of free space is required…". The data folder held 1 KiB |
+| Setup with the disk freed | Ready (678 s) |
+| Picture with 150 MiB free | Refused with no job record: "…150 MB is free… about 258 MB is needed… Nothing was written." |
+| Update download with 150 MiB free | Refused ("The update needs 584.0 MiB free…"), with nothing left in `temp/updates` |
+| Picture after freeing space | Made (19.7 s) |
+| Disk detached: status, picture, update download | Each stopped with "Media Workbench could not use its data folder (T:\Media Workbench). If it is on a removable or network drive, reconnect it…" |
+| Disk detached mid-picture (50 steps) | The picture failed within seconds and no owned process was left behind. After re-attaching, model status was ready, the job was listed as interrupted, and a new picture took 54.7 s |
+
+Outside the data folder, the trace showed the NVIDIA driver's 0-byte profile open and, in the mid-picture phase only, Windows Error Reporting files under `%ProgramData%\Microsoft\Windows\WER`. The ML child runs from the data folder's runtime on T:. When the disk vanished it exited with `0xC0000006` (STATUS_IN_PAGE_ERROR), because Windows could no longer page in its program files, and `WerFault.exe` then filed Windows' standard crash report. That is Windows' own crash reporting, which the milestone already counts as outside the app's promise.
+
+**Usability finding, fixed (unreleased):** the mid-picture failure reached the user as a raw `FileNotFoundError: [WinError 3] … 'T:\\'`. The worker now gives file errors from a missing or full data drive the same plain explanation the desktop uses (`media_worker.data_folder_problem`, error code `data_folder_unavailable`), checked in `tests/test_data_folder_errors.py`. This is not yet re-run on hardware.
+
 ## Repeat drive-containment trace (installed 0.3.0-alpha.11, 18 October 2026)
 
 This used the same machine, layout and command as the alpha.9 trace below: the installed 0.3.0-alpha.11 release, a new data folder on D:, one UAC prompt from the user, and the filter passing calibration first time. All 12 phases passed (about 42 minutes in all: setup 710 s, SDXL setup 656 s, video setup 259 s). The data folder ended at 14.8 GiB, and the largest `temp/` was 72 MiB (the update installer).

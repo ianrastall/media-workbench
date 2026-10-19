@@ -69,6 +69,22 @@ def gpu_probe() -> dict:
         return {"status": "probe_failed", "reason": "Device probe failed or timed out"}
 
 
+DISK_FULL_ERRORS = {39, 112}  # ERROR_HANDLE_DISK_FULL, ERROR_DISK_FULL
+
+
+def data_folder_problem(exc, data_root):
+    """The plain explanation (matching the desktop's) when a file error comes from a missing or full data drive."""
+    if not isinstance(exc, OSError) or not isinstance(data_root, str) or not data_root:
+        return None
+    if getattr(exc, "winerror", None) in DISK_FULL_ERRORS or exc.errno == 28:  # ENOSPC
+        return (f"The drive that holds the data folder ({data_root}) is full. Free up space on that drive, or move the "
+                f"data folder in Settings, then try again. Details: {exc.strerror or exc}")
+    if not Path(data_root).is_dir():
+        return (f"Media Workbench could not use its data folder ({data_root}). If it is on a removable or network drive, "
+                f"reconnect it; otherwise free some space or choose another folder in Settings. Details: {exc.strerror or exc}")
+    return None
+
+
 def execute(root: Path, request_id: str, operation: str, payload: dict,
             cancellation: threading.Event) -> None:
     global active
@@ -193,7 +209,11 @@ def execute(root: Path, request_id: str, operation: str, payload: dict,
         finish(request_id, "error", {"code": "invalid_input", "message": str(exc)})
     except Exception as exc:
         print(f"Worker operation failed ({type(exc).__name__})", file=sys.stderr, flush=True)
-        finish(request_id, "error", {"code": "worker_error", "message": f"{type(exc).__name__}: {str(exc)[:1500]}"})
+        plain = data_folder_problem(exc, payload.get("dataRoot") if isinstance(payload, dict) else None)
+        if plain:
+            finish(request_id, "error", {"code": "data_folder_unavailable", "message": plain})
+        else:
+            finish(request_id, "error", {"code": "worker_error", "message": f"{type(exc).__name__}: {str(exc)[:1500]}"})
     finally:
         with ACTIVE_LOCK:
             if active and active[0] == request_id:

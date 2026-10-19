@@ -83,7 +83,7 @@ The user decided the scope of 0.4.0-alpha.1's acceptance:
 
 **Repeat traced run on the installed 0.3.0-alpha.11 (18 October 2026):** clean. Apart from the NVIDIA driver's 0-byte profile open, the app changed nothing outside the data folder, and cancel records *cancelled*. See [validation](validation.md#repeat-drive-containment-trace-installed-030-alpha11-18-october-2026).
 
-**Drive-failure checks (tooling ready, not yet run):** `./scripts/containment/trace.ps1 -DriveFailure`, with one UAC prompt. The elevated controller creates a 24 GB *expandable* virtual disk in the run folder (about 7 GB used on D:), formats it and gives it a free letter, and the data folder goes on that disk. The traced phases, in order:
+**Drive-failure checks (run 18 October 2026 on the installed 0.3.0-alpha.11; all passed, see [validation](validation.md#low-space-and-disconnected-drive-checks-installed-030-alpha11-18-october-2026)):** `./scripts/containment/trace.ps1 -DriveFailure`, with one UAC prompt. The elevated controller creates a 24 GB *expandable* virtual disk in the run folder (about 7 GB used on D:), formats it and gives it a free letter, and the data folder goes on that disk. The traced phases, in order:
 
 - setup with 10 GiB free must refuse before writing more than 50 MiB;
 - setup with the disk freed;
@@ -94,7 +94,7 @@ The user decided the scope of 0.4.0-alpha.1's acceptance:
 
 The driver writes filler files outside the data folder with `SetEndOfFile`, which allocates without writing. The controller detaches and deletes the disk when it exits.
 
-Still to do for the milestone, in order: run the drive-failure checks above; the interactive session with the user (GUI painted change, Cancel, crash recovery, an older alpha → 0.3.0-alpha.11 Update now and relaunch, never-use drive); then validation notes and the release.
+Still to do for the milestone, in order: the interactive session with the user (GUI painted change, Cancel, crash recovery, an older alpha → 0.3.0-alpha.11 Update now and relaunch, never-use drive); then validation notes and the release.
 
 ## Resume here
 
