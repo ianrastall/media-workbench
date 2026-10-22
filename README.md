@@ -7,13 +7,12 @@ A dark Windows desktop workspace for local image and video tools, built with **W
 <!-- release-summary:start -->
 ## Current release
 
-**[0.3.0-alpha.16](https://github.com/ianrastall/media-workbench/releases/tag/v0.3.0-alpha.16)** · 2026-10-19 · Pre-release · Windows x64
+**[0.3.0-alpha.17](https://github.com/ianrastall/media-workbench/releases/tag/v0.3.0-alpha.17)** · 2026-10-22 · Pre-release · Windows x64
 
-[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.16/MediaWorkbench-0.3.0-alpha.16-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.16/MediaWorkbench-0.3.0-alpha.16-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.16/MediaWorkbench-0.3.0-alpha.16-README.md)
+[Installer](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.17/MediaWorkbench-0.3.0-alpha.17-win-x64-setup.exe) · [SHA-256](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.17/MediaWorkbench-0.3.0-alpha.17-win-x64-setup.exe.sha256) · [Release README](https://github.com/ianrastall/media-workbench/releases/download/v0.3.0-alpha.17/MediaWorkbench-0.3.0-alpha.17-README.md)
 
-- **Picture settings follow the model.** Create now explains the selected model in plain words, even when only one model is ready. New XL pictures start with a prompt strength of 5; the smaller model keeps 7.5. Both start with 20 steps and the model's own sampling method. Shapes still use each model family's supported sizes.
-- **Keep your adjustments.** Steps, prompt strength and sampling edits are remembered separately for smaller pictures, XL pictures and videos during the session. Switching families, switching modes or checking model status keeps those drafts. **Use settings** and retry restore saved controls exactly. **Use suggested picture settings** resets only that tuning, keeping your description, shape, seed, starting picture and painting.
-- The sampling option now says **Model default**, since the model itself chooses its default scheduler. Runtime/precision selection and file/runtime/GPU readiness checks are unchanged. No automatic model recommendation is added yet.
+- **Help choosing a first model.** Models now suggests a curated model using this computer's graphics memory, system memory, data drive and current setup checks. An already verified usable model takes priority over another download. XL is the starting suggestion on a solid-state drive with at least 12 GB of graphics memory, 32 GB of system memory and hardware suited to half precision; otherwise the smaller model is the lighter starting point.
+- The advice explains slow memory-saving settings, drive speed, low space and setup blockers. **Check models** refreshes the hardware and readiness checks. Recommendations preserve the selected model, prompts and picture settings; they never change inference settings or replace the real GPU verification gate. Measured timing estimates remain planned.
 <!-- release-summary:end -->
 
 **Simpler model choice is here.** Models offers two picture models and one **Get** action; setup and checks run in the background. Technical options live under Advanced. Recommendations and measured timing estimates follow. See [development direction](docs/next-steps.md#picture-defaults-and-descriptions-030-alpha16).
@@ -74,6 +73,8 @@ Developer architecture and remaining acceptance work are recorded in [stack alig
 The download keeps one copy under the managed models folder, preserves the pinned model card/license/notice files, checks free space during the transfer, and removes incomplete or failed additions. A crash leftover is recovered at the next idle operation. Cancelled downloads restart rather than resume. Images and job records preserve the pinned source; removing a downloaded model in Settings keeps those images and records.
 
 ## What works now
+
+Models suggests a starting model after checking this computer. It prefers an already verified usable model over another download. With both models ready (or neither installed), XL is suggested on a solid-state drive with at least 12 GB of graphics memory, 32 GB of system memory and hardware suited to half precision; the smaller model is the lighter starting point otherwise. Current setup blockers take priority. The advice explains memory-saving settings, slow drives and low space. **Check models** refreshes it without changing your selected model or picture controls. It does not estimate picture times or change the settings that passed GPU verification.
 
 - Native dark WinUI shell with MVVM commands and observable state.
 - Live public Hugging Face search with task filters, license metadata and file hints; bounded header/hardware/space checks and pinned download-and-test for public SD 1.5 single-file checkpoints.

@@ -60,6 +60,7 @@
 
                     <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsModels, Mode=OneWay, Converter={StaticResource VisibleWhenTrue}}">
                         <TextBlock Text="Setup stays in your working folder. You can cancel at any time; safe downloads are kept for another try. A model becomes ready only after its files, software and a test picture pass their checks." TextWrapping="Wrap" />
+                        <TextBlock Text="{x:Bind ViewModel.PictureRecommendationText, Mode=OneWay}" TextWrapping="Wrap" />
                         <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                             <StackPanel Spacing="12">
                                 <TextBlock Text="Stable Diffusion 1.5" Style="{ThemeResource SubtitleTextBlockStyle}" />
@@ -80,7 +81,7 @@
                         </Border>
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Button Content="Create a picture" Command="{x:Bind ViewModel.GoToCreateCommand}" />
-                            <Button Content="Check again" Command="{x:Bind ViewModel.RefreshModelsCommand}" />
+                            <Button Content="Check models" Command="{x:Bind ViewModel.RefreshModelsCommand}" />
                         </StackPanel>
                         <Expander Header="Advanced options" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                             <StackPanel Spacing="16">

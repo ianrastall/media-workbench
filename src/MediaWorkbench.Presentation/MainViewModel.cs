@@ -571,6 +571,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var profile = await _service.GetSystemProfileAsync(DataRoot, token);
+            _recommendationProfile = profile;
             SystemProfileText = profile.Summary;
             SystemProfileDetails = profile.Details;
             RuntimeNote = profile.Note;
@@ -578,6 +579,7 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            _recommendationProfile = null;
             SystemProfileText = SystemProfileDetails = "This computer's hardware could not be read: " + ex.Message;
             RuntimeNote = "";
         }
@@ -591,6 +593,7 @@ public partial class MainViewModel : ObservableObject
 
     private void ShowModels(IReadOnlyList<ModelChoice> models, string? select = null)
     {
+        PictureRecommendationText = "Select Check models to get a recommendation for this computer.";
         string chosen = select ?? SelectedModelId;
         _updatingModels = true;
         try

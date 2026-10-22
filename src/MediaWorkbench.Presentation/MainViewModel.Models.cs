@@ -6,6 +6,8 @@ namespace MediaWorkbench.Presentation;
 
 public partial class MainViewModel
 {
+    private SystemProfile? _recommendationProfile;
+    [ObservableProperty] public partial string PictureRecommendationText { get; private set; } = "Select Check models to get a recommendation for this computer.";
     public IRelayCommand GoToModelsCommand { get; }
     public IAsyncRelayCommand RefreshModelsCommand { get; }
     public IAsyncRelayCommand<string?> GetModelCommand { get; }
@@ -21,6 +23,7 @@ public partial class MainViewModel
 
     private Task RefreshModelsAsync() => RunAsync("Checking your models…", async token =>
     {
+        await UpdateSystemProfile(token, refresh: true);
         await UpdateInstallation(token);
         ShowSetupPlans(await _service.GetSetupPlansAsync(DataRoot, token));
     });
@@ -36,12 +39,14 @@ public partial class MainViewModel
         XlSetupText = xl.Summary;
         if (!xl.Ready && XlChoice is { IsReady: true } previous)
             ShowModels(AddedModels.Append(previous with { Status = "needs_verification", Message = xl.Blocker }).ToArray());
+        PictureRecommendationText = PictureRecommendation.Describe(_profileRoot == DataRoot ? _recommendationProfile : null, plans);
     }
 
     /// <summary>One cancellable operation for all prerequisites; the existing workers still own verification.</summary>
     private Task GetModelAsync(string? model) => RunAsync("Preparing your model…", async token =>
     {
         if (model is not (ModelChoice.BuiltInId or ModelChoice.XlId)) throw new InvalidDataException("Choose a model from Models.");
+        await UpdateSystemProfile(token);
         // Recheck immediately before writing: cached readiness, space and hardware may have changed.
         var plans = await _service.GetSetupPlansAsync(DataRoot, token);
         ShowSetupPlans(plans);

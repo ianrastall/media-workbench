@@ -1,5 +1,11 @@
 # Initial alpha validation
 
+## Model recommendations (0.3.0-alpha.17)
+
+22 October 2026: advice-only milestone. Added deterministic checks for limited/roomy hardware, ready-model preference, setup blockers overriding stale readiness, missing hardware/drive information, low space, an eligible but unverified XL, failed hardware refresh and preservation of model selection/tuning. No inference profile, model files, GPU verification stamp or generation default changes. No GPU rerun or interactive acceptance is claimed.
+
+Reproduction: `scripts/check.ps1`; `scripts/build.ps1 -Configuration Release -Publish -ManagedArtifacts artifacts/recommendation-build-dotnet`. Headless checks passed: 39 Rust with formatting/Clippy, 237 Python and 382 C# including MCP. Release publish passed with zero warnings/errors, including picture-default export, x64 payload, app self-test, preferences/mutex/migration/leftovers and MCP checks. Release-content checks and `git diff --check` passed. Logs: ignored `artifacts/recommendation-check.log` and `artifacts/recommendation-build.log`. CI/install evidence will be recorded after completion. Recommendations are conservative product advice, not measured speed estimates; saved timing evidence is the next slice.
+
 ## Picture defaults and descriptions (0.3.0-alpha.16)
 
 Implementation includes ready-model descriptions, family/video-specific session tuning drafts and a suggested-settings reset. The pre-interruption logs record passing `scripts/check.ps1` (39 Rust, 235 Python and 369 C# checks including MCP) and a zero-warning/error Release publish with headless payload/preferences/MCP checks. Logs: ignored `artifacts/picture-defaults-check.log` and `artifacts/picture-defaults-build.log`.

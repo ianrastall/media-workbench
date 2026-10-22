@@ -1,5 +1,11 @@
 # Media Workbench handoff
 
+## Resume after model recommendations (22 October 2026)
+
+The next slice from alpha.16 is implemented as alpha.17: Models gives conservative hardware/drive-aware starting-model advice from current setup plans, prefers already verified usable curated models over another download, explains memory-saving settings/drive speed/low space and respects blockers. Check models refreshes hardware; advice preserves the model selection and creative controls and never changes inference settings or readiness gates. Model-list changes invalidate old advice. Validation/release status and reproduction: [validation](docs/validation.md#model-recommendations-030-alpha17).
+
+Next: [measured timing evidence](docs/next-steps.md#model-recommendations-030-alpha17), independently of Library filters/pages and scoped to comparable GPU/runtime/model/settings. No new GPU inference is required for advice-only changes. Interactive acceptance, optional colocated installation and full containment remain unfinished. Keep desktop windows closed for headless work. The alpha.16 and older entries below are historical.
+
 Updated 19 October 2026 for **0.3.0-alpha.16**. Repository: <https://github.com/ianrastall/media-workbench>, branch `main`. Run `git rev-parse HEAD` and `git status --short` to identify the exact checkout and any later unfinished work; [validation](docs/validation.md) distinguishes observed results from planned checks.
 
 ## Resume after picture defaults and descriptions

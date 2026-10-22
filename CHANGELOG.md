@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-alpha.17 — 2026-10-22
+
+- **Help choosing a first model.** Models now suggests a curated model using this computer's graphics memory, system memory, data drive and current setup checks. An already verified usable model takes priority over another download. XL is the starting suggestion on a solid-state drive with at least 12 GB of graphics memory, 32 GB of system memory and hardware suited to half precision; otherwise the smaller model is the lighter starting point.
+- The advice explains slow memory-saving settings, drive speed, low space and setup blockers. **Check models** refreshes the hardware and readiness checks. Recommendations preserve the selected model, prompts and picture settings; they never change inference settings or replace the real GPU verification gate. Measured timing estimates remain planned.
+
 ## 0.3.0-alpha.16 — 2026-10-19
 
 - **Picture settings follow the model.** Create now explains the selected model in plain words, even when only one model is ready. New XL pictures start with a prompt strength of 5; the smaller model keeps 7.5. Both start with 20 steps and the model's own sampling method. Shapes still use each model family's supported sizes.

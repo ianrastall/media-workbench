@@ -1,6 +1,12 @@
 # Current implementation status
 
-Version: **0.3.0-alpha.16**. Development started 17 October 2026.
+Version: **0.3.0-alpha.17**. Development started 17 October 2026.
+
+## Model recommendations (0.3.0-alpha.17)
+
+Models now shows advice from current setup plans and a refreshed hardware profile. Eligible, already verified curated models take priority over new downloads. With equal readiness, XL is suggested only with at least 12 GiB graphics memory, 32 GiB system memory, an SSD and a hardware recommendation using half precision. Otherwise SD 1.5 is the lighter starting point. Current blockers override saved readiness. Unknown hardware asks for another check; drive speed, low space and slow memory-saving choices are explained. Recommendations never select a model, change creative controls, start inference or alter runtime/readiness gates. Model-list changes invalidate the advice until setup plans are checked again.
+
+Validation and release evidence: [model recommendations](validation.md#model-recommendations-030-alpha17). Measured timing estimates remain the next bounded slice. Interactive acceptance and the optional colocated installer/full containment trace remain open.
 
 ## Picture defaults and descriptions (0.3.0-alpha.16)
 

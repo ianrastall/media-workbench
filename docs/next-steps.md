@@ -1,5 +1,11 @@
 # Development direction after 0.3.0-alpha.11
 
+## Model recommendations (0.3.0-alpha.17)
+
+Implemented: conservative hardware/drive-aware advice on Models, preferring already verified usable curated models and respecting current setup blockers. Check models refreshes hardware; advice never changes the user's selected model, picture controls or inference profile. See [current status](current-status.md#model-recommendations-030-alpha17) and [validation](validation.md#model-recommendations-030-alpha17).
+
+Next bounded slice: honest timing information from saved job evidence. Read it independently of Library pagination/search, compare the actual GPU and verified runtime choice, distinguish model loading from inference and kept-loaded jobs, and show the picture size/step count and sample count. Exclude videos, upscales, starting-picture/painted jobs and incompatible profiles from a text-to-picture estimate. Never scale a single observation into a promised time or certify an untested profile. Keep styles separate and preserve saved/retried prompts. Interactive keyboard/narrow-window/scaling acceptance waits for the user; optional colocated installation and full containment acceptance remain open.
+
 ## Picture defaults and descriptions (0.3.0-alpha.16)
 
 Implemented: a plain description alongside the selected ready model, family-specific suggested picture tuning, session drafts that survive model/mode switches and status refreshes, exact Use settings/retry restoration, and a suggested-settings reset that preserves the user's creative inputs. Checks/build passed, and the resumed real-GPU test passed for both curated models using the published defaults. The earlier interrupted XL job remains recorded as interrupted. The harness prints progress/waiting, saves partial reports and stops its process tree if killed; lightweight process tests exercise that protection. Alpha.16 is published through passing GitHub Actions and installed locally from its checksum-verified CI installer. Installed headless checks passed; existing install/shortcut paths, preference hashes and model readiness were preserved. See [validation](validation.md#picture-defaults-and-descriptions-030-alpha16).
